@@ -23,6 +23,14 @@ if (!app.requestSingleInstanceLock()) {
       const state = app.getPath('userData'),
         secret = path.join(state, 'gemini.credential');
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+      // Local OS association lookup; does not open the URL or contact the network.
+      const defaultBrowser =
+        process.platform === 'win32'
+          ? await app
+              .getApplicationInfoForProtocol('https://example.invalid/')
+              .then((info) => info.path)
+              .catch(() => undefined)
+          : undefined;
       const vault = {
         mode: 'encrypted',
         has: () => fs.existsSync(secret),
@@ -47,6 +55,7 @@ if (!app.requestSingleInstanceLock()) {
             root: path.join(scratch || app.getPath('documents'), 'NedenmisStudio'),
             pythonDir: path.join(resources, 'python'),
             composition: path.join(resources, app.isPackaged ? 'composition' : 'build/composition'),
+            defaultBrowser,
           },
           { vault, desktopToken: token },
         );

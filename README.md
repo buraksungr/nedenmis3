@@ -2,17 +2,19 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, sinematik 2D, orta hareket, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-**[Doğrulanmış Windows x64 kurucusunu indir](https://github.com/buraksungr/nedenmis3/actions/runs/44185904314/artifacts/14375860143)** · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
+**[Windows x64 kurucuları (GitHub Actions)](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml)** · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.0.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
-2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için Microsoft Edge veya Chrome gerekir; NVIDIA/CUDA gerekmez.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.0.1-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
 4. **Ayarlar → API ve modeller** bölümünde tek Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
 5. Dönen canlı listeden metin, görsel ve TTS modellerini seç. Metin/TTS için *yalnızca ücretsiz proje* iznini ancak faturalandırması kapalı bir projede ücretsiz kotayı doğruladıysan ver. Model listeleme çağrısı faturalandırma bilgisini döndürmez. Görsel üretim varsayılan olarak kapalıdır: kendin dosya yükle veya seçilen modelin ücretli çağrılarına açıkça izin ver. Başka modele otomatik geçiş ve ücretli otomatik tekrar yoktur.
 6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Üretime devam et** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
+
+**Remotion tarayıcı kontrolü (1.0.1):** Stüdyo, Windows’un varsayılan HTTPS tarayıcısı Edge/Chrome ise onun tam `.exe` yolunu dener. Ardından 64/32 bit `Program Files` ve `%LOCALAPPDATA%` altındaki Edge/Chrome kurulumlarına bakar. Bir tarayıcı bağlantı kuramadan kapanırsa sıradaki denenir. **Ayarlar → Yerel servisler → Servisleri kontrol et** kompozisyonu açar ve çalışan tarayıcının yolunu gösterir. Özel/taşınabilir bir kurulum kullanıyorsan isteğe bağlı `STUDIO_BROWSER` kullanıcı ortam değişkenine tarayıcının tam yolunu verip stüdyoyu tamamen kapatıp açabilirsin; bu yol önce denenir. Kısayol (`.lnk`), klasör veya stüdyonun kendi `.exe` dosyasını seçme.
 
 Üç başlangıç projesi, editoryal metin ve kapak örnekleridir. Onay vermezler, API çağrısı yapmazlar ve bitmiş video olarak sayılmazlar.
 

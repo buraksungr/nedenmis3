@@ -7,7 +7,6 @@ import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
 import {
   audioDuration,
-  browser,
   checks,
   exec,
   ff,
@@ -17,6 +16,7 @@ import {
   verifyVideo,
   type Paths,
 } from './media';
+import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
 export type Step = 'all' | 'image' | 'voice' | 'align' | 'clip';
 export const imageKey = (p: Project, s: Scene) =>
@@ -279,13 +279,6 @@ export class Production {
       return;
     }
     this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, 0);
-    const executable = browser();
-    if (!executable || !fs.existsSync(path.join(this.paths.composition, 'index.html')))
-      throw new Issue(
-        412,
-        'Remotion için kompozisyon paketi ve Edge/Chrome gerekiyor. Ayarlar’dan kontrol edin.',
-        'config',
-      );
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props = {
@@ -300,31 +293,25 @@ export class Production {
     };
     const output = this.temp(p, 'mp4');
     let last = 0;
-    const { selectComposition, renderMedia } = await import('@remotion/renderer');
-    const opts = {
-      serveUrl: this.paths.composition,
-      browserExecutable: executable,
-      inputProps: props,
-      logLevel: 'error' as const,
-    };
+    const { renderMedia } = await import('@remotion/renderer');
     try {
-      const composition = await selectComposition({ ...opts, id: 'DocumentaryScene' });
-      await renderMedia({
-        ...opts,
-        composition,
-        codec: 'h264',
-        muted: true,
-        concurrency: 1,
-        crf: 19,
-        x264Preset: 'veryfast',
-        outputLocation: output,
-        onProgress: ({ progress }) => {
-          if (Date.now() - last > 1000) {
-            last = Date.now();
-            this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, Math.round(progress * 100));
-          }
-        },
-      });
+      await withDocumentaryScene(this.paths, props, (options) =>
+        renderMedia({
+          ...options,
+          codec: 'h264',
+          muted: true,
+          concurrency: 1,
+          crf: 19,
+          x264Preset: 'veryfast',
+          outputLocation: output,
+          onProgress: ({ progress }) => {
+            if (Date.now() - last > 1000) {
+              last = Date.now();
+              this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, Math.round(progress * 100));
+            }
+          },
+        }),
+      );
       await verifyVideo(output, frames, false);
       m.clip = this.publish(p, output, 'scenes', 'mp4', key, frames / 30);
       this.store.save(p);

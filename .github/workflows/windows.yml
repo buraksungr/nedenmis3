@@ -27,16 +27,22 @@ jobs:
       - name: Install and launch the packaged desktop app
         shell: pwsh
         run: |
-          $installer = (Get-ChildItem dist/installer/*Setup.exe).FullName
-          $target = "$env:RUNNER_TEMP\StudioInstall"
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installer = (Get-Item "dist/installer/Nedenmis-Studio-$version-Setup.exe").FullName
+          $target = "$env:RUNNER_TEMP\Nedenmiş Studio Test"
           $install = Start-Process $installer -ArgumentList "/S /D=$target" -PassThru -Wait
           if ($install.ExitCode -ne 0) { throw "NSIS install: $($install.ExitCode)" }
-          $process = Start-Process "$target\Nedenmiş Studio.exe" -ArgumentList '--verify-install' -PassThru
+          # A real exe that exits before a DevTools handshake. The installed app must fall
+          # back to real Edge/Chrome and load the packaged composition outside the checkout.
+          $env:STUDIO_BROWSER = "$env:SystemRoot\System32\where.exe"
+          $process = Start-Process "$target\Nedenmiş Studio.exe" -WorkingDirectory $env:RUNNER_TEMP -ArgumentList '--verify-install' -PassThru
           if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'Installed app timed out' }
           $report = Get-Content "$env:TEMP\Nedenmis-install-report.json" -Raw
           Write-Output $report
           if ($process.ExitCode -ne 0) { Write-Output "::error title=Native install::$report" }
           if ($process.ExitCode -ne 0) { throw "Installed app: $($process.ExitCode)" }
+          $remotion = ($report | ConvertFrom-Json).checks | Where-Object id -eq 'remotion'
+          if (!$remotion.ok -or $remotion.detail -notmatch '(msedge|chrome|chromium)\.exe$') { throw "System browser fallback: $report" }
           Copy-Item "$env:TEMP\Nedenmis-install-report.json" out/render-control/install-report.json
       - uses: actions/upload-artifact@v4
         with:

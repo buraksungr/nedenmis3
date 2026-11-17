@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { version } from '../../package.json';
 import type { Settings as Config, Project, ProjectSummary } from '../../shared/schema';
 import { BoardEditor, Preview, ProductionView, ScriptEditor } from './Editors';
 import { Home, NewProject, Projects } from './Home';
@@ -271,7 +272,7 @@ function App() {
               </button>
               {account && (
                 <div className="profile-menu">
-                  <span>Nedenmiş Studio · v1.0.0</span>
+                  <span>Nedenmiş Studio · v{version}</span>
                   <button onClick={() => go('settings')}>
                     <SlidersHorizontal size={14} />
                     Stüdyo tercihleri

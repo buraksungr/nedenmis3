@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 function binary(pkg: string, fallback: string): string {
   try {
@@ -11,10 +10,11 @@ function binary(pkg: string, fallback: string): string {
 
 import type { Check, Scene } from '../shared/schema';
 import { wav } from './gemini';
+import { withDocumentaryScene, type ScenePaths } from './render-browser';
 import { Issue, requireThat } from './store';
 export const ffmpeg = process.env.STUDIO_FFMPEG || binary('@ffmpeg-installer/ffmpeg', 'ffmpeg'),
   ffprobe = process.env.STUDIO_FFPROBE || binary('@ffprobe-installer/ffprobe', 'ffprobe');
-export type Paths = { root: string; pythonDir: string; composition: string };
+export type Paths = ScenePaths & { root: string; pythonDir: string };
 export function exec(
   bin: string,
   args: string[],
@@ -125,17 +125,6 @@ export async function verifyVideo(file: string, frames: number, audio: boolean) 
 export const python = (p: Paths) =>
   process.env.STUDIO_PYTHON ||
   path.join(p.root, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-export function browser() {
-  return [
-    process.env.STUDIO_BROWSER,
-    process.env['ProgramFiles(x86)'] &&
-      path.join(process.env['ProgramFiles(x86)']!, 'Microsoft/Edge/Application/msedge.exe'),
-    process.env.ProgramFiles &&
-      path.join(process.env.ProgramFiles, 'Google/Chrome/Application/chrome.exe'),
-    '/usr/bin/chromium',
-    '/usr/bin/google-chrome',
-  ].find((x) => x && fs.existsSync(x));
-}
 export async function checks(p: Paths, needWhisper = true): Promise<Check[]> {
   const check = async (id: string, name: string, fn: () => Promise<string>): Promise<Check> => {
     try {
@@ -166,18 +155,13 @@ export async function checks(p: Paths, needWhisper = true): Promise<Check[]> {
           ),
         ]
       : []),
-    check('remotion', 'Remotion', async () => {
-      requireThat(
-        fs.existsSync(path.join(p.composition, 'index.html')),
-        'Kompozisyon paketi eksik: npm run build.',
-      );
-      const executable = browser();
-      requireThat(executable, 'Microsoft Edge veya Chrome kurun.');
-      const { openBrowser } = await import('@remotion/renderer');
-      const b = await openBrowser('chrome', { browserExecutable: executable, logLevel: 'error' });
-      await b.close({ silent: true });
-      return 'Kompozisyon ve render tarayıcısı doğrulandı.';
-    }),
+    check('remotion', 'Remotion', () =>
+      withDocumentaryScene(
+        p,
+        {},
+        ({ browserExecutable }) => `Kompozisyon açıldı. Render tarayıcısı: ${browserExecutable}`,
+      ),
+    ),
   ]);
 }
 export async function setupPython(p: Paths, stage: (s: string) => void) {
