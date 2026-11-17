@@ -1,0 +1,11 @@
+Nedenmiş Studio — third-party components
+
+Remotion is used under its license for individuals / small teams. Check the current terms before commercial redistribution or use by larger organizations: https://www.remotion.dev/docs/license . The upstream package licenses are retained with the installed modules.
+
+FFmpeg and FFprobe are separate, unmodified executables from @ffmpeg-installer and @ffprobe-installer. Build information and enabled codecs are available via -version and -buildconf. See the license and upstream binary/source origin in each installed platform package and https://ffmpeg.org/legal.html . Remotion also ships its platform compositor binaries and their license notice.
+
+Electron includes Chromium and Node.js; see LICENSE.electron.txt and LICENSES.chromium.html in the install directory. React and Lucide are distributed under their respective open-source licenses. Inter and Libre Caslon Text are bundled locally under the SIL Open Font License.
+
+Illustrated covers and the studio banner are AI-generated artwork for the application library. Seed projects are editable editorial examples, not Google-generated videos. The procedural score and ambient/Foley signals are synthesized locally; no third-party recordings or music are downloaded. Imported media must be owned or appropriately licensed by its user.
+
+Whisper, stable-ts and CPU PyTorch are optionally installed into a separate local Python environment. Model weights are not in this installer. Google Gemini is a separate online service subject to Google's terms and pricing.

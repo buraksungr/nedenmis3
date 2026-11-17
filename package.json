@@ -1,0 +1,110 @@
+{
+  "name": "nedenmis-studio",
+  "productName": "Nedenmiş Studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Yerel, onay tabanlı belgesel üretim stüdyosu",
+  "author": "Nedenmiş Studio",
+  "main": "desktop/main.cjs",
+  "engines": {
+    "node": ">=22.16"
+  },
+  "scripts": {
+    "dev": "tsx server/dev.ts",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "test:render": "tsx tests/render-smoke.ts",
+    "format": "prettier --write server shared ui/src desktop composition scripts tests"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "@ffprobe-installer/ffprobe": "2.1.2",
+    "@remotion/renderer": "4.0.544",
+    "archiver": "7.0.1",
+    "express": "5.1.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "remotion": "4.0.544",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource/libre-caslon-text": "^5.3.0",
+    "@remotion/bundler": "4.0.544",
+    "@types/archiver": "^6.0.3",
+    "@types/express": "^5.0.5",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "electron": "41.10.7",
+    "electron-builder": "26.0.12",
+    "esbuild": "^0.25.10",
+    "lucide-react": "0.552.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3",
+    "vite": "6.4.6"
+  },
+  "build": {
+    "appId": "studio.nedenmis.desktop",
+    "productName": "Nedenmiş Studio",
+    "asar": false,
+    "directories": {
+      "output": "dist/installer"
+    },
+    "files": [
+      "desktop/main.cjs",
+      "build/server.cjs",
+      "build/ui/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/composition",
+        "to": "composition"
+      },
+      {
+        "from": "python",
+        "to": "python"
+      },
+      {
+        "from": "resources/studio.ico",
+        "to": "studio.ico"
+      },
+      {
+        "from": "resources/NOTICE.txt",
+        "to": "NOTICE.txt"
+      },
+      {
+        "from": "resources",
+        "to": "licenses",
+        "filter": [
+          "*-OFL.txt"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/studio.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Nedenmiş Studio",
+      "differentialPackage": false,
+      "runAfterFinish": false,
+      "installerLanguages": [
+        "tr_TR",
+        "en_US"
+      ],
+      "language": "1055",
+      "installerIcon": "resources/studio.ico",
+      "uninstallerIcon": "resources/studio.ico"
+    },
+    "artifactName": "Nedenmis-Studio-${version}-Setup.${ext}"
+  }
+}

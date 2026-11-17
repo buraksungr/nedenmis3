@@ -1,0 +1,3 @@
+# Install CPU-only torch separately; do not install CUDA or ship model weights.
+openai-whisper==20250625
+stable-ts==2.19.1

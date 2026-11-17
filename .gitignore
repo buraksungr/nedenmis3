@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+out/
+.studio/
+.cache/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.env*
+*.sqlite*
+*.exe
+*.mp4

@@ -1,0 +1,47 @@
+name: Windows desktop installer
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: ['arena/**']
+permissions:
+  contents: read
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22.22', cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run dist:win -- --publish never
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - name: Validate the Windows production renderer
+        run: npm run test:render
+      - name: Install and launch the packaged desktop app
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem dist/installer/*Setup.exe).FullName
+          $target = "$env:RUNNER_TEMP\StudioInstall"
+          $install = Start-Process $installer -ArgumentList "/S /D=$target" -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "NSIS install: $($install.ExitCode)" }
+          $process = Start-Process "$target\Nedenmiş Studio.exe" -ArgumentList '--verify-install' -PassThru
+          if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'Installed app timed out' }
+          Get-Content "$env:TEMP\Nedenmis-install-report.json"
+          if ($process.ExitCode -ne 0) { throw "Installed app: $($process.ExitCode)" }
+          Copy-Item "$env:TEMP\Nedenmis-install-report.json" out/render-control/install-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nedenmis-Studio-Windows-x64
+          path: dist/installer/*Setup.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Local-render-QA-not-Gemini-acceptance
+          path: |
+            out/render-control/local-render-control.mp4
+            out/render-control/probe.json
+            out/render-control/install-report.json

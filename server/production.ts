@@ -1,0 +1,505 @@
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { groups, srt, validWords } from '../shared/captions';
+import type { Asset, Project, Scene, Word } from '../shared/schema';
+import { Gemini } from './gemini';
+import {
+  audioDuration,
+  browser,
+  checks,
+  exec,
+  ff,
+  probe,
+  python,
+  soundBed,
+  verifyVideo,
+  type Paths,
+} from './media';
+import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
+export type Step = 'all' | 'image' | 'voice' | 'align' | 'clip';
+export const imageKey = (p: Project, s: Scene) =>
+  hash('image-v1', p.styleGuide, s.description, s.prompt, s.angle, s.environment);
+export const voiceKey = (p: Project, s: Scene) =>
+  hash('voice-v1', s.narration, p.voice, p.voiceStyle, p.pace);
+export const framesForVoice = (seconds: number) => Math.max(1, Math.ceil(seconds * 30 - 1e-7));
+export class Production {
+  constructor(
+    private store: Store,
+    private g: Gemini,
+    private paths: Paths,
+  ) {}
+  file(p: Project, rel: string) {
+    return path.join(this.store.dir(p.id), rel);
+  }
+  usable(p: Project, a: Asset | undefined, key: string) {
+    return (
+      !!a &&
+      a.key === key &&
+      fs.existsSync(this.file(p, a.file)) &&
+      fs.statSync(this.file(p, a.file)).size > 0
+    );
+  }
+  tick(p: Project, label: string, kind: string, scene?: string, progress?: number) {
+    p.job = { state: 'working', label, kind, scene, progress, at: now() };
+    this.store.save(p);
+    if (progress === undefined) this.store.log(p);
+  }
+  private temp(p: Project, ext: string) {
+    return this.file(p, `cache/${randomUUID()}.${ext}`);
+  }
+  private publish(
+    p: Project,
+    src: string,
+    folder: string,
+    ext: string,
+    key: string,
+    duration?: number,
+  ): Asset {
+    const dest = `${folder}/${randomUUID()}.${ext}`;
+    fs.renameSync(src, this.file(p, dest));
+    return { file: dest, key, duration };
+  }
+  async import(p: Project, kind: 'image' | 'voice' | 'music' | 'sfx', data: Buffer, s?: Scene) {
+    approved(p);
+    const tmp = this.temp(p, 'input'),
+      out = this.temp(p, kind === 'image' ? 'jpg' : 'wav');
+    atomic(tmp, data);
+    try {
+      if (kind === 'image') {
+        await ff(['-i', tmp, '-frames:v', '1', '-vf', "scale='min(1920,iw)':-2", '-q:v', '2', out]);
+        const v = (await probe(out)).streams[0];
+        requireThat(
+          v.width >= 180 && v.height >= 180,
+          'Görsel en az 180 × 180 piksel olmalı.',
+          422,
+        );
+        const m = (p.assets[s!.id] ??= {});
+        m.image = this.publish(p, out, 'images', 'jpg', imageKey(p, s!));
+        delete m.clip;
+        if (s!.id === p.scenes[0]?.id) p.cover = `/api/projects/${p.id}/media/${m.image.file}`;
+      } else {
+        await ff([
+          '-i',
+          tmp,
+          '-vn',
+          '-t',
+          '180',
+          '-ac',
+          '1',
+          '-ar',
+          '48000',
+          '-c:a',
+          'pcm_s16le',
+          out,
+        ]);
+        const d = await audioDuration(out);
+        const a = this.publish(
+          p,
+          out,
+          kind === 'music' ? 'music' : 'audio',
+          'wav',
+          kind === 'voice' ? voiceKey(p, s!) : hash(data),
+          d,
+        );
+        if (kind === 'music') p.music = a;
+        else {
+          const m = (p.assets[s!.id] ??= {});
+          if (kind === 'sfx') m.sfx = a;
+          else {
+            m.voice = a;
+            delete m.align;
+            delete m.edits;
+            delete m.words;
+            delete m.clip;
+            delete m.recognized;
+          }
+        }
+      }
+      delete p.final;
+      delete p.subtitleFiles;
+      this.store.save(p);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+      fs.rmSync(out, { force: true });
+    }
+  }
+  async asset(p: Project, s: Scene, kind: 'image' | 'voice', force: boolean) {
+    approved(p);
+    const m = (p.assets[s.id] ??= {}),
+      k = kind === 'image' ? imageKey(p, s) : voiceKey(p, s);
+    if (!force && this.usable(p, m[kind], k)) {
+      try {
+        if (kind === 'voice') await audioDuration(this.file(p, m.voice!.file));
+        else
+          requireThat(
+            (await probe(this.file(p, m.image!.file))).streams[0]?.width > 0,
+            'Görsel okunamadı.',
+          );
+        return;
+      } catch {
+        throw new Issue(422, 'Önbellekteki dosya bozuk. Bu sahnenin varlığını yenileyin.');
+      }
+    }
+    this.tick(
+      p,
+      kind === 'image' ? 'Sinematik görsel üretiliyor' : 'Türkçe seslendirme üretiliyor',
+      kind,
+      s.id,
+    );
+    let data: Buffer;
+    if (kind === 'image') {
+      const first = p.assets[p.scenes[0].id]?.image;
+      const ref =
+        first && fs.existsSync(this.file(p, first.file))
+          ? fs.readFileSync(this.file(p, first.file))
+          : undefined;
+      data = await this.g.image(
+        `Cinematic 2D documentary, vertical 9:16. Full bleed. No lettering, subtitles or logos. Use the reference for identity, palette and technique, not composition. Layered foreground, midground and background, restrained color, atmospheric lighting. ${JSON.stringify({ bible: p.styleGuide, scene: s.description, prompt: s.prompt, angle: s.angle, environment: s.environment, narration: s.narration })}`,
+        ref,
+      );
+    } else data = await this.g.voice(s.narration, p.voice, `${p.voiceStyle} Tempo: ${p.pace}.`);
+    await this.import(p, kind, data, s);
+  }
+  async align(p: Project, s: Scene, force = false) {
+    approved(p);
+    const m = p.assets[s.id];
+    requireThat(
+      m?.voice && this.usable(p, m.voice, voiceKey(p, s)),
+      'Önce güncel seslendirmeyi üretin.',
+    );
+    const key = hash('base-stable-ts-1', m.voice.file, s.narration);
+    if (
+      !force &&
+      this.usable(p, m.align, key) &&
+      validWords(m.edits ?? m.words ?? [], m.voice.duration!)
+    )
+      return;
+    this.tick(p, 'Whisper transkripsiyonu ve sözcük hizalama', 'align', s.id);
+    const txt = this.temp(p, 'txt'),
+      out = this.temp(p, 'json');
+    atomic(txt, s.narration);
+    try {
+      await exec(
+        python(this.paths),
+        [
+          path.join(this.paths.pythonDir, 'align.py'),
+          '--audio',
+          this.file(p, m.voice.file),
+          '--script',
+          txt,
+          '--out',
+          out,
+          '--models',
+          path.join(this.paths.root, 'models'),
+        ],
+        1200000,
+      );
+      const a = JSON.parse(fs.readFileSync(out, 'utf8'));
+      requireThat(
+        typeof a.recognized === 'string' &&
+          a.recognized.trim() &&
+          Array.isArray(a.words) &&
+          validWords(a.words, m.voice.duration!),
+        'Hizalama zamanları geçersiz; tahmini altyazı kullanılmadı.',
+        422,
+      );
+      m.align = this.publish(p, out, 'subtitles', 'json', key);
+      m.words = a.words;
+      m.recognized = a.recognized;
+      delete m.edits;
+      delete m.clip;
+      delete p.final;
+      this.store.save(p);
+    } finally {
+      fs.rmSync(txt, { force: true });
+      fs.rmSync(out, { force: true });
+    }
+  }
+  async clip(p: Project, s: Scene, next: Scene | undefined, frames: number, force = false) {
+    approved(p);
+    const m = p.assets[s.id];
+    requireThat(
+      this.usable(p, m?.image, imageKey(p, s)) && this.usable(p, m?.voice, voiceKey(p, s)),
+      'Güncel görsel ve seslendirme gerekiyor.',
+    );
+    const words = m.edits ?? m.words ?? [];
+    requireThat(validWords(words, m.voice!.duration!), 'Önce geçerli sözcük zamanları gerekiyor.');
+    const adjacent = s.transition !== 'cut' && next ? p.assets[next.id]?.image : undefined;
+    const key = hash(
+      'film-3',
+      m.image!.file,
+      s.camera,
+      s.motion,
+      s.effect,
+      s.object,
+      s.transition,
+      s.animation,
+      p.intensity,
+      words,
+      frames,
+      adjacent?.file,
+      p.subtitleSize,
+      p.highlight,
+    );
+    if (!force && this.usable(p, m.clip, key)) {
+      await verifyVideo(this.file(p, m.clip!.file), frames, false);
+      return;
+    }
+    this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, 0);
+    const executable = browser();
+    if (!executable || !fs.existsSync(path.join(this.paths.composition, 'index.html')))
+      throw new Issue(
+        412,
+        'Remotion için kompozisyon paketi ve Edge/Chrome gerekiyor. Ayarlar’dan kontrol edin.',
+        'config',
+      );
+    const url = (a: Asset) =>
+      'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
+    const props = {
+      image: url(m.image!),
+      next: adjacent ? url(adjacent) : '',
+      scene: s,
+      words,
+      frames,
+      intensity: p.intensity,
+      subtitleSize: p.subtitleSize,
+      highlight: p.highlight,
+    };
+    const output = this.temp(p, 'mp4');
+    let last = 0;
+    const { selectComposition, renderMedia } = await import('@remotion/renderer');
+    const opts = {
+      serveUrl: this.paths.composition,
+      browserExecutable: executable,
+      inputProps: props,
+      logLevel: 'error' as const,
+    };
+    try {
+      const composition = await selectComposition({ ...opts, id: 'DocumentaryScene' });
+      await renderMedia({
+        ...opts,
+        composition,
+        codec: 'h264',
+        muted: true,
+        concurrency: 1,
+        crf: 19,
+        x264Preset: 'veryfast',
+        outputLocation: output,
+        onProgress: ({ progress }) => {
+          if (Date.now() - last > 1000) {
+            last = Date.now();
+            this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, Math.round(progress * 100));
+          }
+        },
+      });
+      await verifyVideo(output, frames, false);
+      m.clip = this.publish(p, output, 'scenes', 'mp4', key, frames / 30);
+      this.store.save(p);
+    } finally {
+      fs.rmSync(output, { force: true });
+    }
+  }
+  async render(p: Project, kind: Step, target?: string) {
+    approved(p);
+    const scenes = target ? p.scenes.filter((s) => s.id === target) : p.scenes;
+    requireThat(scenes.length, 'Sahne bulunamadı.');
+    if (kind === 'all') {
+      // No paid calls before BOTH cloud permissions and local dependencies are ready.
+      let needWhisper = false;
+      for (const s of scenes) {
+        const m = p.assets[s.id];
+        if (!this.usable(p, m?.image, imageKey(p, s))) this.g.allowed('image');
+        if (!this.usable(p, m?.voice, voiceKey(p, s))) this.g.allowed('tts');
+        if (
+          !m?.align ||
+          !m.voice ||
+          !this.usable(p, m.align, hash('base-stable-ts-1', m.voice.file, s.narration)) ||
+          !validWords(m.edits ?? m.words ?? [], m.voice.duration!)
+        )
+          needWhisper = true;
+      }
+      this.tick(p, 'Yerel üretim araçları doğrulanıyor', 'preflight');
+      const report = await checks(this.paths, needWhisper);
+      const missing = report.filter((x) => !x.ok);
+      if (missing.length)
+        throw new Issue(
+          412,
+          'Önce yerel servisleri yapılandırın: ' +
+            missing.map((x) => x.name).join(', ') +
+            '. Bulut isteği yapılmadı.',
+          'config',
+        );
+    }
+    for (const s of scenes) {
+      if (kind === 'all' || kind === 'image') await this.asset(p, s, 'image', kind === 'image');
+      if (kind === 'all' || kind === 'voice') await this.asset(p, s, 'voice', kind === 'voice');
+      if (kind === 'all' || kind === 'align') await this.align(p, s, kind === 'align');
+    }
+    if (kind === 'all' || kind === 'clip') {
+      // Pad to a frame boundary: never trim narration or timing to fit an estimate.
+      for (const [i, s] of p.scenes.entries()) {
+        if (scenes.includes(s)) {
+          const frames = framesForVoice(p.assets[s.id]?.voice?.duration ?? 0);
+          await this.clip(p, s, p.scenes[i + 1], frames, kind === 'clip');
+        }
+      }
+      if (kind === 'all') await this.finish(p);
+    }
+  }
+  async finish(p: Project) {
+    approved(p);
+    const mixKey = hash(
+      'mix-v3',
+      p.scenes.map((s) => [
+        p.assets[s.id].clip?.file,
+        p.assets[s.id].voice?.file,
+        p.assets[s.id].sfx?.file,
+        s.sound,
+        s.effect,
+        s.object,
+      ]),
+      p.music?.file,
+      p.musicVolume,
+    );
+    if (
+      this.usable(p, p.final, mixKey) &&
+      p.subtitleFiles &&
+      Object.values(p.subtitleFiles).every((f) => fs.existsSync(this.file(p, f)))
+    ) {
+      await verifyVideo(
+        this.file(p, p.final!.file),
+        p.scenes.reduce((n, s) => n + framesForVoice(p.assets[s.id].voice!.duration!), 0),
+        true,
+      );
+      return;
+    }
+    this.tick(p, 'Ses miksajı ve MP4 doğrulaması', 'export');
+    const dir = this.store.dir(p.id),
+      working = fs.mkdtempSync(path.join(dir, 'cache', 'mix-'));
+    const work = (n: string) => path.join(working, n);
+    let frames = 0;
+    const all: Word[] = [];
+    try {
+      const list: string[] = [];
+      const alist: string[] = [];
+      for (const [i, s] of p.scenes.entries()) {
+        const m = p.assets[s.id],
+          duration = m.clip!.duration!;
+        const words = m.edits ?? m.words!;
+        const offset = frames / 30;
+        all.push(
+          ...words.map((w) => ({
+            ...w,
+            start: offset + w.start,
+            end: offset + Math.min(w.end, duration),
+          })),
+        );
+        frames += Math.round(duration * 30);
+        list.push(
+          `file '${this.file(p, m.clip!.file).replaceAll('\\', '/').replaceAll("'", "'\\''")}'`,
+        );
+        const foley = work(`bed-${i}.wav`);
+        atomic(foley, soundBed(duration, s));
+        const aout = work(`mix-${i}.wav`);
+        const inputs = [
+          '-i',
+          this.file(p, m.voice!.file),
+          '-i',
+          foley,
+          ...(m.sfx ? ['-i', this.file(p, m.sfx.file)] : []),
+        ];
+        await ff([
+          ...inputs,
+          '-filter_complex',
+          `[0:a]aresample=48000,apad,atrim=duration=${duration}[v];[1:a]volume=0.32[b];${m.sfx ? '[2:a]volume=0.2[fx];' : ''}[v][b]${m.sfx ? '[fx]' : ''}amix=inputs=${m.sfx ? 3 : 2}:duration=first:dropout_transition=0,volume=${m.sfx ? 3 : 2}[m]`,
+          '-map',
+          '[m]',
+          '-ar',
+          '48000',
+          '-ac',
+          '1',
+          '-c:a',
+          'pcm_s16le',
+          aout,
+        ]);
+        alist.push(`file 'mix-${i}.wav'`);
+      }
+      atomic(work('video.txt'), list.join('\n'));
+      atomic(work('audio.txt'), alist.join('\n'));
+      const duration = frames / 30;
+      const music = p.music ? this.file(p, p.music.file) : work('score.wav');
+      if (!p.music) atomic(music, soundBed(duration));
+      const out = work('documentary.mp4');
+      await ff(
+        [
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          work('video.txt'),
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          work('audio.txt'),
+          '-stream_loop',
+          '-1',
+          '-i',
+          music,
+          '-filter_complex',
+          `[1:a]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][copy];[copy]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[det];[2:a]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo,atrim=duration=${duration},volume=${p.musicVolume},afade=t=in:d=0.5,afade=t=out:st=${Math.max(0, duration - 0.75)}:d=0.75,aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[bed];[bed][det]sidechaincompress=threshold=0.025:ratio=6:attack=20:release=300,aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[duck];[voice][duck]amix=inputs=2:duration=first:dropout_transition=0,volume=2,loudnorm=I=-16:TP=-1.5:LRA=9[a]`,
+          '-map',
+          '0:v:0',
+          '-map',
+          '[a]',
+          '-c:v',
+          'copy',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '160k',
+          '-ar',
+          '48000',
+          '-ac',
+          '2',
+          '-t',
+          String(duration),
+          '-movflags',
+          '+faststart',
+          out,
+        ],
+        900000,
+      );
+      await verifyVideo(out, frames, true);
+      const id = randomUUID(),
+        json = `subtitles/${id}.json`,
+        sub = `subtitles/${id}.srt`;
+      atomic(
+        this.file(p, json),
+        JSON.stringify(
+          {
+            language: 'tr',
+            duration,
+            words: all,
+            sentences: groups(all, 999).map((g) => ({
+              start: g[0].start,
+              end: g[g.length - 1].end,
+              text: g.map((w) => w.text).join(' '),
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+      atomic(this.file(p, sub), srt(all));
+      p.final = this.publish(p, out, 'renders', 'mp4', mixKey, duration);
+      p.subtitleFiles = { json, srt: sub };
+      this.store.save(p);
+    } finally {
+      fs.rmSync(working, { recursive: true, force: true });
+    }
+  }
+}
