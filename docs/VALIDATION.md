@@ -1,8 +1,18 @@
 # Doğrulama kaydı — 17 Kasım 2026
 
+## 1.0.1 — kurulu Windows uygulamasında Remotion
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44198400356/artifacts/14379119762)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44198400356) · Derleme: `c62af308a4a6967b34b91dabe5f9aa2567f27656`.
+
+- `Nedenmis-Studio-1.0.1-Setup.exe` sessizce kuruldu. Kurulu uygulama, kaynak veya tarayıcı önbelleği olmayan ayrı bir çalışma dizininden açıldı. Testin ilk `.exe` adayı bir DevTools bağlantısı kuramadan çıktı. **Yerel servisler** kontrolü sıradaki çalışan sistem tarayıcısıyla paketlenmiş `DocumentaryScene` kompozisyonunu açtı. [Kurulu uygulamanın bildirdiği yol](https://github.com/buraksungr/nedenmis3/actions/runs/44198400356/job/134445822123): `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`.
+- 17 test, Windows üretim render’ı, arayüz/oynatıcı testi ve gerçek Türkçe CPU hizalama işi geçti. [Render ve kurulum raporu](https://github.com/buraksungr/nedenmis3/actions/runs/44198400356/artifacts/14379623758) · [Akustik test çıktıları](https://github.com/buraksungr/nedenmis3/actions/runs/44198400356/artifacts/14378944985).
+- Kurucu imzasızdır. GitHub’ın bildirdiği **kurucu ZIP paketinin** SHA-256 değeri: `5bfa345ca4d1103850f241f20ec07acbef422467d1ede1f14e394eda6d1e64d2`. Bu, içteki EXE’nin özeti değildir.
+
+## 1.0.0 — önceki doğrulama kaydı
+
 **Test edilen uygulama:** `4eb41653d080f8c45b0deed910135e397412d3ca`. [Windows iş akışı ve iki başarılı iş](https://github.com/buraksungr/nedenmis3/actions/runs/44185904314).
 
-## Teslim dosyaları
+### Teslim dosyaları
 
 | GitHub Actions paketi | İçerik |
 |---|---|
@@ -12,7 +22,7 @@
 
 Kurucu **ZIP paketinin** SHA-256 değeri: `8d9dc1d0c84aae206c1a886a9e30d0b4a163ef48df5a70d1d2e567e5df27e645`. Bu değer içteki EXE’nin değil, Actions paketinin özetidir. GitHub’ın bildirdiği saklama sonu 15 Şubat 2027’dir. Sonrasında Windows üzerinde `npm ci` ve `npm run dist:win` ile yeniden üretilebilir.
 
-## Gerçekten yürütülen kontroller
+### Gerçekten yürütülen kontroller
 
 - Windows x64 CI: bağımlılık kurulumu, TypeScript denetimi ve **14 test** geçti. İki onay, değişen içerik, reddedilen eski yazma, sürüm geri alma, kesilen işin kurtarılması, anahtar silme/yenileme, kota reddi ve bozuk dosya denendi. Sağlayıcı sözleşme testleri canlı Google erişimi değildir.
 - **Asıl NSIS kurucusu çalıştırıldı; kurulmuş EXE açıldı.** İzole test profiliyle gerçek Electron renderer → yerel API → SQLite yolu doğrulandı. Windows güvenli saklama ile rastgele bir değer şifrelendi, disk içeriğinde açık metin bulunmadığı kontrol edildi, geri çözüldü ve silindi. FFmpeg/FFprobe çalıştırıldı, Remotion tarayıcısı açılıp kapatıldı.

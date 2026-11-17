@@ -2,7 +2,7 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, sinematik 2D, orta hareket, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-**[Windows x64 kurucuları (GitHub Actions)](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml)** · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
+**[Windows x64 kurucusunu indir · 1.0.1](https://github.com/buraksungr/nedenmis3/actions/runs/44198400356/artifacts/14379119762)** · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
@@ -57,7 +57,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 | `shared/` | Proje/sahne sözleşmeleri, alan doğrulama ve altyazı gruplama |
 | `server/store.ts`, `invalidate.ts` | Onaylar, SQLite, sürümler, artımlı bağımlılıklar |
 | `server/gemini.ts`, `planner.ts` | Resmî Gemini REST, model keşfi, izinler, senaryo ve storyboard |
-| `server/production.ts`, `media.ts` | Üretim denetleyicisi, süreçler, medya doğrulama, ses ve export |
+| `server/production.ts`, `media.ts`, `render-browser.ts` | Üretim denetleyicisi, render tarayıcısı seçimi, medya doğrulama, ses ve export |
 | `python/align.py` | CPU transkripsiyonu + onaylı metne gerçek zorlanmış hizalama |
 | `composition/Film.tsx` | Tek paketlenmiş, prop tabanlı Remotion sahne kompozisyonu |
 | `ui/` | Türkçe masaüstü çalışma alanı; API anahtarı veya dış sağlayıcı istemcisi içermez |
