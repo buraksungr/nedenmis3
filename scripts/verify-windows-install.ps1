@@ -10,17 +10,14 @@ try {
   }
 
   $stage = 'Silent NSIS install'
-  $install = Start-Process -FilePath $setups[0].FullName -ArgumentList '/S /currentuser' -Wait -PassThru
+  # electron-builder's NSIS /D parser accepts this single, space-free argument.
+  # Do not infer the .exe location from WSH shortcut metadata, which can be empty.
+  $target = Join-Path $env:RUNNER_TEMP 'StudioInstall'
+  $install = Start-Process -FilePath $setups[0].FullName -ArgumentList "/S /D=$target" -Wait -PassThru
   if ($install.ExitCode -ne 0) { throw "Installer exit code: $($install.ExitCode)" }
 
-  $stage = 'Resolve installed desktop shortcut'
-  $desktop = [Environment]::GetFolderPath('DesktopDirectory')
-  $link = Get-Item -LiteralPath (Join-Path $desktop 'Nedenmiş Studio.lnk')
-  $shell = New-Object -ComObject WScript.Shell
-  $app = Get-Item -LiteralPath ($shell.CreateShortcut($link.FullName).TargetPath)
-  if ($app.Name -ne 'Nedenmiş Studio.exe') { throw "Unexpected shortcut target: $app" }
-
   $stage = 'Launch installed app'
+  $app = Get-Item -LiteralPath (Join-Path $target 'Nedenmiş Studio.exe')
   $reportFile = Join-Path $env:TEMP 'Nedenmis-install-report.json'
   if (Test-Path -LiteralPath $reportFile) { Remove-Item -LiteralPath $reportFile }
   # A present executable that cannot open DevTools. Require fallback to real Edge/Chrome
