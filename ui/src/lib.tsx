@@ -70,8 +70,6 @@ export type StudioState = {
   refresh: () => Promise<void>;
   notify: (msg: string, bad?: boolean) => void;
   mutate: (action: string, body?: unknown) => Promise<Project>;
-  busy: boolean;
-  setBusy: (b: boolean) => void;
 };
 export const Context = createContext<StudioState>(null!);
 export const useStudio = () => useContext(Context);

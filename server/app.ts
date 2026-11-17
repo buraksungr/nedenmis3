@@ -61,9 +61,24 @@ export function createStudio(
     if (options.desktopToken && req.get('x-studio-session') !== options.desktopToken)
       return res.status(403).json({ error: 'Yerel oturum doğrulanamadı.' });
     if (!['GET', 'HEAD'].includes(req.method)) {
+      const origin = req.get('origin');
+      let originOK = !origin;
+      if (origin) {
+        try {
+          const u = new URL(origin);
+          originOK =
+            u.host === req.get('host') ||
+            (!options.desktopToken &&
+              u.protocol === 'https:' &&
+              /^\d+-[a-z0-9-]+\.e2b\.app$/.test(u.hostname) &&
+              req.get('sec-fetch-site') === 'same-origin');
+        } catch {
+          originOK = false;
+        }
+      }
       if (
         req.get('sec-fetch-site') === 'cross-site' ||
-        (req.get('origin') && new URL(req.get('origin')!).host !== req.get('host')) ||
+        !originOK ||
         (!req.is('application/json') && !req.is('application/octet-stream'))
       )
         return res.status(403).json({ error: 'İstek kaynağı doğrulanamadı.' });

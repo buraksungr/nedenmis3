@@ -138,7 +138,7 @@ function useDraft<T>(project: Project, route: string, initial: T, toBody: (v: T)
   }, [flush]);
   return { v, edit, flush, status, rev };
 }
-function EditorMeta({ p }: { p: Project }) {
+function EditorMeta() {
   return (
     <div className="meta-strip">
       <span>
@@ -193,7 +193,7 @@ export function ScriptEditor({ p }: { p: Project }) {
             </span>
           </div>
           <h3 className="editor-topic">{p.topic}</h3>
-          <EditorMeta p={p} />
+          <EditorMeta />
           <textarea
             className="script-editor"
             aria-label="Senaryo metni"
@@ -304,7 +304,7 @@ export function ScriptEditor({ p }: { p: Project }) {
   );
 }
 export function BoardEditor({ p }: { p: Project }) {
-  const { go, mutate, notify, refresh, setP } = useStudio();
+  const { go, notify, refresh, setP } = useStudio();
   const { run, busy } = useRun();
   const d = useDraft(p, 'board', { scenes: p.scenes, styleGuide: p.styleGuide }, (v) => v);
   const [open, setOpen] = useState<string | null>(null);
@@ -686,7 +686,7 @@ function Captions({ p, s, close }: { p: Project; s: Scene; close: () => void }) 
   );
 }
 export function ProductionView({ p }: { p: Project }) {
-  const { go, mutate, notify } = useStudio();
+  const { go, mutate } = useStudio();
   const { run, busy } = useRun();
   const [editCaps, setEditCaps] = useState<Scene | null>(null),
     [prefs, setPrefs] = useState(false),
@@ -721,7 +721,7 @@ export function ProductionView({ p }: { p: Project }) {
                 <Badge tone="green">Onaylı plan</Badge>
               </span>
             </div>
-            <EditorMeta p={p} />
+            <EditorMeta />
             <div className="actions">
               <Button
                 variant="primary"

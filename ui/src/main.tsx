@@ -58,7 +58,6 @@ function App() {
     [search, setSearch] = useState(false),
     [term, setTerm] = useState(''),
     [account, setAccount] = useState(false),
-    [busy, setBusy] = useState(false),
     [wizard, setWizard] = useState(0),
     [loaded, setLoaded] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -205,8 +204,6 @@ function App() {
         refresh,
         notify,
         mutate,
-        busy,
-        setBusy,
       }}
     >
       <div className="app-shell">

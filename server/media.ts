@@ -15,11 +15,18 @@ import { Issue, requireThat } from './store';
 export const ffmpeg = process.env.STUDIO_FFMPEG || binary('@ffmpeg-installer/ffmpeg', 'ffmpeg'),
   ffprobe = process.env.STUDIO_FFPROBE || binary('@ffprobe-installer/ffprobe', 'ffprobe');
 export type Paths = { root: string; pythonDir: string; composition: string };
-export function exec(bin: string, args: string[], ms = 180000, onLine?: (line: string) => void) {
+export function exec(
+  bin: string,
+  args: string[],
+  ms = 180000,
+  onLine?: (line: string) => void,
+  cwd?: string,
+) {
   return new Promise<string>((resolve, reject) => {
     let stdout = '',
       stderr = '';
     const child = spawn(bin, args, {
+      cwd,
       shell: false,
       windowsHide: true,
       env: {
@@ -55,11 +62,13 @@ export function exec(bin: string, args: string[], ms = 180000, onLine?: (line: s
     });
   });
 }
-export const ff = (args: string[], ms?: number) =>
+export const ff = (args: string[], ms?: number, cwd?: string) =>
   exec(
     ffmpeg,
     ['-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-y', '-threads', '2', ...args],
     ms,
+    undefined,
+    cwd,
   );
 export async function probe(file: string) {
   return JSON.parse(

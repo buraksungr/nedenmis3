@@ -428,9 +428,16 @@ export class Production {
           })),
         );
         frames += Math.round(duration * 30);
-        list.push(
-          `file '${path.relative(working, this.file(p, m.clip!.file)).replaceAll('\\', '/').replaceAll("'", "'\\''")}'`,
-        );
+        // Older Windows FFmpeg builds do not resolve drive-qualified concat manifests
+        // consistently. Stage local basenames and start the child inside the manifest directory.
+        const clipName = `clip-${i}.mp4`,
+          original = this.file(p, m.clip!.file);
+        try {
+          fs.linkSync(original, work(clipName));
+        } catch {
+          await fs.promises.copyFile(original, work(clipName));
+        }
+        list.push(`file '${clipName}'`);
         const foley = work(`bed-${i}.wav`);
         atomic(foley, soundBed(duration, s));
         const aout = work(`mix-${i}.wav`);
@@ -468,15 +475,15 @@ export class Production {
           '-f',
           'concat',
           '-safe',
-          '0',
+          '1',
           '-i',
-          work('video.txt'),
+          'video.txt',
           '-f',
           'concat',
           '-safe',
-          '0',
+          '1',
           '-i',
-          work('audio.txt'),
+          'audio.txt',
           '-stream_loop',
           '-1',
           '-i',
@@ -504,6 +511,7 @@ export class Production {
           out,
         ],
         900000,
+        working,
       );
       await verifyVideo(out, frames, true);
       const id = randomUUID(),

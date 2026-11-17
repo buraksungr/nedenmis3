@@ -115,3 +115,28 @@ test('missing credentials never fabricate a script or a successful export', asyn
   assert.equal(check.job.state, 'config');
   assert.equal(check.final, undefined);
 });
+
+test('preview writes work under the iframe proxy without opening cross-site access', async (t) => {
+  const { req } = await app(t);
+  const headers = { origin: 'https://5173-studio-test.e2b.app', 'sec-fetch-site': 'same-origin' };
+  assert.equal(
+    (
+      await req(
+        '/projects',
+        { topic: 'Yerel yapım', script: 'Kaydedilen anlatım.' },
+        undefined,
+        headers,
+      )
+    ).status,
+    201,
+  );
+  assert.equal(
+    (
+      await req('/projects', { topic: 'Başka kaynak' }, undefined, {
+        ...headers,
+        'sec-fetch-site': 'cross-site',
+      })
+    ).status,
+    403,
+  );
+});
