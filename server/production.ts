@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { groups, srt, validWords } from '../shared/captions';
 import type { Asset, Project, Scene, Word } from '../shared/schema';
+import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
 import {
   audioDuration,
@@ -30,7 +31,10 @@ export class Production {
     private paths: Paths,
   ) {}
   file(p: Project, rel: string) {
-    return path.join(this.store.dir(p.id), rel);
+    const base = this.store.dir(p.id),
+      file = path.resolve(base, rel);
+    requireThat(file.startsWith(base + path.sep), 'Proje dışındaki dosyaya erişilemez.', 400);
+    return file;
   }
   usable(p: Project, a: Asset | undefined, key: string) {
     return (
@@ -58,16 +62,30 @@ export class Production {
   ): Asset {
     const dest = `${folder}/${randomUUID()}.${ext}`;
     fs.renameSync(src, this.file(p, dest));
-    return { file: dest, key, duration };
+    return { file: dest, key, duration, source: 'local', created: now() };
   }
-  async import(p: Project, kind: 'image' | 'voice' | 'music' | 'sfx', data: Buffer, s?: Scene) {
+  async import(
+    p: Project,
+    kind: 'image' | 'voice' | 'music' | 'sfx',
+    data: Buffer,
+    s?: Scene,
+    model?: string,
+  ) {
     approved(p);
     const tmp = this.temp(p, 'input'),
       out = this.temp(p, kind === 'image' ? 'jpg' : 'wav');
+    const format = inputFormat(data, kind === 'image');
+    const input = ['-protocol_whitelist', 'file,pipe', '-f', format, '-i', tmp];
     atomic(tmp, data);
     try {
       if (kind === 'image') {
-        await ff(['-i', tmp, '-frames:v', '1', '-vf', "scale='min(1920,iw)':-2", '-q:v', '2', out]);
+        const dimensions = (await probe(tmp)).streams[0];
+        requireThat(
+          dimensions?.width * dimensions?.height <= 40000000,
+          'Görsel 40 megapikselden büyük.',
+          422,
+        );
+        await ff([...input, '-frames:v', '1', '-vf', "scale='min(1920,iw)':-2", '-q:v', '2', out]);
         const v = (await probe(out)).streams[0];
         requireThat(
           v.width >= 180 && v.height >= 180,
@@ -75,13 +93,19 @@ export class Production {
           422,
         );
         const m = (p.assets[s!.id] ??= {});
-        m.image = this.publish(p, out, 'images', 'jpg', imageKey(p, s!));
+        m.image = {
+          ...this.publish(p, out, 'images', 'jpg', imageKey(p, s!)),
+          source: model ? 'gemini' : 'import',
+          model,
+        };
+        const prev = p.scenes[p.scenes.findIndex((x) => x.id === s!.id) - 1];
+        if (prev && prev.transition !== 'cut' && p.assets[prev.id]) delete p.assets[prev.id].clip;
         delete m.clip;
         if (s!.id === p.scenes[0]?.id) p.cover = `/api/projects/${p.id}/media/${m.image.file}`;
       } else {
+        await audioDuration(tmp);
         await ff([
-          '-i',
-          tmp,
+          ...input,
           '-vn',
           '-t',
           '180',
@@ -102,6 +126,8 @@ export class Production {
           kind === 'voice' ? voiceKey(p, s!) : hash(data),
           d,
         );
+        a.source = model ? 'gemini' : 'import';
+        a.model = model;
         if (kind === 'music') p.music = a;
         else {
           const m = (p.assets[s!.id] ??= {});
@@ -159,7 +185,13 @@ export class Production {
         ref,
       );
     } else data = await this.g.voice(s.narration, p.voice, `${p.voiceStyle} Tempo: ${p.pace}.`);
-    await this.import(p, kind, data, s);
+    await this.import(
+      p,
+      kind,
+      data,
+      s,
+      this.g.raw().models[kind === 'voice' ? 'tts' : 'image'].model,
+    );
   }
   async align(p: Project, s: Scene, force = false) {
     approved(p);
@@ -397,7 +429,7 @@ export class Production {
         );
         frames += Math.round(duration * 30);
         list.push(
-          `file '${this.file(p, m.clip!.file).replaceAll('\\', '/').replaceAll("'", "'\\''")}'`,
+          `file '${path.relative(working, this.file(p, m.clip!.file)).replaceAll('\\', '/').replaceAll("'", "'\\''")}'`,
         );
         const foley = work(`bed-${i}.wav`);
         atomic(foley, soundBed(duration, s));

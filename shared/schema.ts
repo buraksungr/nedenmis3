@@ -37,7 +37,14 @@ export const wordSchema = z.object({
   start: z.number().nonnegative(),
   end: z.number().positive(),
 });
-export type Asset = { file: string; key: string; duration?: number };
+export type Asset = {
+  file: string;
+  key: string;
+  duration?: number;
+  source?: 'gemini' | 'import' | 'local';
+  model?: string;
+  created?: string;
+};
 export type Media = {
   image?: Asset;
   voice?: Asset;

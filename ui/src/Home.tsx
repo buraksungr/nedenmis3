@@ -66,7 +66,7 @@ export function ProjectCard({ item: p }: { item: ProjectSummary }) {
           {p.cover ? <img src={p.cover} alt="" /> : <Clapperboard size={42} strokeWidth={1} />}
           <span className="art-shade" />
           <span className="art-category">{p.category}</span>
-          <span className="timecode">
+          <span className="timecode" title={p.exported ? 'Doğrulanmış süre' : 'Hedef süre'}>
             <Clock3 size={11} />
             {fmt(p.duration)}
           </span>

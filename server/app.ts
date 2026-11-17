@@ -130,6 +130,7 @@ export function createStudio(
         intensity: z.enum(intensities).default('Orta'),
       })
       .parse(q.body);
+    if (!b.script) idle();
     const p = makeProject(b.topic, b.script, b.instructions);
     p.intensity = b.intensity;
     store.create(p);
@@ -387,7 +388,13 @@ export function createStudio(
     const t = b.text.toLocaleLowerCase('tr');
     const num = t.match(/(?:sahne\s*#?\s*(\d+)|(\d+)\s*[.']?\s*(?:inci\s+)?sahne)/);
     const ord = ['ilk', 'ikinci', 'üçüncü', 'dördüncü', 'beşinci', 'altıncı', 'yedinci'];
-    let ix = num ? Number(num[1] ?? num[2]) - 1 : ord.findIndex((x) => t.includes(x));
+    if (num)
+      requireThat(
+        Number(num[1] ?? num[2]) >= 1 && Number(num[1] ?? num[2]) <= p.scenes.length,
+        'Hedef sahne numarası proje dışında.',
+        422,
+      );
+    const ix = num ? Number(num[1] ?? num[2]) - 1 : ord.findIndex((x) => t.includes(x));
     const scene = ix >= 0 ? p.scenes[ix] : b.scene ? find(p, b.scene) : undefined;
     if (/altyazı|alt yazı/.test(t) && /küçül|büyü/.test(t)) {
       store.checkpoint(p);

@@ -11,7 +11,9 @@ import {
   type Scene,
 } from '../shared/schema';
 export const hash = (...v: unknown[]) =>
-  createHash('sha256').update(JSON.stringify(v)).digest('hex');
+  createHash('sha256')
+    .update(v.length === 1 && Buffer.isBuffer(v[0]) ? v[0] : JSON.stringify(v))
+    .digest('hex');
 export const now = () => new Date().toISOString();
 export class Issue extends Error {
   constructor(

@@ -10,6 +10,7 @@ import type { Store } from './store';
 import { Issue, now, requireThat } from './store';
 export interface Vault {
   mode: 'session' | 'encrypted';
+  has?(): boolean;
   get(): string | undefined;
   set(v: string): void;
   clear(): void;
@@ -18,6 +19,7 @@ export function memoryVault(): Vault {
   let secret: string | undefined;
   return {
     mode: 'session',
+    has: () => !!secret,
     get: () => secret,
     set: (v) => {
       secret = v;
@@ -83,10 +85,11 @@ export class Gemini {
   }
   settings(): Settings {
     const s = this.raw();
+    const hasKey = this.vault.has ? this.vault.has() : !!this.vault.get();
     return {
       ...s,
-      status: this.vault.get() ? s.status : 'not-configured',
-      hasKey: !!this.vault.get(),
+      status: hasKey ? s.status : 'not-configured',
+      hasKey,
       storage: this.vault.mode,
       folder: this.store.projects,
       desktop: this.vault.mode === 'encrypted',
@@ -117,7 +120,17 @@ export class Gemini {
     this.store.set('gemini', s);
   }
   async request(route: string, body?: object, kind?: Kind) {
-    const key = this.vault.get();
+    let key: string | undefined;
+    try {
+      key = this.vault.get();
+    } catch {
+      this.record(
+        'invalid',
+        'Anahtar bu Windows hesabında çözülemedi. Güncelleyin veya silin.',
+        kind,
+      );
+      throw new Issue(412, 'Kayıtlı anahtar çözülemedi. Ayarlar’dan değiştirin.', 'config');
+    }
     if (!key)
       throw new Issue(
         412,
@@ -155,7 +168,12 @@ export class Gemini {
       this.record(st, msg, kind);
       throw new Issue(r.status, msg, st === 'invalid' ? 'config' : 'failed');
     }
-    return r.json();
+    try {
+      return await r.json();
+    } catch {
+      this.record('unavailable', 'Google geçerli JSON döndürmedi.', kind);
+      throw new Issue(502, 'Google yanıtı doğrulanamadı.');
+    }
   }
   private record(status: Connection, message: string, kind?: Kind) {
     const s = this.raw();
@@ -175,6 +193,8 @@ export class Gemini {
       const data = await this.request(
         '/models?pageSize=1000' + (token ? '&pageToken=' + encodeURIComponent(token) : ''),
       );
+      if (!Array.isArray(data.models))
+        this.record('unavailable', 'Google geçerli bir model listesi döndürmedi.');
       requireThat(Array.isArray(data.models), 'Google geçerli bir model listesi döndürmedi.', 502);
       for (const m of data.models) {
         const id = String(m.name).replace(/^models\//, '');

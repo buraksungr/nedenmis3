@@ -37,7 +37,9 @@ export async function storyboard(g: Gemini, p: Project, target?: Scene) {
   requireThat(p.scriptApproval === scriptSig(p), 'Storyboard için senaryo onayı gerekiyor.');
   const prompt = `Türkçe sinematik 2D belgesel yönetmenisin. ${target ? 'Sadece belirtilen sahneyi yeniden tasarla; anlatımını aynen koru.' : 'Onaylı metni cümle bütünlüğüyle 5–7 sahneye böl. narration alanlarını tek boşlukla birleştirince onaylı metnin TAMAMI aynen çıkmalı. Kelime veya noktalama değiştirme.'} Somut, sahneye özel, açıklayıcı görseller, derinlik, kamera, ışık, az ama anlamlı hareket tasarla. Tek tip zoom kullanma. object=trail sadece yürüyen karıncalar için, orbit=yörünge, current=akıntı. Tahmini sürelerin toplamı yaklaşık 30 saniye. Sessiz bilim sahnelerinde effect ve object none olabilir. Üslup ve özne tüm sahnelerde tutarlı. ${JSON.stringify({ topic: p.topic, approved: p.script, style: p.styleGuide, target, instructions: p.instructions })}`;
   const shape = target ? concept : board;
-  const raw = JSON.parse(await g.text(prompt, z.toJSONSchema(shape, { target: 'draft-7' })));
+  const schema = z.toJSONSchema(shape, { target: 'draft-7' });
+  delete schema.$schema;
+  const raw = JSON.parse(await g.text(prompt, schema));
   if (target) {
     const s = concept.parse(raw);
     return {

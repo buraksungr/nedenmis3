@@ -25,6 +25,7 @@ if (!app.requestSingleInstanceLock()) {
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
       const vault = {
         mode: 'encrypted',
+        has: () => fs.existsSync(secret),
         get: () =>
           fs.existsSync(secret) ? safeStorage.decryptString(fs.readFileSync(secret)) : undefined,
         set: (key) => {
@@ -63,8 +64,8 @@ if (!app.requestSingleInstanceLock()) {
         const s = studio.app.listen(0, '127.0.0.1', () => resolve(s));
       });
       const origin = `http://127.0.0.1:${server.address().port}`;
-      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [origin + '/*'] }, (d, cb) => {
-        d.requestHeaders['x-studio-session'] = token;
+      session.defaultSession.webRequest.onBeforeSendHeaders((d, cb) => {
+        if (new URL(d.url).origin === origin) d.requestHeaders['x-studio-session'] = token;
         cb({ requestHeaders: d.requestHeaders });
       });
       session.defaultSession.setPermissionRequestHandler((_w, _p, cb) => cb(false));

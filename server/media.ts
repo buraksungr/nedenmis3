@@ -58,14 +58,24 @@ export function exec(bin: string, args: string[], ms = 180000, onLine?: (line: s
 export const ff = (args: string[], ms?: number) =>
   exec(
     ffmpeg,
-    ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-threads', '2', ...args],
+    ['-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-y', '-threads', '2', ...args],
     ms,
   );
 export async function probe(file: string) {
   return JSON.parse(
     await exec(
       ffprobe,
-      ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file],
+      [
+        '-v',
+        'error',
+        '-protocol_whitelist',
+        'file,pipe',
+        '-show_streams',
+        '-show_format',
+        '-of',
+        'json',
+        file,
+      ],
       20000,
     ),
   );
