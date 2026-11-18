@@ -4,14 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { validWords } from '../shared/captions';
-import {
-  intensities,
-  kinds,
-  sceneSchema,
-  wordSchema,
-  type Task,
-  type Project,
-} from '../shared/schema';
+import { kinds, sceneSchema, wordSchema, type Task, type Project } from '../shared/schema';
 import { speakers } from '../shared/speakers';
 import { Gemini, memoryVault, type Vault } from './gemini';
 import { invalidate } from './invalidate';
@@ -46,7 +39,6 @@ const pref = z
     voice: z.enum(speakers),
     voiceStyle: z.string().trim().min(1).max(450),
     pace: z.enum(['Doğal', 'Yavaş', 'Hızlı']),
-    intensity: z.enum(intensities),
     subtitleSize: z.number().int().min(32).max(88),
     highlight: z.boolean(),
     musicVolume: z.number().min(0).max(0.5),
@@ -144,6 +136,12 @@ export function createStudio(
     });
     return p;
   }
+  async function generateScript(p: Project, action: string, index?: number) {
+    const text = await script(g, p, action, index, (label) =>
+      prod.tick(p, label, p.job.kind ?? 'script'),
+    );
+    changeScript(p, text); // Only after a complete, validated response.
+  }
   app.get('/api/projects', (_q, r) => r.json(store.list()));
   app.post('/api/projects', (q, r) => {
     const b = z
@@ -151,17 +149,13 @@ export function createStudio(
         topic: short,
         instructions: txt.default(''),
         script: txt.default(''),
-        intensity: z.enum(intensities).default('Orta'),
       })
       .parse(q.body);
     if (!b.script) idle();
     const p = makeProject(b.topic, b.script, b.instructions);
-    p.intensity = b.intensity;
     store.create(p);
     if (!b.script && !busy && !setup.working) {
-      run(p, 'script', async () => {
-        changeScript(p, await script(g, p, 'generate'));
-      });
+      run(p, 'script', () => generateScript(p, 'generate'));
     }
     r.status(201).json(p);
   });
@@ -248,8 +242,7 @@ export function createStudio(
     r.status(202).json(
       run(p, b.kind, async () => {
         if (['script', 'shorten', 'lengthen', 'paragraph'].includes(b.kind)) {
-          changeScript(p, await script(g, p, b.kind, b.paragraph));
-          return;
+          return generateScript(p, b.kind, b.paragraph);
         }
         if (b.kind === 'board' || b.kind === 'concept') {
           const result = await storyboard(g, p, s);
@@ -446,10 +439,6 @@ export function createStudio(
         0,
         Math.min(0.5, p.musicVolume + (/azalt|kıs/.test(t) ? -0.04 : 0.04)),
       );
-    } else if (scene && /kamera/.test(t) && /yavaş|hızlı|hızlan/.test(t)) {
-      store.checkpoint(p);
-      scene.motion = Math.max(0.2, Math.min(2, scene.motion * (/yavaş/.test(t) ? 0.7 : 1.3)));
-      p.boardApproval = null;
     } else if (scene && /görsel|çiz|resim/.test(t)) {
       store.checkpoint(p);
       scene.prompt += '\nRevizyon: ' + b.text;
@@ -457,7 +446,7 @@ export function createStudio(
     } else
       throw new Issue(
         422,
-        'Hedefi belirtin: örneğin “İkinci sahnedeki kamerayı yavaşlat”, “Altyazı boyutunu küçült” veya “Müziği azalt”.',
+        'Hedefi belirtin: örneğin “Altyazı boyutunu küçült” veya “Müziği azalt”.',
       );
     invalidate(p, old);
     clearFinal(p);

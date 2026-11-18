@@ -131,6 +131,12 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
               ? 'API üzerinden ücretsiz görsel üretimi varsayılmaz. Alternatif: kendi görselini içe aktar.'
               : 'Üretim yalnızca seçilen modelde yapılır. Otomatik ücretli geçiş yoktur.')}
       </p>
+      {kind === 'text' && (
+        <p className="help">
+          Senaryo isteği HTTP 503 alırsa aynı modelde en fazla üç kez yeniden denenir. Her deneme
+          istek sayacına dahildir.
+        </p>
+      )}
       {kind === 'tts' && (
         <>
           <SpeakerSelect
@@ -159,6 +165,9 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
               ? `Bu anahtar ile ${model} modeline gönderilen ${labels[kind].toLocaleLowerCase('tr')} istekleri Google hesabına ücret yansıtabilir. Bu izin, iptal edene veya anahtarı değiştirene kadar geçerlidir.`
               : `Model listesi faturalandırma katmanını göstermez. ${model} için AI Studio’da ücretsiz kota olduğunu ve bu anahtarın projesinde faturalandırmanın kapalı olduğunu doğruladın mı?`}
           </p>
+          {kind === 'text' && consent === 'paid' && (
+            <p>HTTP 503 sonrası en fazla üç senaryo tekrarı da bu izne dahildir.</p>
+          )}
           <a
             className="text-link"
             href="https://ai.google.dev/gemini-api/docs/pricing"

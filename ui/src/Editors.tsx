@@ -30,13 +30,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   blankScene,
-  cameraNames,
-  cameras,
-  environments,
   manualImages,
   normalize,
-  objects,
-  transitions,
   type Project,
   type Scene,
   type Word,
@@ -57,7 +52,6 @@ import {
   useRun,
   useStudio,
 } from './lib';
-import { motionNames, motionForScene } from '../../shared/shot';
 import { captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
 // Persist unsent text immediately; serialize database writes and use optimistic revisions.
@@ -337,7 +331,7 @@ export function BoardEditor({ p }: { p: Project }) {
       <Head
         over="ÜRETİM / ADIM 02"
         title="Storyboard"
-        sub="Her sahnenin kadrajını, hareketini ve anlatımını planla."
+        sub="Her sahnenin kadrajını ve anlatımını planla."
       />
       <WorkspaceBar />
       <JobNote />
@@ -441,13 +435,8 @@ export function BoardEditor({ p }: { p: Project }) {
                 </button>
               </div>
               <p className="scene-description">{s.description || 'Betimleme ekle.'}</p>
-              <div className="scene-motion">
-                <Image size={13} />
-                <span>
-                  {motionNames[motionForScene(i)]} · {cameraNames[s.camera]}
-                </span>
-                <b>·</b>
-                {s.animation || 'Hareket planı bekleniyor'}
+              <div className="scene-format">
+                <Image size={13} /> Sabit kadraj · Yumuşak geçiş
               </div>
               {manual && (
                 <div className="manual-image-slot">
@@ -479,7 +468,6 @@ export function BoardEditor({ p }: { p: Project }) {
                         ['narration', 'Anlatım'],
                         ['description', 'Görsel betimleme'],
                         ['prompt', manual ? 'Görsel istemi (isteğe bağlı)' : 'Görsel istemi'],
-                        ['animation', 'Animasyon talimatı'],
                         ['environment', 'Çevre ayrıntıları'],
                         ['sound', 'Ses tasarımı'],
                       ] as const
@@ -511,25 +499,6 @@ export function BoardEditor({ p }: { p: Project }) {
                         onChange={(e) => edit(s.id, { seconds: Math.max(0.2, +e.target.value) })}
                       />
                     </label>
-                    {(
-                      [
-                        ['camera', 'Kamera hareketi', cameras],
-                        ['effect', 'Çevre efekti', environments],
-                        ['object', 'Nesne animasyonu', objects],
-                        ['transition', 'Geçiş', transitions],
-                      ] as const
-                    ).map(([k, l, opts]) => (
-                      <label key={k}>
-                        {l}
-                        <select value={s[k]} onChange={(e) => edit(s.id, { [k]: e.target.value })}>
-                          {opts.map((v) => (
-                            <option key={v} value={v}>
-                              {cameraNames[v]}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ))}
                   </div>
                   <div className="actions">
                     <Button onClick={() => void run(() => gen('concept', s.id))}>
@@ -763,7 +732,7 @@ export function ProductionView({ p }: { p: Project }) {
       <Head
         over="ÜRETİM / ADIM 03"
         title="Üretim Merkezi"
-        sub="Onaylı planı görsele, sese ve hareketli sahnelere dönüştür."
+        sub="Onaylı planı sabit görseller, anlatım ve yumuşak geçişlerle videoya dönüştür."
       />
       <WorkspaceBar />
       <JobNote />
@@ -847,7 +816,7 @@ export function ProductionView({ p }: { p: Project }) {
                           captionEntries(m).length,
                           m.align?.method === 'estimated' ? 'Tahmini altyazı' : 'Altyazı',
                         ],
-                        [m.clip, 'Animasyon'],
+                        [m.clip, 'Sahne klibi'],
                       ].map(([a, n]) => (
                         <span key={String(n)} className={a ? 'ready' : ''}>
                           {a ? <Check size={11} /> : <Clock3 size={10} />} {String(n)}
@@ -962,7 +931,6 @@ function Preferences({ p, close }: { p: Project; close: () => void }) {
     voice: p.voice,
     voiceStyle: p.voiceStyle,
     pace: p.pace,
-    intensity: p.intensity,
     subtitleSize: p.subtitleSize,
     highlight: p.highlight,
     musicVolume: p.musicVolume,
@@ -971,21 +939,14 @@ function Preferences({ p, close }: { p: Project; close: () => void }) {
     <Modal title="Prodüksiyon ayarları" close={close}>
       <div className="form-stack">
         <SpeakerSelect voice={v.voice} onChange={(voice) => set({ ...v, voice })} disabled={busy} />
-        {(
-          [
-            ['pace', 'Anlatım temposu', ['Doğal', 'Yavaş', 'Hızlı']],
-            ['intensity', 'Animasyon yoğunluğu', ['Düşük', 'Orta', 'Yüksek']],
-          ] as const
-        ).map(([k, l, opts]) => (
-          <label key={k}>
-            {l}
-            <select value={v[k]} onChange={(e) => set({ ...v, [k]: e.target.value })}>
-              {opts.map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </label>
-        ))}
+        <label>
+          Anlatım temposu
+          <select value={v.pace} onChange={(e) => set({ ...v, pace: e.target.value })}>
+            {['Doğal', 'Yavaş', 'Hızlı'].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+        </label>
         <label>
           Seslendirme yönergesi
           <textarea
@@ -1170,7 +1131,7 @@ export function Preview({ p }: { p: Project }) {
             </label>
             <textarea
               aria-label="Revizyon isteği"
-              placeholder="Örn. İkinci sahnedeki kamerayı yavaşlat veya altyazı boyutunu küçült."
+              placeholder="Örn. Altyazı boyutunu küçült veya müziği azalt."
               value={revision}
               onChange={(e) => setRevision(e.target.value)}
               rows={2}

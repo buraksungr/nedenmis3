@@ -8,4 +8,4 @@ Electron includes Chromium and Node.js; see LICENSE.electron.txt and LICENSES.ch
 
 Illustrated covers and the studio banner are AI-generated artwork for the application library. Seed projects are editable editorial examples, not Google-generated videos. The procedural score and ambient/Foley signals are synthesized locally; no third-party recordings or music are downloaded. Imported media must be owned or appropriately licensed by its user.
 
-Whisper, stable-ts and CPU PyTorch are optionally installed into a separate local Python environment. Model weights are not in this installer. Google Gemini is a separate online service subject to Google's terms and pricing.
+Whisper, stable-ts and CPU PyTorch are optionally installed into a separate local Python environment. Model weights are not in this installer. Text generation uses the server-side Google Gen AI JavaScript SDK (@google/genai, Apache-2.0; https://github.com/googleapis/js-genai). Google Gemini is a separate online service subject to Google's terms and pricing.

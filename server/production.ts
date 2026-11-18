@@ -4,7 +4,6 @@ import path from 'node:path';
 import type { FilmProps } from '../composition/Film';
 import { captionEntries, cue, groups, srtFromCues, validWords } from '../shared/captions';
 import type { Asset, Project, Scene, Task, TimedText, Word } from '../shared/schema';
-import { visualOf } from '../shared/shot';
 import { readWhisper, sentenceEstimates, verifiedAlignment } from './alignment';
 import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
@@ -105,7 +104,7 @@ export class Production {
           model,
         };
         const prev = p.scenes[p.scenes.findIndex((x) => x.id === s!.id) - 1];
-        if (prev && prev.transition !== 'cut' && p.assets[prev.id]) delete p.assets[prev.id].clip;
+        if (prev && p.assets[prev.id]) delete p.assets[prev.id].clip;
         delete m.clip;
         if (s!.id === p.scenes[0]?.id) p.cover = `/api/projects/${p.id}/media/${m.image.file}`;
       } else {
@@ -316,22 +315,14 @@ export class Production {
     }
     const words = captionEntries(m),
       sentenceCaptions = m.align?.method === 'estimated';
-    const adjacent = s.transition !== 'cut' && next ? p.assets[next.id]?.image : undefined;
-    const sceneIndex = p.scenes.findIndex((x) => x.id === s.id);
-    requireThat(sceneIndex >= 0, 'Sahne onaylı zaman çizelgesinde bulunamadı.');
-    const nextShot = adjacent && next ? visualOf(next) : undefined;
+    // Legacy cut/iris/drift and camera fields are deliberately not render inputs.
+    const adjacent = next ? p.assets[next.id]?.image : undefined;
     const key = hash(
-      'film-4-motion-dissolve',
-      sceneIndex,
+      'film-5-static-crossfade',
       m.image!.file,
-      visualOf(s),
-      s.transition,
-      s.animation,
-      p.intensity,
       words,
       frames,
       adjacent?.file,
-      nextShot,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : []),
@@ -345,12 +336,9 @@ export class Production {
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
       image: url(m.image!),
-      next: adjacent && nextShot ? { image: url(adjacent), shot: nextShot } : null,
-      sceneIndex,
-      scene: s,
+      next: adjacent ? url(adjacent) : null,
       words,
       frames,
-      intensity: p.intensity,
       subtitleSize: p.subtitleSize,
       highlight: p.highlight && !sentenceCaptions,
       sentenceCaptions,

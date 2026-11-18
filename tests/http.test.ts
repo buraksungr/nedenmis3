@@ -66,7 +66,6 @@ test('HTTP workflow: stale writes rejected; both reviews required, then missing 
     narration: p.script,
     prompt: 'Karınca yuvası',
     description: 'Yerin altındaki yuva',
-    animation: 'Kamera yuvaya yaklaşır.',
   };
   p = await (
     await req(route + '/board', { styleGuide: p.styleGuide, scenes: [s], approve: true }, p.rev)
@@ -162,11 +161,15 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
   const text = lines.join(' '),
     wav = fs.readFileSync('tests/fixtures/forest.wav').toString('base64');
   const calls: { model: string; voice?: string; line?: string }[] = [];
-  const api = 'https://generativelanguage.googleapis.com/v1beta';
+  const host = 'https://generativelanguage.googleapis.com';
+  const api = `${host}/v1beta`;
   const textModel = 'gemini-2.5-flash';
   const { req, settle, g, base } = await app(t, undefined, async (url, opts) => {
     assert.equal(new Headers(opts?.headers).get('x-goog-api-key'), 'offline-test-credential');
-    if (opts?.method === 'GET' && url === `${api}/models?pageSize=1000`)
+    if (
+      opts?.method === 'GET' &&
+      [`${api}/models?pageSize=1000`, `${host}/v1/models?pageSize=1000`].includes(String(url))
+    )
       return Response.json({
         models: [textModel, 'gemini-test-tts'].map((id) => ({
           name: `models/${id}`,
@@ -174,7 +177,10 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
         })),
       });
     const b = JSON.parse(String(opts?.body));
-    if (opts?.method === 'POST' && url === `${api}/models/${textModel}:generateContent`) {
+    if (
+      opts?.method === 'POST' &&
+      url === `${b.generationConfig ? api : host + '/v1'}/models/${textModel}:generateContent`
+    ) {
       const prompt = b.contents[0].parts[0].text;
       assert.match(prompt, /Karıncalar kışın nerede\?/);
       const config = b.generationConfig;
@@ -184,6 +190,8 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
         assert.deepEqual(schema.required, ['styleGuide', 'scenes']);
         assert.equal(schema.properties.scenes.minItems, 5);
         assert.equal(schema.properties.scenes.items.properties.narration.type, 'string');
+        assert.equal(schema.properties.scenes.items.properties.animation, undefined);
+        assert.equal(schema.properties.scenes.items.properties.camera, undefined);
         assert.doesNotMatch(JSON.stringify(schema), /"(?:minLength|maxLength)"/);
       }
       assert.deepEqual(b, {
@@ -333,7 +341,7 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
 test('a listed text model can still return 404: preserve the draft, show the actual model, never retry or switch automatically', async (t) => {
   const key = 'offline-test-credential';
   const model = 'gemini-test-alternate'; // select a catalog model other than 2.5 Flash
-  const path = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const path = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent`;
   const posts: string[] = [];
   let available = false;
   const { req, settle, g, store } = await app(t, undefined, async (url, opts) => {
@@ -391,7 +399,7 @@ test('a listed text model can still return 404: preserve the draft, show the act
   };
   p = await generate();
   assert.equal(p.job.state, 'config');
-  assert.ok(p.job.label.includes(`/v1beta/models/${model}:generateContent`));
+  assert.ok(p.job.label.includes(`/v1/models/${model}:generateContent`));
   assert.match(p.job.label, /HTTP 404/);
   assert.ok(!p.job.label.includes(key));
   assert.equal(p.script, 'Önceki senaryo.');
@@ -408,4 +416,42 @@ test('a listed text model can still return 404: preserve the draft, show the act
     Object.values(g.raw().requests).reduce((a, b) => a + b, 0),
     2,
   );
+});
+
+test('persistent script HTTP 503 stops the background job after four real SDK requests, preserves the draft and logs safe progress', async (t) => {
+  const model = 'gemini-test-script',
+    secret = 'private-test-credential';
+  let posts = 0;
+  const { req, g, settle, store } = await app(t, undefined, async (url, init) => {
+    if (init?.method === 'GET')
+      return Response.json({
+        models: [{ name: `models/${model}`, supportedGenerationMethods: ['generateContent'] }],
+      });
+    assert.equal(
+      String(url),
+      `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent`,
+    );
+    posts++;
+    return Response.json({ error: { message: secret, status: 'UNAVAILABLE' } }, { status: 503 });
+  });
+  g.key(secret);
+  await g.test();
+  g.configure('text', { model, consent: 'free' });
+  const draft = 'Onaylı taslak değişmemeli.';
+  let p: Project = await (await req('/projects', { topic: 'Doğa', script: draft })).json();
+  const route = `/projects/${p.id}`;
+  p = await (await req(route + '/script', { text: draft, approve: true }, p.rev)).json();
+  const approval = p.scriptApproval;
+  assert.equal((await req(route + '/generate', { kind: 'script' }, p.rev)).status, 202);
+  p = await settle(route);
+  assert.equal(posts, 4);
+  assert.equal(p.job.state, 'failed');
+  assert.match(p.job.label, /4 isteğe.*HTTP 503/);
+  assert.equal(p.script, draft);
+  assert.equal(p.scriptApproval, approval);
+  assert.equal(g.settings().status, 'connected');
+  assert.equal(g.settings().services.text?.status, 'unavailable');
+  const log = fs.readFileSync(path.join(store.dir(p.id), 'production.ndjson'), 'utf8');
+  assert.ok(!log.includes(secret));
+  for (const label of ['(1/3)', '(2/3)', '(3/3)']) assert.ok(log.includes(label));
 });

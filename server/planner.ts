@@ -1,14 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { normalize, sceneSchema, type Project, type Scene } from '../shared/schema';
-import type { Gemini } from './gemini';
+import type { Gemini, RetryNotice } from './gemini';
 import { requireThat, scriptSig } from './store';
-const concept = sceneSchema.omit({ id: true, motion: true });
+const concept = sceneSchema.pick({
+  narration: true,
+  description: true,
+  prompt: true,
+  angle: true,
+  environment: true,
+  sound: true,
+  seconds: true,
+});
 const board = z.object({
   styleGuide: z.string().min(5).max(3000),
   scenes: z.array(concept).min(5).max(7),
 });
-export async function script(g: Gemini, p: Project, action: string, index?: number) {
+export async function script(
+  g: Gemini,
+  p: Project,
+  action: string,
+  index?: number,
+  onRetry?: RetryNotice,
+) {
   const paragraphs = p.script.split(/\n\s*\n/);
   const paragraph = action === 'paragraph';
   if (paragraph)
@@ -25,6 +39,8 @@ export async function script(g: Gemini, p: Project, action: string, index?: numb
         : 'Yaklaşık 30 saniye, 65–75 Türkçe sözcük.';
   const t = await g.text(
     `Profesyonel bir Türkçe belgesel yazarı olarak doğal seslendirme metni yaz. Merak uyandıran soruyla aç, bilimsel doğruluğu koru, sade ifadeler ve tatmin edici son kullan. Uydurma bilgi, klişe, tanıtım, başlık, Markdown veya sahne numarası kullanma. Paragrafları boş satırla ayır. ${rule}\nProje verisi: ${JSON.stringify({ konu: p.topic, talimat: p.instructions, metin: p.script, paragraf: paragraph ? paragraphs[index!] : undefined })}`,
+    undefined,
+    onRetry,
   );
   requireThat(t.length > 5 && t.length < 10000, 'Metin yanıtı boş veya çok uzun.', 502);
   if (paragraph) {
@@ -35,7 +51,7 @@ export async function script(g: Gemini, p: Project, action: string, index?: numb
 }
 export async function storyboard(g: Gemini, p: Project, target?: Scene) {
   requireThat(p.scriptApproval === scriptSig(p), 'Storyboard için senaryo onayı gerekiyor.');
-  const prompt = `Türkçe sinematik 2D belgesel yönetmenisin. ${target ? 'Sadece belirtilen sahneyi yeniden tasarla; anlatımını aynen koru.' : 'Onaylı metni cümle bütünlüğüyle 5–7 sahneye böl. narration alanlarını tek boşlukla birleştirince onaylı metnin TAMAMI aynen çıkmalı. Kelime veya noktalama değiştirme.'} Somut, sahneye özel, açıklayıcı görseller, derinlik, kamera, ışık, az ama anlamlı hareket tasarla. Tek tip zoom kullanma. object=trail sadece yürüyen karıncalar için, orbit=yörünge, current=akıntı. Tahmini sürelerin toplamı yaklaşık 30 saniye. Sessiz bilim sahnelerinde effect ve object none olabilir. Üslup ve özne tüm sahnelerde tutarlı. ${JSON.stringify({ topic: p.topic, approved: p.script, style: p.styleGuide, target, instructions: p.instructions })}`;
+  const prompt = `Türkçe sinematik 2D belgesel yönetmenisin. ${target ? 'Sadece belirtilen sahneyi yeniden tasarla; anlatımını aynen koru.' : 'Onaylı metni cümle bütünlüğüyle 5–7 sahneye böl. narration alanlarını tek boşlukla birleştirince onaylı metnin TAMAMI aynen çıkmalı. Kelime veya noktalama değiştirme.'} Her sahne için anlatımı açıklayan tek sabit illüstrasyon tasarla; kadrajı, ışığı, çevreyi ve ses tasarımını betimle. Kamera veya nesne animasyonu planlama. Sahneler yalnız yumuşak geçişle birleşir. Tahmini sürelerin toplamı yaklaşık 30 saniye. Üslup ve özne tüm sahnelerde tutarlı. ${JSON.stringify({ topic: p.topic, approved: p.script, style: p.styleGuide, target, instructions: p.instructions })}`;
   const shape = target ? concept : board;
   const schema = z.toJSONSchema(shape, {
     target: 'draft-7',
@@ -52,7 +68,7 @@ export async function storyboard(g: Gemini, p: Project, target?: Scene) {
     return {
       styleGuide: p.styleGuide,
       scenes: p.scenes.map((x) =>
-        x.id === target.id ? { ...s, narration: x.narration, id: x.id, motion: x.motion } : x,
+        x.id === target.id ? { ...x, ...s, narration: x.narration } : x,
       ),
     };
   }
@@ -62,5 +78,5 @@ export async function storyboard(g: Gemini, p: Project, target?: Scene) {
     'Gemini onaylı anlatımı değiştirdi. Storyboard kaydedilmedi; tekrar deneyin.',
     422,
   );
-  return { ...result, scenes: result.scenes.map((s) => ({ ...s, id: randomUUID(), motion: 1 })) };
+  return { ...result, scenes: result.scenes.map((s) => ({ ...s, id: randomUUID() })) };
 }

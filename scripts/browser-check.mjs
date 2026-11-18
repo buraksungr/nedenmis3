@@ -11,13 +11,19 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // Only this in-memory transport is enabled during the script contract check; no traffic to Google.
 const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
-let enableTextFixture = false;
+let enableTextFixture = false,
+  scriptAttempts = 0;
 const ctx = studio.createStudio(
   { root: home, pythonDir: path.resolve('python'), composition: path.resolve('build/composition') },
   {
     transport: async (url, opts) => {
       if (!enableTextFixture) throw new Error('Network deliberately disabled in UI control');
-      const base = 'https://generativelanguage.googleapis.com/v1beta/models';
+      const base = 'https://generativelanguage.googleapis.com/v1/models';
+      if (
+        opts.method === 'GET' &&
+        url === 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000'
+      )
+        return Response.json({ models: [] });
       if (opts.method === 'GET' && url === `${base}?pageSize=1000`)
         return Response.json({
           models: [
@@ -28,12 +34,14 @@ const ctx = studio.createStudio(
         opts.method === 'POST' &&
         url === `${base}/${textModel}:generateContent` &&
         JSON.parse(opts.body).contents?.[0]?.parts?.[0]?.text
-      )
+      ) {
+        if (++scriptAttempts === 1) return new Response(null, { status: 503 });
         return Response.json({
           candidates: [
             { finishReason: 'STOP', content: { role: 'model', parts: [{ text: fixtureScript }] } },
           ],
         });
+      }
       return Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 });
     },
   },
@@ -97,16 +105,13 @@ try {
     speaker.selectOption('Puck'),
   ]);
   await page.getByRole('button', { name: 'Sahne ekle' }).click();
-  await page.locator('.scene-motion').getByText('Sağa kayma · Takip', { exact: true }).waitFor();
+  await page.getByText('Sabit kadraj · Yumuşak geçiş', { exact: true }).waitFor();
   await page.getByLabel('Anlatım', { exact: true }).fill('Karıncalar kışın toprak altına çekilir.');
   await page
     .getByLabel('Görsel betimleme', { exact: true })
     .fill('Kışın toprağın altında korunaklı bir karınca yuvası.');
   assert.equal(await page.getByLabel('Görsel istemi (isteğe bağlı)').inputValue(), '');
   await page.getByText('Görsel bekleniyor', { exact: true }).waitFor();
-  await page
-    .getByLabel('Animasyon talimatı', { exact: true })
-    .fill('Kamera sıcak odacığa yaklaşır.');
   await page.getByRole('button', { name: 'Onayla ve üret' }).click();
   await page.getByRole('heading', { name: 'Sahne istasyonları' }).waitFor();
   await page.locator('.job-note.config').waitFor();
@@ -177,6 +182,7 @@ try {
       document.querySelector('textarea[aria-label="Senaryo metni"]')?.value === expected,
     fixtureScript,
   );
+  assert.equal(scriptAttempts, 2);
   assert.ok(await editor.isEditable());
   assert.equal(ctx.store.get(page.url().split('/').at(-1)).script, fixtureScript);
   await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();

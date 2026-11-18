@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Gemini, memoryVault } from '../server/gemini';
-import { motionControl } from './motion-control';
+import { staticFadeControl } from './static-fade-control';
 import { fallbackControl } from './fallback-control';
 import { acousticControl } from './acoustic-control';
 import { probe, verifyVideo } from '../server/media';
@@ -34,6 +34,7 @@ async function main() {
     animation: i ? 'Sualtı akıntısı' : 'Karınca izini takip et',
     effect: i ? 'bubbles' : 'dust',
     camera: i ? 'pull' : 'track',
+    transition: 'cut', // Legacy settings must not disable the new dissolve.
     object: i ? 'current' : 'trail',
   }));
   store.create(p);
@@ -94,7 +95,7 @@ async function main() {
   console.log('Rendered control:', final);
   store.db.close();
   await fallbackControl(root);
-  await motionControl(root);
+  await staticFadeControl(root, framesForVoice(p.assets[p.scenes[0].id].voice!.duration!));
 }
 main().catch((e) => {
   console.error(e);

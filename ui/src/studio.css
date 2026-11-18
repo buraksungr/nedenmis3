@@ -1631,20 +1631,17 @@ kbd {
   margin-left: auto;
 }
 .scene-description,
-.scene-motion {
+.scene-format {
   margin-top: 10px;
   color: #b1baad;
   font-size: 12px;
 }
-.scene-motion {
+.scene-format {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 11px;
   color: #889784;
-}
-.scene-motion b {
-  font-weight: 400;
 }
 .scene-fields {
   border-top: 1px solid var(--line);

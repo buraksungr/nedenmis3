@@ -44,7 +44,7 @@ function draft() {
 test('fixed production defaults and content-bound approval gates', () => {
   const p = draft();
   assert.equal(p.voice, 'Charon');
-  assert.equal(p.intensity, 'Orta');
+  assert.equal(p.intensity, undefined);
   assert.throws(() => approved(p), /senaryoyu/);
   assert.throws(() => approveBoard(p), /onayı/);
   p.scriptApproval = scriptSig(p);
@@ -169,7 +169,7 @@ test('one key; discovery is read-only, paginated, and does not authorize generat
   const s = await g.test();
   assert.equal(s.status, 'connected');
   assert.equal(s.catalog.length, 3);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4); // two pages each on stable text and beta media catalogs
   assert.ok(calls.every((u) => !u.includes(secret)));
   assert.equal(s.services.text, undefined);
   assert.throws(() => g.allowed('text'));
@@ -188,7 +188,7 @@ test('one key; discovery is read-only, paginated, and does not authorize generat
   assert.ok(!JSON.stringify(g.settings()).includes(secret));
   g.key();
   assert.equal(g.settings().hasKey, false);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4); // two pages each on stable text and beta media catalogs
 });
 test('invalid keys, quota and outages stay distinguishable; no automatic paid retries', async (t) => {
   const store = temp(t);

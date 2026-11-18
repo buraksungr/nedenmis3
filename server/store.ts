@@ -48,12 +48,10 @@ export function approveBoard(p: Project, requireImagePrompt = true) {
   requireThat(p.scriptApproval === scriptSig(p), 'Senaryo onayı gerekiyor.');
   requireThat(
     p.scenes.length > 0 &&
-      p.scenes.every(
-        (s) => s.description && s.narration && s.animation && (!requireImagePrompt || s.prompt),
-      ),
+      p.scenes.every((s) => s.description && s.narration && (!requireImagePrompt || s.prompt)),
     requireImagePrompt
-      ? 'Her sahnenin anlatım, betimleme, görsel istemi ve hareket alanlarını doldurun.'
-      : 'Her sahnenin anlatım, betimleme ve hareket alanlarını doldurun.',
+      ? 'Her sahnenin anlatım, betimleme ve görsel istemi alanlarını doldurun.'
+      : 'Her sahnenin anlatım ve betimleme alanlarını doldurun.',
   );
   requireThat(
     new Set(p.scenes.map((s) => s.id)).size === p.scenes.length,
@@ -98,7 +96,6 @@ export function makeProject(topic: string, script = '', instructions = ''): Proj
     scenes: [],
     styleGuide:
       'Dokulu, elle çizilmiş sinematik 2D doğa belgeseli. Doğal tonlar, yönlü ışık, güçlü ön ve arka plan ayrımı. Aynı özneyi, renk paletini ve çizim tekniğini koru.',
-    intensity: 'Orta',
     voice: defaultSpeaker,
     voiceStyle: 'Sakin, merak uyandıran, doğal bir Türkçe belgesel anlatımı.',
     pace: 'Doğal',
@@ -301,17 +298,6 @@ export class Store {
         narration: n,
         description: details[i],
         prompt: details[i] + ' Dikey kadraj, sinematik doğa çizimi, metinsiz.',
-        animation: [
-          'İlk kar taneleri yavaşça düşer.',
-          'Kamera işçi karıncayı yatay takip eder.',
-          'Yüzeyden yuva odacığına doğru alçal.',
-          'Toprak kesitini katman katman aç.',
-          'Yumuşak bir odak geçişiyle yuvaya yaklaş.',
-          'Altın renkli ışık huzmeleri altında yuvadan uzaklaş.',
-        ][i],
-        effect: (['snow', 'dust', 'dust', 'none', 'fog', 'rays'] as const)[i],
-        camera: (['push', 'track', 'tilt', 'pan', 'focus', 'pull'] as const)[i],
-        object: i === 1 ? 'trail' : i === 3 ? 'reveal' : 'none',
         sound: i === 0 ? 'Hafif kış rüzgarı' : 'Sakin orman ortamı',
         environment: details[i],
       }),

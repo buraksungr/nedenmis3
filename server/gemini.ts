@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import {
   kinds,
   manualImages,
@@ -44,7 +46,22 @@ const fresh = (): ProviderSettings => ({
   requests: {},
   message: '',
 });
-const base = 'https://generativelanguage.googleapis.com/v1beta';
+const origin = 'https://generativelanguage.googleapis.com';
+const scriptVersion = 'v1'; // Stable Gemini Developer API, also the current JS SDK default.
+const mediaVersion = 'v1beta'; // Structured storyboard JSON and media Interactions use the beta contract.
+const maxScriptRetries = 3;
+const maxTimerMs = 2_147_483_647; // Larger Node timeouts fire immediately; never retry early.
+function retryAfterMs(header: string | null, rpcDelay: unknown) {
+  if (header) {
+    if (/^\d+(?:\.\d+)?$/.test(header)) return Math.ceil(Number(header) * 1000);
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  }
+  return typeof rpcDelay === 'string' && /^\d+(?:\.\d+)?s$/.test(rpcDelay)
+    ? Math.ceil(parseFloat(rpcDelay) * 1000)
+    : 0;
+}
+export type RetryNotice = (label: string) => void;
 // models.list returns a resource name; settings and request builders use a single model ID.
 function modelId(name: unknown): string {
   if (typeof name !== 'string') return '';
@@ -82,7 +99,12 @@ function fault(
   if (status === 404 && textRoute)
     return [
       'unavailable',
-      `Metin modeli bu projede /v1beta${textRoute} ile kullanılamadı (HTTP 404). Ayarlar → API ve modeller’de bağlantıyı yeniden test edip listeden bir metin modeli seçin.`,
+      `Metin modeli bu projede ${textRoute} ile kullanılamadı (HTTP 404). Ayarlar → API ve modeller’de bağlantıyı yeniden test edip listeden bir metin modeli seçin.`,
+    ] as const;
+  if (status === 503)
+    return [
+      'unavailable',
+      'Gemini hizmeti şu anda kullanılamıyor (HTTP 503). Daha sonra tekrar deneyin.',
     ] as const;
   if (status === 403)
     return [
@@ -100,6 +122,7 @@ export class Gemini {
     private store: Store,
     private vault: Vault,
     private transport: typeof fetch = fetch,
+    private wait: (ms: number) => Promise<void> = sleep,
   ) {}
   raw() {
     return this.store.setting('gemini', fresh());
@@ -156,7 +179,7 @@ export class Gemini {
     delete s.services[kind];
     this.store.set('gemini', s);
   }
-  private async request(route: string, body?: object, kind?: Kind) {
+  private apiKey(kind?: Kind) {
     let key: string | undefined;
     try {
       key = this.vault.get();
@@ -174,42 +197,80 @@ export class Gemini {
         'Ayarlar → API ve modeller bölümünde Gemini anahtarını kaydedin.',
         'config',
       );
-    let r: Response;
-    try {
-      r = await this.transport(base + route, {
-        method: body ? 'POST' : 'GET',
-        headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(body ? 180000 : 20000),
-        redirect: 'error',
-      });
-    } catch {
-      this.record(
-        'unavailable',
-        'Gemini servisine ulaşılamadı. İnternet bağlantısını kontrol edin.',
-        kind,
+    return key;
+  }
+  // One transport for REST and the SDK. Never infer retryability from a thrown network
+  // error: the POST might already have reached Google. Only a received script HTTP 503 qualifies.
+  private async send(
+    url: string,
+    init: RequestInit,
+    kind?: Kind,
+    script?: { onRetry?: RetryNotice },
+  ) {
+    for (let retry = 0; ; retry++) {
+      if (kind) this.countRequest(kind);
+      let r: Response;
+      try {
+        const timeout = AbortSignal.timeout(init.method === 'POST' ? 180_000 : 20_000);
+        r = await this.transport(url, {
+          ...init,
+          redirect: 'error',
+          signal: init.signal ? AbortSignal.any([timeout, init.signal]) : timeout,
+        });
+      } catch {
+        this.record(
+          'unavailable',
+          'Gemini servisine ulaşılamadı. İnternet bağlantısını kontrol edin.',
+          kind,
+        );
+        throw new Issue(503, 'Gemini servisine ulaşılamadı. Ağ bağlantısını kontrol edin.');
+      }
+      if (r.ok) return r;
+      const e = await r.json().catch(() => null);
+      const details = Array.isArray(e?.error?.details) ? e.error.details : [];
+      const after = retryAfterMs(
+        r.headers.get('retry-after'),
+        details.find((d: any) => d?.retryDelay)?.retryDelay,
       );
-      throw new Issue(503, 'Gemini servisine ulaşılamadı. Ağ bağlantısını kontrol edin.');
-    }
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}));
-      const retryInfo = e?.error?.details?.find((d: any) => d.retryDelay)?.retryDelay;
-      const retry =
-        r.headers.get('retry-after') ??
-        (typeof retryInfo === 'string' ? retryInfo.replace(/s$/, '') : null);
-      const [st, msg] = fault(
+      const [status, reason] = fault(
         r.status,
-        e?.error?.details?.find((d: any) => d.reason)?.reason,
-        retry && /^\d+(\.\d+)?$/.test(retry) ? retry : null,
-        kind === 'text' ? route : undefined,
+        details.find((d: any) => d?.reason)?.reason,
+        after ? String(Math.ceil(after / 1000)) : null,
+        kind === 'text' ? new URL(url).pathname : undefined,
       );
-      this.record(st, msg, kind);
+      let msg: string = reason;
+      if (script && r.status === 503 && status === 'unavailable') {
+        const delay = Math.max(1000 * 2 ** retry, after);
+        if (retry < maxScriptRetries && delay <= maxTimerMs) {
+          script.onRetry?.(
+            `Gemini HTTP 503 · ${Math.ceil(delay / 1000)} sn sonra aynı modelle yeniden denenecek (${retry + 1}/${maxScriptRetries}).`,
+          );
+          await this.wait(delay);
+          continue;
+        }
+        msg =
+          retry === maxScriptRetries
+            ? `Gemini hizmeti 4 isteğe de HTTP 503 döndürdü. Senaryo değiştirilmedi; daha sonra tekrar deneyin.`
+            : `Gemini HTTP 503 döndürdü ve otomatik zamanlayıcının desteklediğinden uzun bekleme istedi. Senaryo değiştirilmedi; daha sonra tekrar deneyin.`;
+      }
+      this.record(status, msg, kind);
       throw new Issue(
         r.status,
         msg,
-        st === 'invalid' || (r.status === 404 && kind === 'text') ? 'config' : 'failed',
+        status === 'invalid' || (r.status === 404 && kind === 'text') ? 'config' : 'failed',
       );
     }
+  }
+  private async request(route: string, body?: object, kind?: Kind) {
+    const r = await this.send(
+      origin + route,
+      {
+        method: body ? 'POST' : 'GET',
+        headers: { 'x-goog-api-key': this.apiKey(kind), 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      kind,
+    );
     try {
       return await r.json();
     } catch {
@@ -227,17 +288,18 @@ export class Gemini {
     }
     this.store.set('gemini', s);
   }
-  async test() {
+  private async listModels(version: string) {
     const catalog: ProviderSettings['catalog'] = [];
     let token = '';
     const seen = new Set<string>();
     do {
       const data = await this.request(
-        '/models?pageSize=1000' + (token ? '&pageToken=' + encodeURIComponent(token) : ''),
+        `/${version}/models?pageSize=1000` +
+          (token ? '&pageToken=' + encodeURIComponent(token) : ''),
       );
-      if (!Array.isArray(data.models))
+      if (!Array.isArray(data?.models))
         this.record('unavailable', 'Google geçerli bir model listesi döndürmedi.');
-      requireThat(Array.isArray(data.models), 'Google geçerli bir model listesi döndürmedi.', 502);
+      requireThat(Array.isArray(data?.models), 'Google geçerli bir model listesi döndürmedi.', 502);
       for (const m of data.models) {
         const id = modelId(m?.name);
         const kind = modality(id);
@@ -252,6 +314,20 @@ export class Gemini {
       requireThat(!token || !seen.has(token), 'Model listesi sayfalaması tamamlanamadı.', 502);
       seen.add(token);
     } while (token);
+    return catalog;
+  }
+  async test() {
+    const catalog = (await this.listModels(scriptVersion)).filter((m) => m.kind === 'text');
+    let mediaNote = '';
+    // A preview-only voice must not disappear when moving script discovery to stable v1.
+    // A media catalog outage must not block a verified script model in manual-image mode.
+    try {
+      catalog.push(...(await this.listModels(mediaVersion)).filter((m) => m.kind !== 'text'));
+    } catch (e) {
+      if (!(e instanceof Issue) || e.code === 'config') throw e;
+      catalog.push(...this.raw().catalog.filter((m) => m.kind !== 'text'));
+      mediaNote = ' Medya model listesi yenilenemedi; varsa önceki liste korundu.';
+    }
     const s = this.raw();
     s.catalog = catalog;
     for (const k of kinds) {
@@ -275,7 +351,9 @@ export class Gemini {
     }
     s.status = 'connected';
     s.tested = now();
-    s.message = `Model listesi doğrulandı · ${catalog.length} uyumlu model. Üretim erişimi ilk gerçek istekte sınanır.`;
+    s.message = mediaNote
+      ? `Metin model listesi doğrulandı.${mediaNote}`
+      : `Model listesi doğrulandı · ${catalog.length} uyumlu model. Üretim erişimi ilk gerçek istekte sınanır.`;
     this.store.set('gemini', s);
     return this.settings();
   }
@@ -297,13 +375,11 @@ export class Gemini {
       );
     return model;
   }
-  private beginGeneration(kind: Kind) {
-    const model = this.allowed(kind);
+  private countRequest(kind: Kind) {
     const s = this.raw(),
       day = now().slice(0, 10) + ':' + kind;
     s.requests[day] = (s.requests[day] || 0) + 1;
     this.store.set('gemini', s);
-    return model;
   }
   private noOutput(kind: Kind): never {
     this.record('unavailable', 'Yanıt engellendi, eksik veya beklenen biçimde değil.', kind);
@@ -312,31 +388,41 @@ export class Gemini {
       'Gemini doğrulanabilir bir çıktı döndürmedi. Modeli ve içeriği kontrol edin.',
     );
   }
-  async text(prompt: string, schema?: object): Promise<string> {
-    // Use the same method that models.list verified. The model is a path parameter, not a body field.
-    const model = this.beginGeneration('text');
-    const out = await this.request(
-      `/models/${encodeURIComponent(model)}:generateContent`,
-      {
+  async text(prompt: string, schema?: object, onRetry?: RetryNotice): Promise<string> {
+    const model = this.allowed('text');
+    // Explicit backend, origin and version: never pick up Vertex, another host or
+    // an API-version override from the user's environment. No SDK-level retry loop.
+    const ai = new GoogleGenAI({
+      apiKey: this.apiKey('text'),
+      enterprise: false,
+      apiVersion: schema ? mediaVersion : scriptVersion,
+      httpOptions: {
+        baseUrl: origin,
+        fetch: (url, init) =>
+          this.send(String(url), init ?? {}, 'text', schema ? undefined : { onRetry }),
+      },
+    });
+    let out: GenerateContentResponse;
+    try {
+      out = await ai.models.generateContent({
+        model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         ...(schema
-          ? {
-              generationConfig: {
-                responseMimeType: 'application/json',
-                responseJsonSchema: schema,
-              },
-            }
+          ? { config: { responseMimeType: 'application/json', responseJsonSchema: schema } }
           : {}),
-      },
-      'text',
-    );
+      });
+    } catch (e) {
+      if (e instanceof Issue) throw e;
+      // Do not expose raw SDK exceptions (may contain provider payload or credentials).
+      this.noOutput('text');
+    }
     const candidate = out?.candidates?.[0];
     const parts = candidate?.content?.parts;
     const block = out?.promptFeedback?.blockReason;
     if (
       !Array.isArray(parts) ||
-      (block && block !== 'BLOCK_REASON_UNSPECIFIED') ||
-      (candidate.finishReason && candidate.finishReason !== 'STOP')
+      (block && !['BLOCK_REASON_UNSPECIFIED', 'BLOCKED_REASON_UNSPECIFIED'].includes(block)) ||
+      (candidate?.finishReason && candidate.finishReason !== 'STOP')
     )
       this.noOutput('text');
     // Never write a thought summary into the script or concatenate alternative candidates.
@@ -352,9 +438,9 @@ export class Gemini {
     kind: 'image' | 'tts',
     params: (model: string) => object,
   ): Promise<MediaPart> {
-    const model = this.beginGeneration(kind);
+    const model = this.allowed(kind);
     const out = await this.request(
-      '/interactions',
+      `/${mediaVersion}/interactions`,
       { model, store: false, ...params(model) },
       kind,
     );

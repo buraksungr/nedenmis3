@@ -4,7 +4,7 @@ These two original, tiny Turkish QA signals were synthesized with eSpeak NG 1.52
 
 `test:render` explicitly supplies these **external reference timings** to the compositor. It does not test or substitute for Whisper, forced alignment, Gemini image, or Gemini TTS. Production first attempts acoustic alignment; if unavailable it labels an explicitly estimated sentence track derived from the approved text and measured audio duration. `fallback-control` tests this path separately; it does not count as passing the acoustic test.
 
-The three tiny `motion-*.png` plates are original test patterns on the same 90 × 160 canvas. The blue background has a cyan registration mark; the transparent foreground has an amber one. A warm incoming plate with an off-centre mark makes a framing jump or a dip to black measurable. They test the actual Remotion composition, not image generation, and are not bundled with the app.
+`still-a.png` and `still-b.png` are original 90 × 160 registration patterns. The static composition test compares rendered frames to the decoded source pixels, the crossfade midpoint to the blend of the two plates, and the outgoing last picture to the incoming first one. The patterns are not installed in user projects.
 
 ## Optional real ASR / forced-alignment control
 

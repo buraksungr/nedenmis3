@@ -18,7 +18,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Validate Windows video, parallax, crossfades and subtitle fallback
+      - name: Validate Windows video, static framing, opacity crossfades and subtitle fallback
         run: npm run test:render
       - run: npm run test:ui
       - name: Package Windows installer
@@ -38,7 +38,7 @@ jobs:
           path: |
             out/render-control/local-render-control.mp4
             out/render-control/probe.json
-            out/render-control/motion-report.json
+            out/render-control/static-fade-report.json
             out/render-control/install-report.json
             out/render-control/fallback-control.*
             out/render-control/fallback-diagnostics.ndjson

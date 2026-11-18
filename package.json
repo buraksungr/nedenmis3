@@ -1,7 +1,7 @@
 {
   "name": "nedenmis-studio",
   "productName": "Nedenmiş Studio",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "Yerel, onay tabanlı belgesel üretim stüdyosu",
   "author": "Nedenmiş Studio",
@@ -23,6 +23,7 @@
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "1.1.0",
     "@ffprobe-installer/ffprobe": "2.1.2",
+    "@google/genai": "3.6.0",
     "@remotion/renderer": "4.0.544",
     "archiver": "7.0.1",
     "express": "5.1.0",

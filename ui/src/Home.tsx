@@ -428,7 +428,6 @@ export function NewProject() {
   const [topic, setTopic] = useState(''),
     [instructions, setInstructions] = useState(''),
     [script, setScript] = useState(''),
-    [intensity, setIntensity] = useState('Orta'),
     [existing, setExisting] = useState(false);
   return (
     <>
@@ -447,7 +446,6 @@ export function NewProject() {
                 topic,
                 instructions,
                 script: existing ? script : '',
-                intensity,
               });
               setP(p);
               await refresh();
@@ -512,14 +510,6 @@ export function NewProject() {
               />
             </label>
           )}
-          <label>
-            Animasyon yoğunluğu
-            <select value={intensity} onChange={(e) => setIntensity(e.target.value)}>
-              {['Düşük', 'Orta', 'Yüksek'].map((x) => (
-                <option key={x}>{x}</option>
-              ))}
-            </select>
-          </label>
           <div className="actions end">
             <Button type="button" onClick={() => go('home')}>
               Vazgeç
@@ -542,6 +532,7 @@ export function NewProject() {
                 ['Kare hızı', '30 FPS'],
                 ['Anlatım', 'Türkçe · Erkek'],
                 ['Görsel stil', 'Sinematik 2D'],
+                ['Kurgu', 'Sabit kadraj · Yumuşak geçiş'],
                 ['Üretim', 'İki aşamalı onay'],
               ].map(([k, v]) => (
                 <div className="kv" key={k}>
