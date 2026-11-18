@@ -1,4 +1,13 @@
-# Doğrulama kaydı — 17 Kasım 2026
+# Doğrulama kaydı
+
+## 1.0.2 — manuel storyboard görselleri ve TTS konuşmacısı
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44205732925/artifacts/14384570141)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44205732925) · Derleme: `5e5305929da17c8a33fdb4441e3be294bb856450`.
+
+- 19 test geçti. Çevrimdışı Gemini sözleşme testinde katalogda görsel modeli yokken senaryo, storyboard ve beş TTS isteği tamamlandı. Görsel servisi için izin doğrulaması veya üretim çağrısı yapılmadı. Eksik görseller bekleme durumuna geçti; kısmi yüklemeden sonra hazır anlatımlar tekrar istenmedi. İstekteki konuşmacı ve onaylı metin denetlendi; bu, canlı Google hesabı veya ücretsiz kota testi değildir.
+- Derlenmiş arayüzde konuşmacı ayarının yeniden açılışta korunması, proje için değiştirilmesi, boş sahne alanı ve onaylı storyboard’dan görsel yükleme sınandı. [Windows render/kurulum raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44205732925/artifacts/14382819085).
+- [Gerçek CPU hizalama testi](https://github.com/buraksungr/nedenmis3/actions/runs/44205732925/artifacts/14383194502) görsel olmadan bekledi; manuel yüklemeden sonra aynı anlatımla Whisper, hizalama ve MP4 render’ı tamamlandı. Bu ses, atıflı Türkçe QA örneğidir, Gemini üretimi değildir.
+- `Nedenmis-Studio-1.0.2-Setup.exe` sessizce kuruldu ve kurulu uygulama Edge ile kompozisyonu açtı. Kurucu imzasızdır. GitHub **ZIP paketinin** SHA-256 değeri: `125c4407bc6dd4c77b3b0347ed3ce7a1381e3e2ac3b012d6aa5fd5762c9ba618`.
 
 ## 1.0.1 — kurulu Windows uygulamasında Remotion
 
