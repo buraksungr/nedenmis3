@@ -10,6 +10,7 @@ import {
   type Project,
   type ProjectSummary,
   type Scene,
+  type Task,
 } from '../shared/schema';
 export const hash = (...v: unknown[]) =>
   createHash('sha256')
@@ -248,8 +249,8 @@ export class Store {
     old.job = { state: 'waiting', label: 'Önceki sürüm geri yüklendi', at: now() };
     return this.save(old);
   }
-  log(p: Project) {
-    fs.appendFileSync(path.join(this.dir(p.id), 'production.ndjson'), JSON.stringify(p.job) + '\n');
+  log(p: Project, event: Task = p.job) {
+    fs.appendFileSync(path.join(this.dir(p.id), 'production.ndjson'), JSON.stringify(event) + '\n');
   }
   seed() {
     const sat = makeProject('Satürn’ün halkaları nasıl oluştu?');

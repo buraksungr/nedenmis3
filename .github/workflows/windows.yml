@@ -18,7 +18,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Validate the Windows production renderer
+      - name: Validate Windows rendering with word timing and sentence fallback
         run: npm run test:render
       - run: npm run test:ui
       - name: Package Windows installer
@@ -39,6 +39,8 @@ jobs:
             out/render-control/local-render-control.mp4
             out/render-control/probe.json
             out/render-control/install-report.json
+            out/render-control/fallback-control.*
+            out/render-control/fallback-diagnostics.ndjson
 
   acoustic-control:
     name: Real Turkish CPU alignment

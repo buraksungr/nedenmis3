@@ -2445,3 +2445,11 @@ audio {
     scroll-behavior: auto !important;
   }
 }
+
+.alignment-detail {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.alignment-detail summary {
+  cursor: pointer;
+}

@@ -288,7 +288,11 @@ export function createStudio(
     approved(p);
     const s = find(p, q.body.scene),
       m = p.assets[s.id];
-    const words = z.array(wordSchema).max(1000).parse(q.body.words);
+    const words = (
+      m?.align?.method === 'estimated'
+        ? z.array(wordSchema.extend({ text: z.string().trim().min(1).max(5000) })).max(5000)
+        : z.array(wordSchema).max(1000)
+    ).parse(q.body.words);
     requireThat(
       m?.voice && prod.usable(p, m.voice, voiceKey(p, s)) && validWords(words, m.voice.duration!),
       'Zamanlar sıralı, çakışmasız ve ses süresi içinde olmalı.',

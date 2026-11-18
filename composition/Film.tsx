@@ -14,6 +14,7 @@ export type FilmProps = {
   next: string;
   scene: Scene;
   words: Word[];
+  sentenceCaptions?: boolean;
   frames: number;
   intensity: string;
   subtitleSize: number;
@@ -168,7 +169,16 @@ function Details({ s, t, p, k }: { s: Scene; t: number; p: number; k: number }) 
     </svg>
   );
 }
-export function Film({ image, next, scene, words, intensity, subtitleSize, highlight }: FilmProps) {
+export function Film({
+  image,
+  next,
+  scene,
+  words,
+  intensity,
+  subtitleSize,
+  highlight,
+  sentenceCaptions = false,
+}: FilmProps) {
   const f = useCurrentFrame(),
     { durationInFrames, fps } = useVideoConfig(),
     p = f / Math.max(1, durationInFrames - 1),
@@ -176,7 +186,9 @@ export function Film({ image, next, scene, words, intensity, subtitleSize, highl
     motion = Math.min(k * scene.motion, 1.45);
   const cam = optics(scene.camera, p, motion),
     t = f / fps;
-  const cap = groups(words).find((g) => t >= g[0].start && t < g[g.length - 1].end + 0.04);
+  const cap = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
+    (g) => t >= g[0].start && t < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
+  );
   const edge = Math.min(10, Math.floor(durationInFrames / 4)),
     fade = edge ? Math.max(0, (f - durationInFrames + edge + 1) / edge) : 0;
   return (

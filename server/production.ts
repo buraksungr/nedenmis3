@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { groups, srt, validWords } from '../shared/captions';
-import type { Asset, Project, Scene, Task, Word } from '../shared/schema';
+import { captionEntries, cue, groups, srtFromCues, validWords } from '../shared/captions';
+import type { Asset, Project, Scene, Task, TimedText, Word } from '../shared/schema';
+import { readWhisper, sentenceEstimates, verifiedAlignment } from './alignment';
 import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
 import {
   audioDuration,
   checks,
-  exec,
+  errorDetail,
+  ffmpeg,
+  ffprobe,
   ff,
   probe,
   python,
@@ -29,6 +32,7 @@ export class Production {
     private store: Store,
     private g: Gemini,
     private paths: Paths,
+    private readonly runWhisper = readWhisper,
   ) {}
   file(p: Project, rel: string) {
     const base = this.store.dir(p.id),
@@ -151,14 +155,26 @@ export class Production {
       fs.rmSync(out, { force: true });
     }
   }
-  private async verifyCached(p: Project, asset: Asset, kind: 'image' | 'voice') {
-    const file = this.file(p, asset.file);
+  private async measureVoice(p: Project, a: Asset) {
     try {
-      if (kind === 'voice') await audioDuration(file);
-      else requireThat((await probe(file)).streams[0]?.width > 0, 'Görsel okunamadı.');
-    } catch {
-      throw new Issue(422, 'Önbellekteki dosya bozuk. Bu sahnenin varlığını yenileyin.');
+      return await audioDuration(this.file(p, a.file));
+    } catch (e) {
+      throw new Issue(
+        422,
+        `Ses dosyası okunamadı (${a.file}, FFprobe: ${ffprobe}): ${errorDetail(e)}`,
+      );
     }
+  }
+  private async verifyCached(p: Project, asset: Asset, kind: 'image' | 'voice') {
+    if (kind === 'voice') {
+      asset.duration = await this.measureVoice(p, asset);
+      return;
+    }
+    requireThat(
+      (await probe(this.file(p, asset.file))).streams[0]?.width > 0,
+      `Görsel okunamadı: ${asset.file}`,
+      422,
+    );
   }
   async asset(p: Project, s: Scene, kind: 'image' | 'voice', force: boolean) {
     approved(p);
@@ -192,55 +208,93 @@ export class Production {
       this.g.raw().models[kind === 'voice' ? 'tts' : 'image'].model,
     );
   }
-  async align(p: Project, s: Scene, force = false) {
-    approved(p);
+  private alignmentKey(voice: Asset, s: Scene, estimated: boolean) {
+    return estimated
+      ? hash('estimated-sentences-v1', voice.file, voice.duration, s.narration)
+      : hash('base-stable-ts-1', voice.file, s.narration);
+  }
+  private cachedAlignment(p: Project, s: Scene) {
     const m = p.assets[s.id];
-    requireThat(
-      m?.voice && this.usable(p, m.voice, voiceKey(p, s)),
-      'Önce güncel seslendirmeyi üretin.',
+    return (
+      !!m?.voice &&
+      this.usable(p, m.voice, voiceKey(p, s)) &&
+      this.usable(p, m.align, this.alignmentKey(m.voice, s, m.align?.method === 'estimated')) &&
+      validWords(captionEntries(m), m.voice.duration!)
     );
-    const key = hash('base-stable-ts-1', m.voice.file, s.narration);
-    if (
-      !force &&
-      this.usable(p, m.align, key) &&
-      validWords(m.edits ?? m.words ?? [], m.voice.duration!)
-    )
-      return;
-    this.tick(p, 'Whisper transkripsiyonu ve sözcük hizalama', 'align', s.id);
+  }
+  async align(p: Project, s: Scene, force = false, whisperUnavailable?: string) {
+    approved(p);
+    const m = p.assets[s.id],
+      voice = m?.voice;
+    requireThat(voice && voice.key === voiceKey(p, s), 'Önce güncel seslendirmeyi üretin.');
+    if (!force && this.cachedAlignment(p, s)) return;
+    // The fallback is for alignment only: an unreadable recording has no usable clock or soundtrack.
+    const audio = this.file(p, voice.file);
+    const duration = await this.measureVoice(p, voice);
+    voice.duration = duration;
+    this.tick(p, 'Altyazı zamanlaması hazırlanıyor', 'align', s.id);
     const txt = this.temp(p, 'txt'),
       out = this.temp(p, 'json');
-    atomic(txt, s.narration);
     try {
-      await exec(
-        python(this.paths),
-        [
-          path.join(this.paths.pythonDir, 'align.py'),
-          '--audio',
-          this.file(p, m.voice.file),
-          '--script',
-          txt,
-          '--out',
-          out,
-          '--models',
-          path.join(this.paths.root, 'models'),
-        ],
-        1200000,
+      if (!whisperUnavailable) atomic(txt, s.narration);
+      let result:
+        | ReturnType<typeof verifiedAlignment>
+        | { method: 'estimated'; reason: string; sentences: TimedText[] };
+      try {
+        if (whisperUnavailable) throw new Error(`Whisper ön kontrolü: ${whisperUnavailable}`);
+        result = verifiedAlignment(await this.runWhisper(this.paths, audio, txt, out), duration);
+      } catch (e) {
+        const reason = errorDetail(e),
+          retain = this.cachedAlignment(p, s);
+        const label = `${retain ? 'Kayıtlı altyazı korundu' : 'Tahmini cümle altyazısı kullanılıyor'}: ${reason}`;
+        const event = {
+          state: 'working',
+          level: 'warning',
+          kind: retain ? 'align-retained' : 'align-fallback',
+          at: now(),
+          scene: s.id,
+          sceneNumber: p.scenes.findIndex((x) => x.id === s.id) + 1,
+          label,
+          audio: voice.file,
+          duration,
+          python: python(this.paths),
+          ffmpeg,
+          ffprobe,
+        } as const;
+        this.store.log(p, event);
+        console.warn(
+          `[Hizalama] ${p.id} / Sahne ${event.sceneNumber} (${s.id}): ${label} | ses=${voice.file} (${duration} sn), Python=${event.python}, FFmpeg=${ffmpeg}, FFprobe=${ffprobe}`,
+        );
+        // A failed explicit retry must not discard a previously good track or manual edits.
+        if (retain) return;
+        result = {
+          method: 'estimated',
+          reason,
+          sentences: sentenceEstimates(s.narration, duration),
+        };
+      }
+      // Disk/publication failures are real failures, not a reason to fabricate another output.
+      fs.writeFileSync(out, JSON.stringify({ ...result, duration }));
+      const a = this.publish(
+        p,
+        out,
+        'subtitles',
+        'json',
+        this.alignmentKey(voice, s, result.method === 'estimated'),
       );
-      const a = JSON.parse(fs.readFileSync(out, 'utf8'));
-      requireThat(
-        typeof a.recognized === 'string' &&
-          a.recognized.trim() &&
-          Array.isArray(a.words) &&
-          validWords(a.words, m.voice.duration!),
-        'Hizalama zamanları geçersiz; tahmini altyazı kullanılmadı.',
-        422,
-      );
-      m.align = this.publish(p, out, 'subtitles', 'json', key);
-      m.words = a.words;
-      m.recognized = a.recognized;
+      if (result.method === 'estimated') {
+        m.align = { ...a, ...result };
+        delete m.words;
+        delete m.recognized;
+      } else {
+        m.align = { ...a, method: 'whisper' };
+        m.words = result.words;
+        m.recognized = result.recognized;
+      }
       delete m.edits;
       delete m.clip;
       delete p.final;
+      delete p.subtitleFiles;
       this.store.save(p);
     } finally {
       fs.rmSync(txt, { force: true });
@@ -254,8 +308,12 @@ export class Production {
       this.usable(p, m?.image, imageKey(p, s)) && this.usable(p, m?.voice, voiceKey(p, s)),
       'Güncel görsel ve seslendirme gerekiyor.',
     );
-    const words = m.edits ?? m.words ?? [];
-    requireThat(validWords(words, m.voice!.duration!), 'Önce geçerli sözcük zamanları gerekiyor.');
+    if (!validWords(captionEntries(m), m.voice!.duration!)) {
+      await this.align(p, s);
+      frames = framesForVoice(m.voice!.duration!);
+    }
+    const words = captionEntries(m),
+      sentenceCaptions = m.align?.method === 'estimated';
     const adjacent = s.transition !== 'cut' && next ? p.assets[next.id]?.image : undefined;
     const key = hash(
       'film-3',
@@ -272,6 +330,7 @@ export class Production {
       adjacent?.file,
       p.subtitleSize,
       p.highlight,
+      ...(sentenceCaptions ? ['sentence-cues-v1'] : []),
     );
     if (!force && this.usable(p, m.clip, key)) {
       await verifyVideo(this.file(p, m.clip!.file), frames, false);
@@ -288,7 +347,8 @@ export class Production {
       frames,
       intensity: p.intensity,
       subtitleSize: p.subtitleSize,
-      highlight: p.highlight,
+      highlight: p.highlight && !sentenceCaptions,
+      sentenceCaptions,
     };
     const output = this.temp(p, 'mp4');
     let last = 0;
@@ -337,6 +397,7 @@ export class Production {
     requireThat(scenes.length, 'Sahne bulunamadı.');
     const manual = this.g.usesManualImages();
     const waiting = kind === 'all' && manual ? this.waitingForImages(p) : undefined;
+    let whisperUnavailable: string | undefined;
     if (kind === 'all') {
       // Preflight only the services needed for this phase. Awaiting manual images
       // requires narration, not image credentials, a renderer or a Whisper model.
@@ -345,25 +406,20 @@ export class Production {
         const m = p.assets[s.id];
         if (!manual && !this.usable(p, m?.image, imageKey(p, s))) this.g.allowed('image');
         if (!this.usable(p, m?.voice, voiceKey(p, s))) this.g.allowed('tts');
-        if (
-          !m?.align ||
-          !m.voice ||
-          !this.usable(p, m.align, hash('base-stable-ts-1', m.voice.file, s.narration)) ||
-          !validWords(m.edits ?? m.words ?? [], m.voice.duration!)
-        )
-          needWhisper = true;
+        if (!waiting && !this.cachedAlignment(p, s)) needWhisper = true;
       }
       this.tick(p, 'Yerel üretim araçları doğrulanıyor', 'preflight');
       const report = await checks(this.paths, {
         whisper: !waiting && needWhisper,
         render: !waiting,
       });
-      const missing = report.filter((x) => !x.ok);
+      whisperUnavailable = report.find((x) => x.id === 'whisper' && !x.ok)?.detail;
+      const missing = report.filter((x) => !x.ok && x.id !== 'whisper');
       if (missing.length)
         throw new Issue(
           412,
           'Önce yerel servisleri yapılandırın: ' +
-            missing.map((x) => x.name).join(', ') +
+            missing.map((x) => `${x.name}: ${x.detail}`).join('; ') +
             '. Bulut isteği yapılmadı.',
           'config',
         );
@@ -379,7 +435,8 @@ export class Production {
       else if (kind === 'all' || kind === 'image')
         await this.asset(p, s, 'image', kind === 'image');
       if (kind === 'all' || kind === 'voice') await this.asset(p, s, 'voice', kind === 'voice');
-      if (kind === 'all' || kind === 'align') await this.align(p, s, kind === 'align');
+      if (kind === 'all' || kind === 'align')
+        await this.align(p, s, kind === 'align', whisperUnavailable);
     }
     if (kind === 'all' || kind === 'clip') {
       // Pad to a frame boundary: never trim narration or timing to fit an estimate.
@@ -424,20 +481,30 @@ export class Production {
       working = fs.mkdtempSync(path.join(dir, 'cache', 'mix-'));
     const work = (n: string) => path.join(working, n);
     let frames = 0;
-    const all: Word[] = [];
+    const all: Word[] = [],
+      display: TimedText[] = [],
+      sentences: (TimedText & { scene: string; estimated: boolean })[] = [];
     try {
       const list: string[] = [];
       const alist: string[] = [];
       for (const [i, s] of p.scenes.entries()) {
         const m = p.assets[s.id],
           duration = m.clip!.duration!;
-        const words = m.edits ?? m.words!;
-        const offset = frames / 30;
-        all.push(
-          ...words.map((w) => ({
-            ...w,
-            start: offset + w.start,
-            end: offset + Math.min(w.end, duration),
+        const offset = frames / 30,
+          estimated = m.align?.method === 'estimated';
+        const entries = captionEntries(m).map((w) => ({
+          text: w.text,
+          start: offset + w.start,
+          end: offset + Math.min(w.end, duration),
+        }));
+        // Never combine captions across a cut or export estimated sentences as measured words.
+        if (!estimated) all.push(...entries);
+        display.push(...(estimated ? entries : groups(entries).map(cue)));
+        sentences.push(
+          ...(estimated ? entries : groups(entries, Infinity).map(cue)).map((c) => ({
+            ...c,
+            scene: s.id,
+            estimated,
           })),
         );
         frames += Math.round(duration * 30);
@@ -537,17 +604,13 @@ export class Production {
             language: 'tr',
             duration,
             words: all,
-            sentences: groups(all, 999).map((g) => ({
-              start: g[0].start,
-              end: g[g.length - 1].end,
-              text: g.map((w) => w.text).join(' '),
-            })),
+            sentences,
           },
           null,
           2,
         ),
       );
-      atomic(this.file(p, sub), srt(all));
+      atomic(this.file(p, sub), srtFromCues(display));
       p.final = this.publish(p, out, 'renders', 'mp4', mixKey, duration);
       p.subtitleFiles = { json, srt: sub };
       this.store.save(p);

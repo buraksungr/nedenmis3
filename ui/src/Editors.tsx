@@ -57,6 +57,7 @@ import {
   useRun,
   useStudio,
 } from './lib';
+import { captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
 // Persist unsent text immediately; serialize database writes and use optimistic revisions.
 function useDraft<T>(project: Project, route: string, initial: T, toBody: (v: T) => object) {
@@ -689,26 +690,28 @@ function Captions({ p, s, close }: { p: Project; s: Scene; close: () => void }) 
   const { mutate, notify } = useStudio();
   const { run, busy } = useRun();
   const m = p.assets[s.id];
-  const [words, setWords] = useState<Word[]>((m.edits ?? m.words ?? []).map((w) => ({ ...w })));
+  const estimated = m.align?.method === 'estimated',
+    unit = estimated ? 'Cümle' : 'Sözcük';
+  const [words, setWords] = useState<Word[]>(captionEntries(m).map((w) => ({ ...w })));
   const edit = (i: number, v: Partial<Word>) =>
     setWords(words.map((w, j) => (i === j ? { ...w, ...v } : w)));
   return (
     <Modal title="Altyazı zamanlaması" close={close} wide>
       <p className="muted">
-        Gerçek ses süresi: {m.voice?.duration?.toFixed(2)} sn. Sözcük zamanları sahne başlangıcına
-        göredir.
+        Gerçek ses süresi: {m.voice?.duration?.toFixed(2)} sn.{' '}
+        {estimated ? 'Tahmini cümle zamanları' : 'Sözcük zamanları'} sahne başlangıcına göredir.
       </p>
       <audio controls src={media(p, m.voice!.file)} />
       {m.recognized && <p className="muted">Whisper: {m.recognized}</p>}
       <div className="word-cols">
-        <b>Sözcük</b>
+        <b>{unit}</b>
         <b>Başlangıç (sn)</b>
         <b>Bitiş (sn)</b>
       </div>
       {words.map((w, i) => (
         <div className="word-cols" key={i}>
           <input
-            aria-label={`${i + 1}. sözcük`}
+            aria-label={`${i + 1}. ${unit.toLocaleLowerCase('tr')}`}
             value={w.text}
             onChange={(e) => edit(i, { text: e.target.value })}
           />
@@ -837,7 +840,10 @@ export function ProductionView({ p }: { p: Project }) {
                       {[
                         [m.image, manual && !m.image ? 'Görsel bekleniyor' : 'Görsel'],
                         [m.voice, 'Ses'],
-                        [m.words, 'Altyazı'],
+                        [
+                          captionEntries(m).length,
+                          m.align?.method === 'estimated' ? 'Tahmini altyazı' : 'Altyazı',
+                        ],
                         [m.clip, 'Animasyon'],
                       ].map(([a, n]) => (
                         <span key={String(n)} className={a ? 'ready' : ''}>
@@ -866,6 +872,17 @@ export function ProductionView({ p }: { p: Project }) {
                 {active === s.id && (
                   <div className="station-tools">
                     <p>{s.description}</p>
+                    {m.align?.method === 'estimated' && (
+                      <details className="alignment-detail">
+                        <summary>Hizalama günlüğü · tahmini cümle zamanları</summary>
+                        <p>{m.align.reason}</p>
+                        <p>
+                          Ses: {m.voice?.file} · {m.voice?.duration?.toFixed(3)} sn. Üretim bu sesin
+                          ölçülen süresiyle devam etti. Kesin zamanları yeniden denemek için “Sesi
+                          hizala”yı seç.
+                        </p>
+                      </details>
+                    )}
                     <div className="actions">
                       {[
                         ...(manual ? [] : [['image', 'Görsel üret']]),
@@ -878,7 +895,7 @@ export function ProductionView({ p }: { p: Project }) {
                           disabled={
                             locked ||
                             (k === 'align' && !m.voice) ||
-                            (k === 'clip' && (!m.image || !m.words))
+                            (k === 'clip' && (!m.image || !m.voice))
                           }
                           onClick={() =>
                             void run(() => mutate('generate', { kind: k, scene: s.id }))
@@ -913,7 +930,7 @@ export function ProductionView({ p }: { p: Project }) {
                         title="Efekt yükle"
                         disabled={locked}
                       />
-                      {m.words && (
+                      {captionEntries(m).length > 0 && (
                         <Button disabled={locked} onClick={() => setEditCaps(s)}>
                           Altyazıyı düzenle
                         </Button>
@@ -1034,9 +1051,10 @@ export function Preview({ p }: { p: Project }) {
     return { s, at, end: offset };
   });
   const current = timeline.find((x) => time >= x.at && time < x.end);
-  const words = current
-    ? (p.assets[current.s.id]?.edits ?? p.assets[current.s.id]?.words ?? [])
-    : [];
+  const words = captionEntries(current ? p.assets[current.s.id] : undefined);
+  const estimatedCount = p.scenes.filter(
+    (s) => p.assets[s.id]?.align?.method === 'estimated',
+  ).length;
   return (
     <>
       <Head
@@ -1068,6 +1086,9 @@ export function Preview({ p }: { p: Project }) {
             />
             <div className="player-meta">
               <Badge tone="green">Doğrulandı</Badge>
+              {estimatedCount > 0 && (
+                <Badge tone="amber">{estimatedCount} sahnede tahmini altyazı</Badge>
+              )}
               <span>H.264 / AAC · 30 FPS</span>
             </div>
           </div>

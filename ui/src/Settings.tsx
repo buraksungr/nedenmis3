@@ -417,7 +417,7 @@ export function LocalTab({ s }: { s: SettingsType }) {
         {
           id: 'whisper',
           name: 'Whisper + forced alignment',
-          sub: 'Türkçe transkripsiyon ve sözcük zamanlaması',
+          sub: 'Kesin sözcük zamanları için isteğe bağlı. Kullanılamazsa cümle zamanları tahmin edilir.',
           icon: Mic,
         },
       ].map((o) => {
@@ -432,7 +432,13 @@ export function LocalTab({ s }: { s: SettingsType }) {
               <p>{c?.detail || o.sub}</p>
             </div>
             <Badge tone={!c ? 'gray' : c.ok ? 'green' : 'amber'}>
-              {!c ? 'Kontrol edilmedi' : c.ok ? 'Kullanılabilir' : 'Kurulum gerekli'}
+              {!c
+                ? 'Kontrol edilmedi'
+                : c.ok
+                  ? 'Kullanılabilir'
+                  : o.id === 'whisper'
+                    ? 'İsteğe bağlı'
+                    : 'Kurulum gerekli'}
             </Badge>
           </div>
         );

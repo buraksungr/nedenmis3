@@ -128,6 +128,26 @@ try {
   await (await fileEvent).setFiles('ui/public/art/ants.jpg');
   await page.locator('.scene-card .station-art').waitFor();
   assert.ok(ctx.store.get(id).assets[p.scenes[0].id].image);
+  // The isolated project has no Whisper runtime. The shipped UI must allow viewing and editing its estimate.
+  await page
+    .locator('.sidebar')
+    .getByRole('button', { name: 'Üretim Merkezi', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Sahne üretim araçları' }).click();
+  await page.getByRole('button', { name: 'Sesi hizala' }).click();
+  await page.getByText('Tahmini altyazı', { exact: true }).waitFor();
+  await page.getByText('Hizalama günlüğü · tahmini cümle zamanları', { exact: true }).click();
+  assert.match(await page.locator('.alignment-detail').innerText(), /python|Whisper/i);
+  await page.getByRole('button', { name: 'Altyazıyı düzenle' }).click();
+  const sentence = page.getByRole('textbox', { name: '1. cümle', exact: true });
+  assert.equal(await sentence.inputValue(), 'Karıncalar kışın toprak altına çekilir.');
+  const corrected = 'Bu altyazı, ses dinlenerek düzenlendi.';
+  await sentence.fill(corrected);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/subtitles') && r.ok()),
+    page.getByRole('button', { name: 'Kaydet', exact: true }).click(),
+  ]);
+  assert.equal(ctx.store.get(id).assets[p.scenes[0].id].edits[0].text, corrected);
   await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
   await page.getByLabel('Gemini API anahtarı').fill('only-a-local-ui-test-value');
   await page.getByRole('button', { name: 'Anahtarı kaydet' }).click();

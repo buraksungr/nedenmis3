@@ -32,7 +32,8 @@ export const sceneSchema = z.object({
   motion: z.number().min(0.2).max(2),
 });
 export type Scene = z.infer<typeof sceneSchema>;
-export type Word = { text: string; start: number; end: number };
+export type TimedText = { text: string; start: number; end: number };
+export type Word = TimedText;
 export const wordSchema = z.object({
   text: z.string().trim().min(1).max(120),
   start: z.number().nonnegative(),
@@ -49,11 +50,15 @@ export type Asset = {
 export type Media = {
   image?: Asset;
   voice?: Asset;
-  align?: Asset;
+  align?: Asset &
+    (
+      | { method?: 'whisper' } // Includes verified word alignments saved before 1.0.4.
+      | { method: 'estimated'; reason: string; sentences: TimedText[] }
+    );
   clip?: Asset;
   sfx?: Asset;
   words?: Word[];
-  edits?: Word[];
+  edits?: TimedText[]; // Same granularity as the underlying alignment.
   recognized?: string;
 };
 export type Task = {

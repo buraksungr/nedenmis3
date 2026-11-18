@@ -62,6 +62,7 @@ export async function acousticControl() {
     await engine.render(p, 'all');
     const m = p.assets[s.id];
     assert.equal(m.voice?.file, originalVoice);
+    assert.equal(m.align?.method, 'whisper', 'An estimate must never pass the acoustic control');
     assert.ok(m.words && m.recognized && m.voice?.duration && p.final && p.subtitleFiles);
     assert.ok(validWords(m.words, m.voice.duration));
     assert.ok(m.words.length > 15);
@@ -84,6 +85,7 @@ export async function acousticControl() {
     const c = create();
     await engine.import(c.p, 'voice', fs.readFileSync(delayed), c.s);
     await engine.align(c.p, c.s);
+    assert.equal(c.p.assets[c.s.id].align?.method, 'whisper');
     const shifted = c.p.assets[c.s.id].words!;
     assert.equal(shifted.length, m.words.length);
     const errors = shifted

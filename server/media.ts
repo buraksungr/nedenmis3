@@ -15,6 +15,15 @@ import { Issue, requireThat } from './store';
 export const ffmpeg = process.env.STUDIO_FFMPEG || binary('@ffmpeg-installer/ffmpeg', 'ffmpeg'),
   ffprobe = process.env.STUDIO_FFPROBE || binary('@ffprobe-installer/ffprobe', 'ffprobe');
 export type Paths = ScenePaths & { root: string; pythonDir: string };
+// Local diagnostics only: never echo command arguments, environment or unbounded tool output.
+export function errorDetail(error: unknown) {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/AIza[\w-]+/g, '[gizli]')
+    .replace(/(Bearer\s+|[?&]key=)[^\s&]+/gi, '$1[gizli]')
+    .replace(/[\x00-\x1f]+/g, ' ')
+    .trim()
+    .slice(0, 1800);
+}
 export function exec(
   bin: string,
   args: string[],
@@ -37,7 +46,11 @@ export function exec(
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const timer = setTimeout(() => child.kill('SIGKILL'), ms);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, ms);
     child.stdout.on('data', (b) => {
       stdout = (stdout + b).slice(-524288);
       onLine?.(String(b).trim().slice(-180));
@@ -45,18 +58,18 @@ export function exec(
     child.stderr.on('data', (b) => {
       stderr = (stderr + b).slice(-2048);
     });
-    child.once('error', () => {
+    child.once('error', (e: NodeJS.ErrnoException) => {
       clearTimeout(timer);
-      reject(new Issue(412, `${path.basename(bin)} bulunamadı veya başlatılamadı.`, 'config'));
+      reject(new Issue(412, `${bin}: başlatılamadı (${e.code ?? e.name}).`, 'config'));
     });
-    child.once('close', (c) => {
+    child.once('close', (c, signal) => {
       clearTimeout(timer);
       if (c === 0) resolve(stdout);
       else
         reject(
           new Issue(
             422,
-            `${path.basename(bin)}: ${stderr.split(/\r?\n/).filter(Boolean).slice(-7).join(' ').slice(-850) || 'İşlem tamamlanamadı.'}`,
+            `${path.basename(bin)}: ${timedOut ? `${ms / 1000} sn süre sınırı aşıldı` : `çıkış=${c ?? 'yok'}${signal ? `, sinyal=${signal}` : ''}`}; ${errorDetail(stderr.trim().slice(-1200)) || 'stderr boş.'}`,
           ),
         );
     });
