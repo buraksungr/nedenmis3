@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { defaultSpeaker, type Speaker } from '../shared/speakers';
 import {
   blankScene,
   normalize,
@@ -42,12 +43,16 @@ export function approved(p: Project) {
     'Görsel, ses ve render için storyboard onayı gerekiyor.',
   );
 }
-export function approveBoard(p: Project) {
+export function approveBoard(p: Project, requireImagePrompt = true) {
   requireThat(p.scriptApproval === scriptSig(p), 'Senaryo onayı gerekiyor.');
   requireThat(
     p.scenes.length > 0 &&
-      p.scenes.every((s) => s.description && s.narration && s.prompt && s.animation),
-    'Her sahnenin anlatım, betimleme, görsel istemi ve hareket alanlarını doldurun.',
+      p.scenes.every(
+        (s) => s.description && s.narration && s.animation && (!requireImagePrompt || s.prompt),
+      ),
+    requireImagePrompt
+      ? 'Her sahnenin anlatım, betimleme, görsel istemi ve hareket alanlarını doldurun.'
+      : 'Her sahnenin anlatım, betimleme ve hareket alanlarını doldurun.',
   );
   requireThat(
     new Set(p.scenes.map((s) => s.id)).size === p.scenes.length,
@@ -93,7 +98,7 @@ export function makeProject(topic: string, script = '', instructions = ''): Proj
     styleGuide:
       'Dokulu, elle çizilmiş sinematik 2D doğa belgeseli. Doğal tonlar, yönlü ışık, güçlü ön ve arka plan ayrımı. Aynı özneyi, renk paletini ve çizim tekniğini koru.',
     intensity: 'Orta',
-    voice: 'Charon',
+    voice: defaultSpeaker,
     voiceStyle: 'Sakin, merak uyandıran, doğal bir Türkçe belgesel anlatımı.',
     pace: 'Doğal',
     subtitleSize: 56,
@@ -189,10 +194,20 @@ export class Store {
     requireThat(/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id), 'Proje bulunamadı.', 404);
     return path.join(this.projects, id);
   }
+  defaultSpeaker(): Speaker {
+    return this.setting<Speaker>('tts-speaker', defaultSpeaker);
+  }
+  private resolveSpeaker(p: Project) {
+    // Pre-1.0.2 projects had a concrete voice but no pin. Preserve existing audio and
+    // non-default selections; untouched drafts (including the starter board) inherit.
+    p.speakerPinned ??= p.voice !== defaultSpeaker || Object.values(p.assets).some((m) => m.voice);
+    if (!p.speakerPinned) p.voice = this.defaultSpeaker();
+    return p;
+  }
   get(id: string): Project {
     const file = path.join(this.dir(id), 'project.json');
     requireThat(fs.existsSync(file), 'Proje bulunamadı.', 404);
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return this.resolveSpeaker(JSON.parse(fs.readFileSync(file, 'utf8')));
   }
   index(p: Project) {
     this.db
@@ -215,7 +230,7 @@ export class Store {
   }
   create(p: Project) {
     for (const f of folders) fs.mkdirSync(path.join(this.dir(p.id), f), { recursive: true });
-    return this.save(p);
+    return this.save(this.resolveSpeaker(p));
   }
   checkpoint(p: Project) {
     const counter = 'history:' + p.id;

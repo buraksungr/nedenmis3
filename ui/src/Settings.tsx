@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   kinds,
   labels,
+  manualImages,
   statusNames,
   type Check as CheckResult,
   type Kind,
@@ -30,6 +31,7 @@ import {
   type Settings as SettingsType,
 } from '../../shared/schema';
 import { Badge, Button, Head, Modal, Notice, api, post, useRun, useStudio } from './lib';
+import { SpeakerSelect } from './SpeakerSelect';
 const defaults: Record<string, string> = {
   blocked: 'İstekler kapalı',
   free: 'Yalnızca ücretsiz proje',
@@ -39,16 +41,19 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
   const { setSettings, notify } = useStudio(),
     { busy, run } = useRun();
   const saved = s.models[kind];
-  const [model, setModel] = useState(saved.model),
+  const manual = kind === 'image' && manualImages(saved);
+  const savedModel = manual ? '' : saved.model;
+  const [model, setModel] = useState(savedModel),
     [consent, setConsent] = useState<ModelConfig['consent']>(saved.consent),
     [confirm, setConfirm] = useState(false);
   useEffect(() => {
-    setModel(saved.model);
+    setModel(savedModel);
     setConsent(saved.consent);
-  }, [saved.model, saved.consent]);
+  }, [savedModel, saved.consent]);
   const options = s.catalog.filter((m) => m.kind === kind),
     Icon = kind === 'text' ? FileText : kind === 'image' ? Image : AudioLines;
-  const st = s.services[kind]?.status;
+  const st = manual ? undefined : s.services[kind]?.status;
+  const turningOffImages = kind === 'image' && consent === 'blocked';
   async function apply() {
     setSettings(await post<SettingsType>('/settings/model', { kind, model, consent }));
     notify('Model ve kullanım izni kaydedildi.');
@@ -61,7 +66,13 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
         <h3>{labels[kind]}</h3>
         <span className="right">
           <Badge tone={st === 'connected' ? 'green' : st === 'quota' ? 'amber' : 'gray'}>
-            {st ? statusNames[st] : !s.hasKey ? 'Yapılandırılmadı' : 'Üretim test edilmedi'}
+            {manual
+              ? 'Manuel yükleme'
+              : st
+                ? statusNames[st]
+                : !s.hasKey
+                  ? 'Yapılandırılmadı'
+                  : 'Üretim test edilmedi'}
           </Badge>
         </span>
       </div>
@@ -75,7 +86,11 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
             setConsent('blocked');
           }}
         >
-          {!options.length && <option value="">Bağlantı testi gerekli</option>}
+          {kind === 'image' ? (
+            <option value="">Manuel yükleme · model gerekmez</option>
+          ) : (
+            !options.length && <option value="">Bağlantı testi gerekli</option>
+          )}
           {options.map((m) => (
             <option key={m.id} value={m.id}>
               {m.id}
@@ -85,30 +100,55 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
         <select
           aria-label={`${labels[kind]} kullanım izni`}
           value={consent}
-          disabled={!model}
+          disabled={!model && kind !== 'image'}
           onChange={(e) => setConsent(e.target.value as ModelConfig['consent'])}
         >
           {Object.entries(defaults)
             .filter(([k]) => kind !== 'image' || k !== 'free')
             .map(([k, v]) => (
-              <option key={k} value={k}>
+              <option key={k} value={k} disabled={k !== 'blocked' && !model}>
                 {v}
               </option>
             ))}
         </select>
         <Button
-          disabled={!model || busy || (model === saved.model && consent === saved.consent)}
+          disabled={
+            busy ||
+            (turningOffImages
+              ? manual
+              : !model || (model === saved.model && consent === saved.consent))
+          }
           onClick={() => (consent === 'blocked' ? void run(apply) : setConfirm(true))}
         >
           Uygula
         </Button>
       </div>
       <p className="help">
-        {s.services[kind]?.message ||
-          (kind === 'image'
-            ? 'API üzerinden ücretsiz görsel üretimi varsayılmaz. Alternatif: kendi görselini içe aktar.'
-            : 'Üretim yalnızca seçilen modelde yapılır. Otomatik ücretli geçiş yoktur.')}
+        {manual
+          ? 'Görselleri storyboard onayından sonra sen yüklersin. Görsel API anahtarı, modeli veya izni aranmaz.'
+          : s.services[kind]?.message ||
+            (kind === 'image'
+              ? 'API üzerinden ücretsiz görsel üretimi varsayılmaz. Alternatif: kendi görselini içe aktar.'
+              : 'Üretim yalnızca seçilen modelde yapılır. Otomatik ücretli geçiş yoktur.')}
       </p>
+      {kind === 'tts' && (
+        <>
+          <SpeakerSelect
+            voice={s.defaultSpeaker}
+            disabled={busy}
+            onChange={(speaker) =>
+              void run(async () => {
+                setSettings(await post<SettingsType>('/settings/speaker', { speaker }));
+                notify('Varsayılan konuşmacı kaydedildi.');
+              })
+            }
+          />
+          <p className="help">
+            Henüz anlatımı veya özel ses seçimi olmayan projelere uygulanır. Mevcut anlatımı
+            değiştirmek için projedeki konuşmacıyı seç.
+          </p>
+        </>
+      )}
       {confirm && (
         <Modal
           title={consent === 'paid' ? 'Ücretli istek izni' : 'Ücretsiz proje doğrulaması'}

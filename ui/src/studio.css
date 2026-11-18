@@ -1512,6 +1512,11 @@ kbd {
   padding: 0;
   color: #e6d7b5;
 }
+.job-note.waiting {
+  background: #212622;
+  color: var(--muted);
+  border-color: var(--line);
+}
 .job-note.failed {
   background: #2f2421;
   color: #e0b4a6;
@@ -1677,6 +1682,19 @@ kbd {
   object-fit: cover;
   border-radius: 5px;
   background: #242b23;
+}
+.manual-image-slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 0;
+  font-size: 12px;
+}
+.speaker-select {
+  display: grid;
+  gap: 6px;
+  max-width: 30rem;
+  margin: 10px 0;
 }
 .station-placeholder {
   display: grid;

@@ -125,7 +125,7 @@ export async function verifyVideo(file: string, frames: number, audio: boolean) 
 export const python = (p: Paths) =>
   process.env.STUDIO_PYTHON ||
   path.join(p.root, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-export async function checks(p: Paths, needWhisper = true): Promise<Check[]> {
+export async function checks(p: Paths, { whisper = true, render = true } = {}): Promise<Check[]> {
   const check = async (id: string, name: string, fn: () => Promise<string>): Promise<Check> => {
     try {
       return { id, name, ok: true, detail: await fn() };
@@ -139,7 +139,7 @@ export async function checks(p: Paths, needWhisper = true): Promise<Check[]> {
       await exec(ffprobe, ['-version']);
       return txt.split('\n')[0].split('Copyright')[0].trim();
     }),
-    ...(needWhisper
+    ...(whisper
       ? [
           check('whisper', 'Whisper + hizalama', () =>
             exec(
@@ -155,13 +155,18 @@ export async function checks(p: Paths, needWhisper = true): Promise<Check[]> {
           ),
         ]
       : []),
-    check('remotion', 'Remotion', () =>
-      withDocumentaryScene(
-        p,
-        {},
-        ({ browserExecutable }) => `Kompozisyon açıldı. Render tarayıcısı: ${browserExecutable}`,
-      ),
-    ),
+    ...(render
+      ? [
+          check('remotion', 'Remotion', () =>
+            withDocumentaryScene(
+              p,
+              {},
+              ({ browserExecutable }) =>
+                `Kompozisyon açıldı. Render tarayıcısı: ${browserExecutable}`,
+            ),
+          ),
+        ]
+      : []),
   ]);
 }
 export async function setupPython(p: Paths, stage: (s: string) => void) {

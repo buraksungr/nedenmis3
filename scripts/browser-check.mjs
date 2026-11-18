@@ -42,6 +42,15 @@ try {
   await page.getByRole('textbox', { name: 'Stüdyoda ara' }).fill('satürn');
   await page.getByRole('button', { name: 'Satürn’ün halkaları', exact: true }).click();
   await page.getByRole('textbox', { name: 'Senaryo metni' }).waitFor();
+  await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
+  const speaker = page.getByRole('combobox', { name: 'Konuşmacı (Speaker) seçimi' });
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/settings/speaker') && r.ok()),
+    speaker.selectOption('Kore'),
+  ]);
+  await page.reload();
+  assert.equal(await speaker.inputValue(), 'Kore');
+  await page.getByText('Manuel yükleme', { exact: true }).waitFor();
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
@@ -60,12 +69,18 @@ try {
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
   await page.getByRole('heading', { name: 'Sahne planı' }).waitFor();
   await page.locator('.job-note.config').waitFor();
+  assert.equal(await speaker.inputValue(), 'Kore');
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/preferences') && r.ok()),
+    speaker.selectOption('Puck'),
+  ]);
   await page.getByRole('button', { name: 'Sahne ekle' }).click();
   await page.getByLabel('Anlatım', { exact: true }).fill('Karıncalar kışın toprak altına çekilir.');
   await page
     .getByLabel('Görsel betimleme', { exact: true })
     .fill('Kışın toprağın altında korunaklı bir karınca yuvası.');
-  await page.getByLabel('Görsel istemi', { exact: true }).fill('Dokulu sinematik 2D yuva kesiti.');
+  assert.equal(await page.getByLabel('Görsel istemi (isteğe bağlı)').inputValue(), '');
+  await page.getByText('Görsel bekleniyor', { exact: true }).waitFor();
   await page
     .getByLabel('Animasyon talimatı', { exact: true })
     .fill('Kamera sıcak odacığa yaklaşır.');
@@ -77,10 +92,19 @@ try {
   assert.ok(p.scriptApproval && p.boardApproval);
   assert.equal(p.final, undefined);
   await page.getByRole('button', { name: 'Sahne üretim araçları' }).click();
+  assert.equal(p.voice, 'Puck');
+  assert.match(await page.locator('.job-note.config').innerText(), /Seslendirme/);
+  assert.equal(await page.getByRole('button', { name: 'Görsel üret', exact: true }).count(), 0);
+  assert.ok(await page.getByRole('button', { name: 'Görsel yükle' }).isEnabled());
+  const voiceEvent = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Anlatım yükle' }).click();
+  await (await voiceEvent).setFiles('tests/fixtures/forest.wav');
+  await page.locator('.job-note.waiting').waitFor();
+  await page.getByRole('button', { name: 'Storyboard', exact: true }).first().click();
   const fileEvent = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Görsel değiştir' }).click();
+  await page.getByRole('button', { name: 'Görsel yükle' }).click();
   await (await fileEvent).setFiles('ui/public/art/ants.jpg');
-  await page.locator('.station-art').waitFor();
+  await page.locator('.scene-card .station-art').waitFor();
   assert.ok(ctx.store.get(id).assets[p.scenes[0].id].image);
   await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
   await page.getByLabel('Gemini API anahtarı').fill('only-a-local-ui-test-value');
@@ -143,7 +167,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, cost guard, manual media import, secure-entry UI, real local checks, player and mobile navigation.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, manual storyboard upload, secure-entry UI, real local checks, player and mobile navigation.',
   );
 } finally {
   await browser.close();

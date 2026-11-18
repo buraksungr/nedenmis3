@@ -1,11 +1,13 @@
 import {
   kinds,
+  manualImages,
   type Connection,
   type Kind,
   type ModelConfig,
   type ProviderSettings,
   type Settings,
 } from '../shared/schema';
+import type { Speaker } from '../shared/speakers';
 import type { Store } from './store';
 import { Issue, now, requireThat } from './store';
 export interface Vault {
@@ -83,6 +85,13 @@ export class Gemini {
   raw() {
     return this.store.setting('gemini', fresh());
   }
+  usesManualImages() {
+    return manualImages(this.raw().models.image);
+  }
+  requireAutomaticImages() {
+    if (this.usesManualImages())
+      throw new Issue(409, 'Görsel istekleri kapalı. Bu sahneye kendi görselinizi yükleyin.');
+  }
   settings(): Settings {
     const s = this.raw();
     const hasKey = this.vault.has ? this.vault.has() : !!this.vault.get();
@@ -90,6 +99,7 @@ export class Gemini {
       ...s,
       status: hasKey ? s.status : 'not-configured',
       hasKey,
+      defaultSpeaker: this.store.defaultSpeaker(),
       storage: this.vault.mode,
       folder: this.store.projects,
       desktop: this.vault.mode === 'encrypted',
@@ -105,6 +115,13 @@ export class Gemini {
   }
   configure(kind: Kind, c: ModelConfig) {
     const s = this.raw();
+    if (kind === 'image' && c.consent === 'blocked') {
+      // Disabling is a local preference: no key, discovery or model required.
+      s.models.image = { model: '', consent: 'blocked' };
+      delete s.services.image;
+      this.store.set('gemini', s);
+      return;
+    }
     requireThat(
       s.catalog.some((m) => m.kind === kind && m.id === c.model),
       'Bu model bağlantı testinde bulunmadı.',
@@ -115,7 +132,7 @@ export class Gemini {
       'Görsel API için ücretsiz erişim doğrulanmadı. Kendi görselinizi içe aktarabilir veya bu model için ücretli kullanıma açıkça izin verebilirsiniz.',
       400,
     );
-    s.models[kind] = c;
+    s.models[kind] = { model: c.model, consent: c.consent };
     delete s.services[kind];
     this.store.set('gemini', s);
   }
@@ -209,6 +226,11 @@ export class Gemini {
     const s = this.raw();
     s.catalog = catalog;
     for (const k of kinds) {
+      if (k === 'image' && manualImages(s.models.image)) {
+        s.models.image = { model: '', consent: 'blocked' };
+        delete s.services.image;
+        continue;
+      }
       if (!catalog.some((m) => m.id === s.models[k].model && m.kind === k)) {
         const choices = catalog
           .filter((m) => m.kind === k)
@@ -217,7 +239,7 @@ export class Gemini {
               Number(/pro|preview|latest/.test(a.id)) - Number(/pro|preview|latest/.test(b.id)) ||
               b.id.localeCompare(a.id, 'en', { numeric: true }),
           );
-        s.models[k] = { model: choices[0]?.id || '', consent: 'blocked' };
+        s.models[k] = { model: k === 'image' ? '' : choices[0]?.id || '', consent: 'blocked' };
         delete s.services[k];
       }
     }
@@ -296,7 +318,7 @@ export class Gemini {
     );
     return Buffer.from(p.data!, 'base64');
   }
-  async voice(text: string, voice: string, style: string) {
+  async voice(text: string, voice: Speaker, style: string) {
     const model = this.allowed('tts');
     const newer = !/^gemini-(2\.|3\.1-)/.test(model);
     const p = await this.generate(

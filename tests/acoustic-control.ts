@@ -53,11 +53,15 @@ export async function acousticControl() {
       return { p, s };
     };
     const { p, s } = create();
-    await engine.import(p, 'image', fs.readFileSync('ui/public/art/forest-studio.jpg'), s);
     await engine.import(p, 'voice', audio, s);
+    const originalVoice = p.assets[s.id].voice!.file;
+    assert.equal((await engine.render(p, 'all'))?.kind, 'manual-images');
+    assert.ok(!p.assets[s.id].image && !p.assets[s.id].clip && !store.get(p.id).final);
+    await engine.import(p, 'image', fs.readFileSync('ui/public/art/forest-studio.jpg'), s);
     // No injected timestamps: full production preflight → ASR → forced alignment → render → mix.
     await engine.render(p, 'all');
     const m = p.assets[s.id];
+    assert.equal(m.voice?.file, originalVoice);
     assert.ok(m.words && m.recognized && m.voice?.duration && p.final && p.subtitleFiles);
     assert.ok(validWords(m.words, m.voice.duration));
     assert.ok(m.words.length > 15);

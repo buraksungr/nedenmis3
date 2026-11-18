@@ -43,7 +43,7 @@ import {
 function openAt(p: ProjectSummary): Page {
   return p.exported
     ? 'preview'
-    : p.stage === 'Üretime hazır' || p.stage === 'İşleniyor'
+    : ['Üretime hazır', 'İşleniyor', 'Görsel bekleniyor'].includes(p.stage)
       ? 'production'
       : p.stage === 'Storyboard'
         ? 'board'
@@ -372,6 +372,7 @@ export function Projects() {
             'Senaryo',
             'Storyboard',
             'Üretime hazır',
+            'Görsel bekleniyor',
             'İşleniyor',
             'Tamamlandı',
           ].map((x) => (

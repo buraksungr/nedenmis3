@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   Clapperboard,
+  Clock3,
   FolderOpen,
   LoaderCircle,
   TriangleAlert,
@@ -286,11 +287,14 @@ export function WorkspaceBar() {
 }
 export function JobNote() {
   const { p, go } = useStudio();
-  if (!p || p.job.state === 'waiting' || p.job.state === 'done') return null;
+  if (!p || (p.job.state === 'waiting' && p.job.kind !== 'manual-images') || p.job.state === 'done')
+    return null;
   return (
     <div className={'job-note ' + p.job.state}>
       {p.job.state === 'working' ? (
         <LoaderCircle className="spin" size={16} />
+      ) : p.job.state === 'waiting' ? (
+        <Clock3 size={16} />
       ) : (
         <TriangleAlert size={16} />
       )}

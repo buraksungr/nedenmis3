@@ -1,0 +1,36 @@
+// Gemini TTS prebuilt voices (not model IDs or custom/cloned voices).
+// https://ai.google.dev/gemini-api/docs/speech-generation#voices
+export const speakers = [
+  'Achernar',
+  'Achird',
+  'Algenib',
+  'Algieba',
+  'Alnilam',
+  'Aoede',
+  'Autonoe',
+  'Callirrhoe',
+  'Charon',
+  'Despina',
+  'Enceladus',
+  'Erinome',
+  'Fenrir',
+  'Gacrux',
+  'Iapetus',
+  'Kore',
+  'Laomedeia',
+  'Leda',
+  'Orus',
+  'Puck',
+  'Pulcherrima',
+  'Rasalgethi',
+  'Sadachbia',
+  'Sadaltager',
+  'Schedar',
+  'Sulafat',
+  'Umbriel',
+  'Vindemiatrix',
+  'Zephyr',
+  'Zubenelgenubi',
+] as const;
+export type Speaker = (typeof speakers)[number];
+export const defaultSpeaker: Speaker = 'Charon';

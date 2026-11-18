@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { groups, srt, validWords } from '../shared/captions';
-import type { Asset, Project, Scene, Word } from '../shared/schema';
+import type { Asset, Project, Scene, Task, Word } from '../shared/schema';
 import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
 import {
@@ -133,6 +133,7 @@ export class Production {
           const m = (p.assets[s!.id] ??= {});
           if (kind === 'sfx') m.sfx = a;
           else {
+            p.speakerPinned = true; // Keep a consistent narrator when resuming later.
             m.voice = a;
             delete m.align;
             delete m.edits;
@@ -150,23 +151,21 @@ export class Production {
       fs.rmSync(out, { force: true });
     }
   }
+  private async verifyCached(p: Project, asset: Asset, kind: 'image' | 'voice') {
+    const file = this.file(p, asset.file);
+    try {
+      if (kind === 'voice') await audioDuration(file);
+      else requireThat((await probe(file)).streams[0]?.width > 0, 'Görsel okunamadı.');
+    } catch {
+      throw new Issue(422, 'Önbellekteki dosya bozuk. Bu sahnenin varlığını yenileyin.');
+    }
+  }
   async asset(p: Project, s: Scene, kind: 'image' | 'voice', force: boolean) {
     approved(p);
     const m = (p.assets[s.id] ??= {}),
       k = kind === 'image' ? imageKey(p, s) : voiceKey(p, s);
-    if (!force && this.usable(p, m[kind], k)) {
-      try {
-        if (kind === 'voice') await audioDuration(this.file(p, m.voice!.file));
-        else
-          requireThat(
-            (await probe(this.file(p, m.image!.file))).streams[0]?.width > 0,
-            'Görsel okunamadı.',
-          );
-        return;
-      } catch {
-        throw new Issue(422, 'Önbellekteki dosya bozuk. Bu sahnenin varlığını yenileyin.');
-      }
-    }
+    if (!force && this.usable(p, m[kind], k)) return this.verifyCached(p, m[kind]!, kind);
+    if (kind === 'image') this.g.requireAutomaticImages();
     this.tick(
       p,
       kind === 'image' ? 'Sinematik görsel üretiliyor' : 'Türkçe seslendirme üretiliyor',
@@ -319,16 +318,32 @@ export class Production {
       fs.rmSync(output, { force: true });
     }
   }
+  // A placeholder is a UI state, never an image asset or a renderable frame.
+  waitingForImages(p: Project): Task | undefined {
+    const count = p.scenes.filter(
+      (s) => !this.usable(p, p.assets[s.id]?.image, imageKey(p, s)),
+    ).length;
+    if (count)
+      return {
+        state: 'waiting',
+        kind: 'manual-images',
+        label: `${count} sahne için görsel bekleniyor. Görselleri yükleyip üretime devam edin.`,
+        at: now(),
+      };
+  }
   async render(p: Project, kind: Step, target?: string) {
     approved(p);
     const scenes = target ? p.scenes.filter((s) => s.id === target) : p.scenes;
     requireThat(scenes.length, 'Sahne bulunamadı.');
+    const manual = this.g.usesManualImages();
+    const waiting = kind === 'all' && manual ? this.waitingForImages(p) : undefined;
     if (kind === 'all') {
-      // No paid calls before BOTH cloud permissions and local dependencies are ready.
+      // Preflight only the services needed for this phase. Awaiting manual images
+      // requires narration, not image credentials, a renderer or a Whisper model.
       let needWhisper = false;
       for (const s of scenes) {
         const m = p.assets[s.id];
-        if (!this.usable(p, m?.image, imageKey(p, s))) this.g.allowed('image');
+        if (!manual && !this.usable(p, m?.image, imageKey(p, s))) this.g.allowed('image');
         if (!this.usable(p, m?.voice, voiceKey(p, s))) this.g.allowed('tts');
         if (
           !m?.align ||
@@ -339,7 +354,10 @@ export class Production {
           needWhisper = true;
       }
       this.tick(p, 'Yerel üretim araçları doğrulanıyor', 'preflight');
-      const report = await checks(this.paths, needWhisper);
+      const report = await checks(this.paths, {
+        whisper: !waiting && needWhisper,
+        render: !waiting,
+      });
       const missing = report.filter((x) => !x.ok);
       if (missing.length)
         throw new Issue(
@@ -350,8 +368,16 @@ export class Production {
           'config',
         );
     }
+    if (waiting) {
+      for (const scene of scenes) await this.asset(p, scene, 'voice', false);
+      delete p.final;
+      delete p.subtitleFiles;
+      return { ...waiting, at: now() };
+    }
     for (const s of scenes) {
-      if (kind === 'all' || kind === 'image') await this.asset(p, s, 'image', kind === 'image');
+      if (kind === 'all' && manual) await this.verifyCached(p, p.assets[s.id].image!, 'image');
+      else if (kind === 'all' || kind === 'image')
+        await this.asset(p, s, 'image', kind === 'image');
       if (kind === 'all' || kind === 'voice') await this.asset(p, s, 'voice', kind === 'voice');
       if (kind === 'all' || kind === 'align') await this.align(p, s, kind === 'align');
     }

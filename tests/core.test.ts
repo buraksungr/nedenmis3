@@ -177,6 +177,10 @@ test('one key; discovery is read-only, paginated, and does not authorize generat
     () => g.configure('image', { model: 'gemini-test-image', consent: 'free' }),
     /ücretsiz/,
   );
+  g.configure('image', { model: 'gemini-test-image', consent: 'paid' });
+  assert.equal(g.allowed('image'), 'gemini-test-image');
+  g.configure('image', { model: 'no-longer-listed', consent: 'blocked' });
+  assert.deepEqual(g.raw().models.image, { model: '', consent: 'blocked' });
   g.configure('text', { model: 'gemini-test-flash', consent: 'free' });
   assert.equal(g.allowed('text'), 'gemini-test-flash');
   g.key('updated-test-credential');
@@ -274,4 +278,21 @@ test('damaged image import and unavailable TTS preserve previously verified asse
   assert.ok(fs.existsSync(engine.file(p, a!.file)));
   await engine.asset(p, p.scenes[0], 'image', false);
   assert.deepEqual(p.assets[p.scenes[0].id].image, a);
+});
+
+test('speaker upgrade preserves existing narration and legacy voice overrides, but untouched drafts inherit the studio default', (t) => {
+  const store = temp(t);
+  const untouched = store.create(draft()),
+    narrated = store.create(draft()),
+    custom = store.create(draft());
+  store.set('tts-speaker', 'Sulafat');
+  for (const p of [untouched, narrated, custom]) delete p.speakerPinned; // 1.0.1 project format
+  const s = narrated.scenes[0];
+  narrated.assets[s.id] = { voice: { file: 'audio/prior.wav', key: voiceKey(narrated, s) } };
+  custom.voice = 'Orus';
+  for (const p of [untouched, narrated, custom]) store.save(p);
+  assert.equal(store.get(untouched.id).voice, 'Sulafat');
+  assert.equal(store.get(custom.id).voice, 'Orus');
+  assert.equal(store.get(narrated.id).voice, 'Charon');
+  assert.deepEqual(store.get(narrated.id).assets, narrated.assets);
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Speaker } from './speakers';
 export const cameras = ['push', 'pull', 'pan', 'tilt', 'track', 'focus'] as const;
 export const environments = [
   'dust',
@@ -81,7 +82,8 @@ export type Project = {
   scenes: Scene[];
   styleGuide: string;
   intensity: (typeof intensities)[number];
-  voice: string;
+  voice: Speaker;
+  speakerPinned?: boolean; // Explicit choice or a project that already has narration.
   voiceStyle: string;
   pace: string;
   subtitleSize: number;
@@ -108,6 +110,8 @@ export type Connection =
   | 'quota'
   | 'unavailable';
 export type ModelConfig = { model: string; consent: 'blocked' | 'free' | 'paid' };
+// Only an explicit paid opt-in enables the remote image adapter.
+export const manualImages = (image: ModelConfig) => image.consent !== 'paid';
 export type ProviderSettings = {
   models: Record<Kind, ModelConfig>;
   catalog: { id: string; kind: Kind; name: string }[];
@@ -118,6 +122,7 @@ export type ProviderSettings = {
   message: string;
 };
 export type Settings = ProviderSettings & {
+  defaultSpeaker: Speaker;
   hasKey: boolean;
   storage: 'encrypted' | 'session';
   folder: string;
@@ -147,13 +152,15 @@ export const stageOf = (p: Project) =>
     ? 'Tamamlandı'
     : p.job.state === 'working'
       ? 'İşleniyor'
-      : p.boardApproval
-        ? 'Üretime hazır'
-        : p.scriptApproval
-          ? 'Storyboard'
-          : p.script
-            ? 'Senaryo'
-            : 'Taslak';
+      : p.job.state === 'waiting' && p.job.kind === 'manual-images'
+        ? 'Görsel bekleniyor'
+        : p.boardApproval
+          ? 'Üretime hazır'
+          : p.scriptApproval
+            ? 'Storyboard'
+            : p.script
+              ? 'Senaryo'
+              : 'Taslak';
 export const labels = { text: 'Metin', image: 'Görsel', tts: 'Seslendirme' };
 export const statusNames: Record<Connection, string> = {
   'not-configured': 'Yapılandırılmadı',

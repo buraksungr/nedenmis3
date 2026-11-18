@@ -4,7 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { validWords } from '../shared/captions';
-import { intensities, kinds, sceneSchema, wordSchema, type Project } from '../shared/schema';
+import {
+  intensities,
+  kinds,
+  sceneSchema,
+  wordSchema,
+  type Task,
+  type Project,
+} from '../shared/schema';
+import { speakers } from '../shared/speakers';
 import { Gemini, memoryVault, type Vault } from './gemini';
 import { invalidate } from './invalidate';
 import { checks, setupPython, type Paths } from './media';
@@ -35,7 +43,7 @@ const sceneList = z
   );
 const pref = z
   .object({
-    voice: z.enum(['Charon', 'Orus', 'Fenrir', 'Algenib']),
+    voice: z.enum(speakers),
     voiceStyle: z.string().trim().min(1).max(450),
     pace: z.enum(['Doğal', 'Yavaş', 'Hızlı']),
     intensity: z.enum(intensities),
@@ -104,7 +112,7 @@ export function createStudio(
     requireThat(s, 'Sahne bulunamadı.', 404);
     return s;
   };
-  function run(p: Project, kind: string, fn: () => Promise<void>) {
+  function run(p: Project, kind: string, fn: () => Promise<void | Task>) {
     idle();
     busy = p.id;
     store.checkpoint(p);
@@ -113,8 +121,9 @@ export function createStudio(
     store.log(p);
     setImmediate(async () => {
       try {
-        await fn();
-        p.job = {
+        const pending = await fn();
+        if (!pending && kind === 'all') requireThat(p.final, 'Tamamlanmış bir MP4 bulunamadı.');
+        p.job = pending ?? {
           state: 'done',
           kind,
           label: kind === 'all' ? 'MP4 doğrulandı' : 'İşlem tamamlandı',
@@ -184,7 +193,7 @@ export function createStudio(
       .parse(q.body);
     const old = structuredClone(p);
     const next = { ...p, scenes: b.scenes, styleGuide: b.styleGuide };
-    if (b.approve) approveBoard(next);
+    if (b.approve) approveBoard(next, !g.usesManualImages());
     const changed =
       JSON.stringify([p.scenes, p.styleGuide]) !== JSON.stringify([b.scenes, b.styleGuide]);
     if (changed || b.approve) {
@@ -234,6 +243,7 @@ export function createStudio(
     if (['all', 'image', 'voice', 'align', 'clip'].includes(b.kind)) approved(p);
     if (['image', 'voice', 'align', 'clip', 'concept'].includes(b.kind))
       requireThat(s, 'Bir sahne seçin.');
+    if (b.kind === 'image') g.requireAutomaticImages();
     requireThat(!(b.kind === 'all' && s), 'Tam üretim tüm zaman çizelgesini kullanır.', 400);
     r.status(202).json(
       run(p, b.kind, async () => {
@@ -250,7 +260,7 @@ export function createStudio(
           p.boardApproval = null;
           return;
         }
-        await prod.render(p, b.kind as 'all' | 'image' | 'voice' | 'align' | 'clip', s?.id);
+        return prod.render(p, b.kind as 'all' | 'image' | 'voice' | 'align' | 'clip', s?.id);
       }),
     );
   });
@@ -259,6 +269,7 @@ export function createStudio(
       b = pref.parse(q.body);
     store.checkpoint(p);
     const old = structuredClone(p);
+    if (b.voice !== undefined && b.voice !== p.voice) p.speakerPinned = true;
     Object.assign(p, b);
     invalidate(p, old);
     clearFinal(p);
@@ -302,7 +313,13 @@ export function createStudio(
       busy = p.id;
       try {
         await prod.import(p, kind, q.body, s);
-        p.job = { state: 'done', kind, label: 'Dosya doğrulandı ve içe aktarıldı', at: now() };
+        const pending = g.usesManualImages() ? prod.waitingForImages(p) : undefined;
+        p.job = pending ?? {
+          state: 'done',
+          kind,
+          label: 'Dosya doğrulandı ve içe aktarıldı',
+          at: now(),
+        };
         r.json(store.save(p));
       } finally {
         busy = null;
@@ -353,12 +370,17 @@ export function createStudio(
       busy = null;
     }
   });
+  app.post('/api/settings/speaker', (q, r) => {
+    idle();
+    store.set('tts-speaker', z.enum(speakers).parse(q.body.speaker));
+    r.json(g.settings());
+  });
   app.post('/api/settings/model', (q, r) => {
     idle();
     const b = z
       .object({
         kind: z.enum(kinds),
-        model: z.string(),
+        model: z.string().default(''),
         consent: z.enum(['blocked', 'free', 'paid']),
       })
       .parse(q.body);
