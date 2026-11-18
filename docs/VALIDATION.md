@@ -1,5 +1,13 @@
 # Doğrulama kaydı
 
+## 1.0.6 — sabit görseller, opaklık geçişi ve senaryoda HTTP 503
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44278142035/artifacts/14416007302)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44278142035) · Derleme: `ceb487e718244de1656e78718305db4363c044a7`.
+
+- Windows’ta **31 test**, derleme ve arayüz kontrolü geçti. İmzasız `Nedenmis-Studio-1.0.6-Setup.exe` temiz ortama kuruldu ve kurulu uygulama sistem Edge’iyle kompozisyonu açtı. **ZIP paketinin** SHA-256 değeri: `6c698650dbe0e79218bbc35177341834e9ab17e404cc9cf3a3f837eb72e53792`.
+- [MP4, sabit kadraj/geçiş, altyazı ve kurulum raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44278142035/artifacts/14416101968): render öncesi kaynak fotoğraflarla render edilen sabit kareler piksel düzeyinde karşılaştırıldı. Geçişin ortasında iki resmin karışımı, sonunda ise sonraki resmin ilk karesi doğrulandı. Eski kesme ayarı taşıyan iki sahneli prodüksiyon MP4’ünde de aynı geçiş sınandı. Yerel kontrol: 1080 × 1920, 30 FPS, 109 kare; H.264 3,633333 sn / AAC 3,633 sn. [Ayrı gerçek Türkçe CPU hizalama testi](https://github.com/buraksungr/nedenmis3/actions/runs/44278142035/artifacts/14416630195) de geçti.
+- Çevrimdışı senaryo testlerinde **gerçek SDK’nın** oluşturduğu HTTP isteği yakalandı: seçili model, `v1` yolu, anahtar başlığı ve gövde doğrulandı. Üç 503’ten sonra başarıda gecikmeler 1/2/4 sn; dört 503’te taslak ve onay korundu. Kalıcı hatada deneme sayısı, hizmet durumu ve anahtarsız iş günlüğü kontrol edildi. Derlenmiş arayüzde geçici 503 sonrası metin editöre ulaştı. Kota/404/ağ hatasında veya görsel/TTS/JSON storyboard çağrılarında otomatik tekrar yapılmadı. Bu sonuçlar canlı bir Google hesabının erişimini, kotasını veya o andaki hizmet durumunu göstermez.
+
 ## 1.0.5 — sahne hareketleri ve görüntü geçişleri
 
 **[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44223452275/artifacts/14391199938)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44223452275) · Derleme: `2f8b9091e54a10406f497bbf1d4fdc9dc1230bfb`.
