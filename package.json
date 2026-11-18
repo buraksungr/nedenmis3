@@ -41,7 +41,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "electron": "41.10.7",
-    "electron-builder": "26.0.12",
+    "electron-builder": "26.18.0",
     "esbuild": "^0.25.10",
     "lucide-react": "0.552.0",
     "playwright-core": "^1.50.1",
