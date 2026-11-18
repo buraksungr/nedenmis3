@@ -45,6 +45,15 @@ const fresh = (): ProviderSettings => ({
   message: '',
 });
 const base = 'https://generativelanguage.googleapis.com/v1beta';
+// models.list returns a resource name; settings and request builders use a single model ID.
+function modelId(name: unknown): string {
+  if (typeof name !== 'string') return '';
+  const id = name
+    .trim()
+    .replace(/^models\//, '')
+    .trim();
+  return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id) ? id : '';
+}
 export function modality(id: string): Kind | undefined {
   if (
     !/^(gemini-|nano-banana)/.test(id) ||
@@ -57,7 +66,12 @@ export function modality(id: string): Kind | undefined {
   if (/image|nano-banana/.test(id)) return 'image';
   return 'text';
 }
-function fault(status: number, reason: string, retry: string | null) {
+function fault(
+  status: number,
+  reason: string | undefined,
+  retry: string | null,
+  textRoute?: string,
+) {
   if (status === 429)
     return [
       'quota',
@@ -65,6 +79,11 @@ function fault(status: number, reason: string, retry: string | null) {
     ] as const;
   if (status === 401 || reason === 'API_KEY_INVALID' || reason === 'API_KEY_EXPIRED')
     return ['invalid', 'API anahtarı geçersiz veya süresi dolmuş.'] as const;
+  if (status === 404 && textRoute)
+    return [
+      'unavailable',
+      `Metin modeli bu projede /v1beta${textRoute} ile kullanılamadı (HTTP 404). Ayarlar → API ve modeller’de bağlantıyı yeniden test edip listeden bir metin modeli seçin.`,
+    ] as const;
   if (status === 403)
     return [
       'unavailable',
@@ -75,7 +94,7 @@ function fault(status: number, reason: string, retry: string | null) {
     `Gemini isteği tamamlanamadı (HTTP ${status}). Model erişimini ve yapılandırmasını kontrol edin.`,
   ] as const;
 }
-type Part = { type: string; text?: string; data?: string; mime_type?: string };
+type MediaPart = { type: 'image' | 'audio'; data: string; mime_type?: string };
 export class Gemini {
   constructor(
     private store: Store,
@@ -122,8 +141,9 @@ export class Gemini {
       this.store.set('gemini', s);
       return;
     }
+    const model = modelId(c.model);
     requireThat(
-      s.catalog.some((m) => m.kind === kind && m.id === c.model),
+      model && s.catalog.some((m) => m.kind === kind && modelId(m.id) === model),
       'Bu model bağlantı testinde bulunmadı.',
       400,
     );
@@ -132,11 +152,11 @@ export class Gemini {
       'Görsel API için ücretsiz erişim doğrulanmadı. Kendi görselinizi içe aktarabilir veya bu model için ücretli kullanıma açıkça izin verebilirsiniz.',
       400,
     );
-    s.models[kind] = { model: c.model, consent: c.consent };
+    s.models[kind] = { model, consent: c.consent };
     delete s.services[kind];
     this.store.set('gemini', s);
   }
-  async request(route: string, body?: object, kind?: Kind) {
+  private async request(route: string, body?: object, kind?: Kind) {
     let key: string | undefined;
     try {
       key = this.vault.get();
@@ -173,17 +193,22 @@ export class Gemini {
     }
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
-      const retryInfo = e.error?.details?.find((d: any) => d.retryDelay)?.retryDelay;
+      const retryInfo = e?.error?.details?.find((d: any) => d.retryDelay)?.retryDelay;
       const retry =
         r.headers.get('retry-after') ??
         (typeof retryInfo === 'string' ? retryInfo.replace(/s$/, '') : null);
       const [st, msg] = fault(
         r.status,
-        e.error?.details?.find((d: any) => d.reason)?.reason,
+        e?.error?.details?.find((d: any) => d.reason)?.reason,
         retry && /^\d+(\.\d+)?$/.test(retry) ? retry : null,
+        kind === 'text' ? route : undefined,
       );
       this.record(st, msg, kind);
-      throw new Issue(r.status, msg, st === 'invalid' ? 'config' : 'failed');
+      throw new Issue(
+        r.status,
+        msg,
+        st === 'invalid' || (r.status === 404 && kind === 'text') ? 'config' : 'failed',
+      );
     }
     try {
       return await r.json();
@@ -214,9 +239,13 @@ export class Gemini {
         this.record('unavailable', 'Google geçerli bir model listesi döndürmedi.');
       requireThat(Array.isArray(data.models), 'Google geçerli bir model listesi döndürmedi.', 502);
       for (const m of data.models) {
-        const id = String(m.name).replace(/^models\//, '');
+        const id = modelId(m?.name);
         const kind = modality(id);
-        if (kind && m.supportedGenerationMethods?.includes('generateContent'))
+        if (
+          kind &&
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent')
+        )
           catalog.push({ id, kind, name: m.displayName || id });
       }
       token = data.nextPageToken || '';
@@ -231,6 +260,7 @@ export class Gemini {
         delete s.services.image;
         continue;
       }
+      s.models[k].model = modelId(s.models[k].model);
       if (!catalog.some((m) => m.id === s.models[k].model && m.kind === k)) {
         const choices = catalog
           .filter((m) => m.kind === k)
@@ -251,11 +281,12 @@ export class Gemini {
   }
   allowed(kind: Kind) {
     const s = this.settings(),
-      c = s.models[kind];
+      c = s.models[kind],
+      model = modelId(c.model);
     if (
       !s.hasKey ||
       s.status === 'invalid' ||
-      !c.model ||
+      modality(model) !== kind ||
       c.consent === 'blocked' ||
       (kind === 'image' && c.consent === 'free')
     )
@@ -264,45 +295,78 @@ export class Gemini {
         `${{ text: 'Metin', image: 'Görsel', tts: 'Seslendirme' }[kind]} için Ayarlar’da anahtarı test edin, model seçin ve kullanım iznini belirleyin. Ücretli istek yapılmadı.`,
         'config',
       );
-    return c.model;
+    return model;
   }
-  async generate(kind: Kind, params: object, type: string): Promise<Part> {
+  private beginGeneration(kind: Kind) {
     const model = this.allowed(kind);
     const s = this.raw(),
       day = now().slice(0, 10) + ':' + kind;
     s.requests[day] = (s.requests[day] || 0) + 1;
     this.store.set('gemini', s);
-    const out = await this.request('/interactions', { model, store: false, ...params }, kind);
-    const parts: Part[] = (out.steps ?? [])
-      .filter((x: any) => x.type === 'model_output')
-      .flatMap((x: any) => x.content ?? [])
-      .filter((x: Part) => x.type === type && (x.data || x.text));
-    const part =
-      type === 'text' && parts.length
-        ? { type, text: parts.map((x) => x.text).join('') }
-        : parts.at(-1);
-    if (out.status !== 'completed' || !part) {
-      this.record('unavailable', 'Yanıt engellendi, eksik veya beklenen biçimde değil.', kind);
-      throw new Issue(
-        502,
-        'Gemini doğrulanabilir bir çıktı döndürmedi. Modeli ve içeriği kontrol edin.',
-      );
-    }
-    this.record('connected', 'Geçerli servis yanıtı alındı.', kind);
-    return part;
+    return model;
   }
-  async text(prompt: string, schema?: object) {
-    const p = await this.generate(
-      'text',
+  private noOutput(kind: Kind): never {
+    this.record('unavailable', 'Yanıt engellendi, eksik veya beklenen biçimde değil.', kind);
+    throw new Issue(
+      502,
+      'Gemini doğrulanabilir bir çıktı döndürmedi. Modeli ve içeriği kontrol edin.',
+    );
+  }
+  async text(prompt: string, schema?: object): Promise<string> {
+    // Use the same method that models.list verified. The model is a path parameter, not a body field.
+    const model = this.beginGeneration('text');
+    const out = await this.request(
+      `/models/${encodeURIComponent(model)}:generateContent`,
       {
-        input: prompt,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         ...(schema
-          ? { response_format: { type: 'text', mime_type: 'application/json', schema } }
+          ? {
+              generationConfig: {
+                responseMimeType: 'application/json',
+                responseJsonSchema: schema,
+              },
+            }
           : {}),
       },
       'text',
     );
-    return p.text!.trim();
+    const candidate = out?.candidates?.[0];
+    const parts = candidate?.content?.parts;
+    const block = out?.promptFeedback?.blockReason;
+    if (
+      !Array.isArray(parts) ||
+      (block && block !== 'BLOCK_REASON_UNSPECIFIED') ||
+      (candidate.finishReason && candidate.finishReason !== 'STOP')
+    )
+      this.noOutput('text');
+    // Never write a thought summary into the script or concatenate alternative candidates.
+    const text = parts
+      .map((p) => (!p?.thought && typeof p?.text === 'string' ? p.text : ''))
+      .join('')
+      .trim();
+    if (!text) this.noOutput('text');
+    this.record('connected', 'Geçerli servis yanıtı alındı.', 'text');
+    return text;
+  }
+  private async mediaInteraction(
+    kind: 'image' | 'tts',
+    params: (model: string) => object,
+  ): Promise<MediaPart> {
+    const model = this.beginGeneration(kind);
+    const out = await this.request(
+      '/interactions',
+      { model, store: false, ...params(model) },
+      kind,
+    );
+    const type = kind === 'image' ? 'image' : 'audio';
+    const part = (out?.steps ?? [])
+      .filter((x: any) => x.type === 'model_output')
+      .flatMap((x: any) => x.content ?? [])
+      .filter((x: MediaPart) => x.type === type && x.data)
+      .at(-1);
+    if (out?.status !== 'completed' || !part) this.noOutput(kind);
+    this.record('connected', 'Geçerli servis yanıtı alındı.', kind);
+    return part;
   }
   async image(prompt: string, ref?: Buffer) {
     const input = ref
@@ -311,35 +375,26 @@ export class Gemini {
           { type: 'image', data: ref.toString('base64'), mime_type: 'image/jpeg' },
         ]
       : prompt;
-    const p = await this.generate(
-      'image',
-      { input, response_format: { type: 'image', aspect_ratio: '9:16', mime_type: 'image/jpeg' } },
-      'image',
-    );
-    return Buffer.from(p.data!, 'base64');
+    const p = await this.mediaInteraction('image', () => ({
+      input,
+      response_format: { type: 'image', aspect_ratio: '9:16', mime_type: 'image/jpeg' },
+    }));
+    return Buffer.from(p.data, 'base64');
   }
   async voice(text: string, voice: Speaker, style: string) {
-    const model = this.allowed('tts');
-    const newer = !/^gemini-(2\.|3\.1-)/.test(model);
-    const p = await this.generate(
-      'tts',
-      {
-        input: newer
-          ? [
-              {
-                type: 'user_input',
-                content: [
-                  { type: 'text', text, annotations: [{ type: 'speech_metadata', style }] },
-                ],
-              },
-            ]
-          : `${style} Aşağıdaki Türkçe metni ekleme yapmadan aynen oku:\n\n${text}`,
-        response_format: { type: 'audio' },
-        generation_config: { speech_config: [{ voice }] },
-      },
-      'audio',
-    );
-    const data = Buffer.from(p.data!, 'base64');
+    const p = await this.mediaInteraction('tts', (model) => ({
+      input: !/^gemini-(2\.|3\.1-)/.test(model)
+        ? [
+            {
+              type: 'user_input',
+              content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }],
+            },
+          ]
+        : `${style} Aşağıdaki Türkçe metni ekleme yapmadan aynen oku:\n\n${text}`,
+      response_format: { type: 'audio' },
+      generation_config: { speech_config: [{ voice }] },
+    }));
+    const data = Buffer.from(p.data, 'base64');
     if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WAVE')
       return data;
     requireThat(

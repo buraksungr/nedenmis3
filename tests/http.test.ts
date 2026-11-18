@@ -32,7 +32,16 @@ async function app(t: any, token?: string, transport?: typeof fetch) {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  return { ...ctx, req, base, root };
+  const settle = async (route: string): Promise<Project> => {
+    const deadline = Date.now() + 25000;
+    while (Date.now() < deadline) {
+      const p: Project = await (await req(route)).json();
+      if (p.job.state !== 'working') return p;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    throw new Error('Background production did not settle');
+  };
+  return { ...ctx, req, settle, base, root };
 }
 test('HTTP workflow: stale writes rejected; both reviews required, then missing key is actionable', async (t) => {
   const { req, store } = await app(t);
@@ -142,7 +151,7 @@ test('preview writes work under the iframe proxy without opening cross-site acce
   );
 });
 
-test('free text + selected TTS with no image model: narration first, manual placeholders, no image validation or calls', async (t) => {
+test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS without any image service', async (t) => {
   const lines = [
     'Kış geldi.',
     'Karıncalar yavaşladı.',
@@ -153,52 +162,82 @@ test('free text + selected TTS with no image model: narration first, manual plac
   const text = lines.join(' '),
     wav = fs.readFileSync('tests/fixtures/forest.wav').toString('base64');
   const calls: { model: string; voice?: string; line?: string }[] = [];
-  const { req, g, base } = await app(t, undefined, async (_url, opts) => {
-    if (opts?.method === 'GET')
+  const api = 'https://generativelanguage.googleapis.com/v1beta';
+  const textModel = 'gemini-2.5-flash';
+  const { req, settle, g, base } = await app(t, undefined, async (url, opts) => {
+    assert.equal(new Headers(opts?.headers).get('x-goog-api-key'), 'offline-test-credential');
+    if (opts?.method === 'GET' && url === `${api}/models?pageSize=1000`)
       return Response.json({
-        models: ['gemini-test-flash', 'gemini-test-tts'].map((id) => ({
+        models: [textModel, 'gemini-test-tts'].map((id) => ({
           name: `models/${id}`,
           supportedGenerationMethods: ['generateContent'],
         })),
       });
     const b = JSON.parse(String(opts?.body));
-    calls.push({
-      model: b.model,
-      voice: b.generation_config?.speech_config[0]?.voice,
-      line: b.input?.[0]?.content?.[0]?.text,
-    });
-    const part =
-      b.model === 'gemini-test-tts'
-        ? { type: 'audio', mime_type: 'audio/wav', data: wav }
-        : {
-            type: 'text',
-            text: b.response_format
-              ? JSON.stringify({
-                  styleGuide: 'Sinematik doğa çizimi',
-                  scenes: lines.map((n) => ({
-                    ...blankScene(randomUUID()),
-                    narration: n,
-                    description: n,
-                    animation: 'Kamera yaklaşır.',
-                  })),
-                })
-              : text,
-          };
-    return Response.json({
-      status: 'completed',
-      steps: [{ type: 'model_output', content: [part] }],
-    });
+    if (opts?.method === 'POST' && url === `${api}/models/${textModel}:generateContent`) {
+      const prompt = b.contents[0].parts[0].text;
+      assert.match(prompt, /Karıncalar kışın nerede\?/);
+      const config = b.generationConfig;
+      if (config) {
+        assert.equal(config.responseMimeType, 'application/json');
+        const schema = config.responseJsonSchema;
+        assert.deepEqual(schema.required, ['styleGuide', 'scenes']);
+        assert.equal(schema.properties.scenes.minItems, 5);
+        assert.equal(schema.properties.scenes.items.properties.narration.type, 'string');
+        assert.doesNotMatch(JSON.stringify(schema), /"(?:minLength|maxLength)"/);
+      }
+      assert.deepEqual(b, {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        ...(config ? { generationConfig: config } : {}),
+      });
+      calls.push({ model: textModel });
+      const output = config
+        ? JSON.stringify({
+            styleGuide: 'Sinematik doğa çizimi',
+            scenes: lines.map((n) => ({
+              ...blankScene(randomUUID()),
+              narration: n,
+              description: n,
+              animation: 'Kamera yaklaşır.',
+            })),
+          })
+        : text;
+      return Response.json({
+        candidates: [
+          {
+            finishReason: 'STOP',
+            content: {
+              role: 'model',
+              parts: [
+                { thought: true, text: 'Not part of the narration.' },
+                { text: output.slice(0, 7) },
+                { text: output.slice(7) },
+              ],
+            },
+          },
+          {
+            finishReason: 'STOP',
+            content: { parts: [{ text: 'Alternative; not part of the selected candidate.' }] },
+          },
+        ],
+      });
+    }
+    if (opts?.method === 'POST' && url === `${api}/interactions` && b.model === 'gemini-test-tts') {
+      calls.push({
+        model: b.model,
+        voice: b.generation_config.speech_config[0].voice,
+        line: b.input[0].content[0].text,
+      });
+      return Response.json({
+        status: 'completed',
+        steps: [
+          { type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/wav', data: wav }] },
+        ],
+      });
+    }
+    return Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 });
   });
   const permissions = t.mock.method(g, 'allowed');
-  const settle = async (route: string): Promise<Project> => {
-    const deadline = Date.now() + 25000;
-    while (Date.now() < deadline) {
-      const p: Project = await (await req(route)).json();
-      if (p.job.state !== 'working') return p;
-      await new Promise((r) => setTimeout(r, 30));
-    }
-    throw new Error('Background production did not settle');
-  };
   // No key or catalog is needed to disable images or choose a default speaker.
   assert.equal((await req('/settings/model', { kind: 'image', consent: 'blocked' })).status, 200);
   assert.equal((await req('/settings/speaker', { speaker: 'not-a-voice' })).status, 400);
@@ -208,7 +247,7 @@ test('free text + selected TTS with no image model: narration first, manual plac
   assert.equal(settings.defaultSpeaker, 'Puck');
   assert.deepEqual(settings.models.image, { model: '', consent: 'blocked' });
   for (const [kind, model] of [
-    ['text', 'gemini-test-flash'],
+    ['text', textModel],
     ['tts', 'gemini-test-tts'],
   ])
     assert.equal((await req('/settings/model', { kind, model, consent: 'free' })).status, 200);
@@ -217,12 +256,14 @@ test('free text + selected TTS with no image model: narration first, manual plac
   ).json();
   const route = `/projects/${created.id}`;
   let p = await settle(route);
+  assert.equal(p.job.state, 'done', p.job.label);
   assert.equal(p.voice, 'Puck');
   assert.equal(p.script, text);
   await req('/settings/speaker', { speaker: 'Kore' }); // applies to existing unvoiced drafts, too
   p = await (await req(route + '/script', { text, approve: true }, p.rev)).json();
   assert.equal((await req(route + '/generate', { kind: 'board' }, p.rev)).status, 202);
   p = await settle(route);
+  assert.equal(p.job.state, 'done', p.job.label);
   assert.equal(p.scenes.length, lines.length);
   assert.deepEqual(p.assets, {});
   assert.equal((await req(route + '/generate', { kind: 'all' }, p.rev)).status, 409);
@@ -247,7 +288,7 @@ test('free text + selected TTS with no image model: narration first, manual plac
   const voices = p.scenes.map((s) => p.assets[s.id].voice!.file);
   assert.deepEqual(
     calls.map((c) => c.model),
-    ['gemini-test-flash', 'gemini-test-flash', ...lines.map(() => 'gemini-test-tts')],
+    [textModel, textModel, ...lines.map(() => 'gemini-test-tts')],
   );
   assert.deepEqual(
     calls.slice(2).map((c) => [c.voice, c.line]),
@@ -287,4 +328,84 @@ test('free text + selected TTS with no image model: narration first, manual plac
   assert.equal(calls.at(-1)?.voice, 'Zephyr');
   assert.equal(g.raw().services.image, undefined);
   assert.ok(!permissions.mock.calls.some((c) => c.arguments[0] === 'image'));
+});
+
+test('a listed text model can still return 404: preserve the draft, show the actual model, never retry or switch automatically', async (t) => {
+  const key = 'offline-test-credential';
+  const model = 'gemini-test-alternate'; // select a catalog model other than 2.5 Flash
+  const path = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const posts: string[] = [];
+  let available = false;
+  const { req, settle, g, store } = await app(t, undefined, async (url, opts) => {
+    if (opts?.method === 'GET')
+      return Response.json({
+        models: [
+          { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+          { name: `  models/${model}\t`, supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-other', supportedGenerationMethods: ['countTokens'] },
+          { name: `models/${model}/extra`, supportedGenerationMethods: ['generateContent'] },
+        ],
+      });
+    posts.push(String(url));
+    return available && url === path
+      ? Response.json({
+          candidates: [
+            { finishReason: 'STOP', content: { parts: [{ text: 'Yenilenen senaryo.' }] } },
+          ],
+        })
+      : Response.json(
+          { error: { status: 'NOT_FOUND', message: `Private provider detail: ${key}` } },
+          { status: 404 },
+        );
+  });
+  g.key(key);
+  assert.deepEqual(
+    (await g.test()).catalog.map((m) => m.id),
+    ['gemini-2.5-flash', model],
+  );
+  for (const invalid of [
+    `models/models/${model}`,
+    `${model}/extra`,
+    'gemini-other',
+    'gemini-test alternate',
+  ])
+    assert.equal(
+      (await req('/settings/model', { kind: 'text', model: invalid, consent: 'free' })).status,
+      400,
+    );
+  const saved = await (
+    await req('/settings/model', { kind: 'text', model: ` models/${model} `, consent: 'free' })
+  ).json();
+  assert.deepEqual(saved.models.text, { model, consent: 'free' });
+  // Also normalize older on-disk selections at generation time, without another discovery or opt-in.
+  const old = g.raw();
+  old.models.text.model = `models/${model} `;
+  store.set('gemini', old);
+  let p: Project = await (
+    await req('/projects', { topic: 'Kışın karıncalar', script: 'Önceki senaryo.' })
+  ).json();
+  const route = `/projects/${p.id}`;
+  const generate = async () => {
+    assert.equal((await req(route + '/generate', { kind: 'script' }, p.rev)).status, 202);
+    return settle(route);
+  };
+  p = await generate();
+  assert.equal(p.job.state, 'config');
+  assert.ok(p.job.label.includes(`/v1beta/models/${model}:generateContent`));
+  assert.match(p.job.label, /HTTP 404/);
+  assert.ok(!p.job.label.includes(key));
+  assert.equal(p.script, 'Önceki senaryo.');
+  assert.equal(g.settings().status, 'connected'); // discovery is still valid, generation is not
+  assert.equal(g.settings().services.text?.status, 'unavailable');
+  assert.deepEqual(posts, [path]);
+  available = true;
+  p = await generate(); // explicit retry on the same project and model
+  assert.equal(p.job.state, 'done');
+  assert.equal(p.script, 'Yenilenen senaryo.');
+  assert.equal(g.settings().services.text?.status, 'connected');
+  assert.deepEqual(posts, [path, path]);
+  assert.equal(
+    Object.values(g.raw().requests).reduce((a, b) => a + b, 0),
+    2,
+  );
 });

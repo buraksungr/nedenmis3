@@ -221,6 +221,36 @@ test('invalid keys, quota and outages stay distinguishable; no automatic paid re
     if (status === 429) assert.match(g.settings().message, /17 sn/);
   }
 });
+test('generateContent never accepts blocked, truncated, thought-only or empty responses as script text', async (t) => {
+  const store = temp(t),
+    model = 'gemini-test-flash';
+  const candidate = (finishReason: string, parts: object[]) => ({
+    candidates: [{ finishReason, content: { parts } }],
+  });
+  let response: object = {};
+  const g = new Gemini(store, memoryVault(), async (_url, opts) =>
+    Response.json(
+      opts?.method === 'GET'
+        ? { models: [{ name: `models/${model}`, supportedGenerationMethods: ['generateContent'] }] }
+        : response,
+    ),
+  );
+  g.key('local-test-input');
+  await g.test();
+  await assert.rejects(g.text('Kış geldi.'), /kullanım iznini/);
+  assert.deepEqual(g.raw().requests, {});
+  g.configure('text', { model, consent: 'free' });
+  for (response of [
+    { promptFeedback: { blockReason: 'SAFETY' } },
+    candidate('MAX_TOKENS', [{ text: 'Yarım bir cümle' }]),
+    candidate('SAFETY', [{ text: 'Kullanılmamalı' }]),
+    candidate('STOP', [{ thought: true, text: 'Bir taslak hazırlamam gerek.' }]),
+    candidate('STOP', [{ text: '  ' }]),
+  ]) {
+    await assert.rejects(g.text('Kış geldi.'), /doğrulanabilir bir çıktı/);
+    assert.equal(g.settings().services.text?.status, 'unavailable');
+  }
+});
 test('adapter sends verbatim narration, parses WAV/PCM and keeps per-service evidence', async (t) => {
   const store = temp(t);
   const calls: any[] = [];

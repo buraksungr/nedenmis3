@@ -8,11 +8,33 @@ import express from 'express';
 import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
+// Only this in-memory transport is enabled during the script contract check; no traffic to Google.
+const textModel = 'gemini-2.5-flash';
+const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
+let enableTextFixture = false;
 const ctx = studio.createStudio(
   { root: home, pythonDir: path.resolve('python'), composition: path.resolve('build/composition') },
   {
-    transport: async () => {
-      throw new Error('Network deliberately disabled in UI control');
+    transport: async (url, opts) => {
+      if (!enableTextFixture) throw new Error('Network deliberately disabled in UI control');
+      const base = 'https://generativelanguage.googleapis.com/v1beta/models';
+      if (opts.method === 'GET' && url === `${base}?pageSize=1000`)
+        return Response.json({
+          models: [
+            { name: `models/${textModel}`, supportedGenerationMethods: ['generateContent'] },
+          ],
+        });
+      if (
+        opts.method === 'POST' &&
+        url === `${base}/${textModel}:generateContent` &&
+        JSON.parse(opts.body).contents?.[0]?.parts?.[0]?.text
+      )
+        return Response.json({
+          candidates: [
+            { finishReason: 'STOP', content: { role: 'model', parts: [{ text: fixtureScript }] } },
+          ],
+        });
+      return Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 });
     },
   },
 );
@@ -113,6 +135,30 @@ try {
   assert.equal(await page.getByLabel('Gemini API anahtarı').inputValue(), '');
   await page.getByRole('button', { name: 'Bağlantıyı test et' }).click();
   await page.getByText('Servis kullanılamıyor', { exact: true }).first().waitFor();
+  enableTextFixture = true;
+  await page.getByRole('button', { name: 'Bağlantıyı test et' }).click();
+  await page.getByLabel('Metin modeli', { exact: true }).selectOption(textModel);
+  await page.getByLabel('Metin kullanım izni').selectOption('free');
+  await page
+    .locator('.model-row')
+    .filter({ has: page.getByLabel('Metin modeli', { exact: true }) })
+    .getByRole('button', { name: 'Uygula' })
+    .click();
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/settings/model') && r.ok()),
+    page.getByRole('button', { name: 'Faturalandırma kapalı, doğruladım' }).click(),
+  ]);
+  await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
+  await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
+  await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelector('textarea[aria-label="Senaryo metni"]')?.value === expected,
+    fixtureScript,
+  );
+  assert.ok(await editor.isEditable());
+  assert.equal(ctx.store.get(page.url().split('/').at(-1)).script, fixtureScript);
+  await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
   await page.getByRole('button', { name: 'Sil', exact: true }).click();
   await page.getByRole('button', { name: 'Anahtarı sil', exact: true }).click();
   await page.getByRole('button', { name: 'Anahtarı kaydet' }).waitFor();
@@ -167,7 +213,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   assert.deepEqual(errors, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, manual storyboard upload, secure-entry UI, real local checks, player and mobile navigation.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, manual storyboard upload, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation.',
   );
 } finally {
   await browser.close();
