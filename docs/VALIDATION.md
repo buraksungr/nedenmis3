@@ -1,5 +1,14 @@
 # Doğrulama kaydı
 
+## 1.0.4 — kesin hizalama başarısızken render
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44217017902/artifacts/14389451254)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44217017902) · Derleme: `d3becfda4e104b9ea946d8019200aeaeccc1b929`.
+
+- Windows’ta **25 test** geçti. İki sahneli geri dönüş kontrolünde ilk sözcük için bilerek `başlangıç=bitiş=0.32` verildi, ikinci sahnede Whisper ön kontrolü bulunamayan çalıştırılabilir dosyayla (`ENOENT`) başarısız oldu. İçe aktarılmış görseller ve ölçülen ses süreleriyle gerçek 1080 × 1920 H.264/AAC MP4 tamamlandı ve tamamı decode edildi. [Geri dönüş MP4, SRT, JSON ve sahne günlükleri](https://github.com/buraksungr/nedenmis3/actions/runs/44217017902/artifacts/14388619469) (`fallback-control.*`, `fallback-diagnostics.ndjson`). Bu iki hata kontrollü test koşullarıdır, kullanıcının bilgisayarındaki hatanın teşhisi değildir.
+- Derlenmiş arayüzde tahmini altyazı etiketi, **Hizalama günlüğü** ve cümle düzenleyicisinde kaydetme sınandı. Önbellek ve yeniden deneme testleri eski geçerli hizalamaların/düzenlemelerin başarısız denemelerde korunmasını, kesin sonuç geldiğinde tahminin değişmesini ve bozuk sesin gerçek hata sayılmasını denetler.
+- Ayrı [Türkçe CPU hizalama kontrolü](https://github.com/buraksungr/nedenmis3/actions/runs/44217017902/artifacts/14389051711) hem orijinal hem 800 ms geciktirilmiş ses için gerçek Whisper sözcük zamanlarıyla geçti; bu test tahmini hizalamayı kabul etmez.
+- Önceki iki sessiz kurulum denemesi NSIS `0xC0000005` ile durdu. Paketleyici [üst projenin ilk kurulum düzeltmesini](https://github.com/electron-userland/electron-builder/pull/9769) içeren 26.18.0’a güncellendi. Yukarıdaki nihai çalıştırmada `Nedenmis-Studio-1.0.4-Setup.exe` kuruldu, kurulu uygulama Edge ile kompozisyonu açtı. İmzasız kurucuyu içeren **ZIP paketinin** SHA-256 değeri: `a0af7c3253b8f6cfe2780e472ec2a7012438af74113abeffb27f20a54e6176d7`.
+
 ## 1.0.3 — senaryo üretiminde HTTP 404
 
 **[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44210425542/artifacts/14385877184)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44210425542) · Derleme: `1fadcf634a2844d7de67f80b75a52404768e3fdf`.
