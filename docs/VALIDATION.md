@@ -1,5 +1,13 @@
 # Doğrulama kaydı
 
+## 1.0.3 — senaryo üretiminde HTTP 404
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44210425542/artifacts/14385877184)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44210425542) · Derleme: `1fadcf634a2844d7de67f80b75a52404768e3fdf`.
+
+- Önceki kod, yalnızca listelenmiş metin modelinin `generateContent` yolunu kabul eden çevrimdışı testte kullanıcının bildirdiği 404’ü verdi. Düzeltme sonrası aynı proje oluşturma rotasında `gemini-2.5-flash` ile senaryo ve yapılandırılmış storyboard kaydedildi. Test istek yöntemini, tam URL’yi, anahtarın yalnız başlıkta olmasını ve JSON gövdesini denetler. Eksik metin ve kota durumları başarı sayılmaz; sağlayıcı hâlâ 404 dönerse taslak korunur, başka model denenmez.
+- Windows’ta TypeScript denetimi ve **21 test** geçti. Derlenmiş arayüzde ücretsiz metin izni seçildi ve yalnızca konu girilerek oluşturulan projenin metni senaryo düzenleyicisinde görüldü. Gemini yanıtları bu testte yerel test verisidir; **canlı hesaptaki model erişimi veya kota doğrulaması değildir**.
+- `Nedenmis-Studio-1.0.3-Setup.exe` kuruldu, kurulu uygulama sistem Edge’i ile kompozisyonu açtı. [Render ve kurulum raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44210425542/artifacts/14385807233) ve [gerçek Türkçe CPU hizalama çıktıları](https://github.com/buraksungr/nedenmis3/actions/runs/44210425542/artifacts/14386485567) ayrı paketlerdedir. İmzasız kurucuyu içeren **ZIP paketinin** SHA-256 değeri: `cd7740e584b31a83c23860239ae1c22f84ea4b0ece172420edf1e54b9431a692`.
+
 ## 1.0.2 — manuel storyboard görselleri ve TTS konuşmacısı
 
 **[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44205732925/artifacts/14384570141)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44205732925) · Derleme: `5e5305929da17c8a33fdb4441e3be294bb856450`.
