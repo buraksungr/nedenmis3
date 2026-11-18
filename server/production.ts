@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { FilmProps } from '../composition/Film';
 import { captionEntries, cue, groups, srtFromCues, validWords } from '../shared/captions';
 import type { Asset, Project, Scene, Task, TimedText, Word } from '../shared/schema';
+import { visualOf } from '../shared/shot';
 import { readWhisper, sentenceEstimates, verifiedAlignment } from './alignment';
 import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
@@ -315,19 +317,21 @@ export class Production {
     const words = captionEntries(m),
       sentenceCaptions = m.align?.method === 'estimated';
     const adjacent = s.transition !== 'cut' && next ? p.assets[next.id]?.image : undefined;
+    const sceneIndex = p.scenes.findIndex((x) => x.id === s.id);
+    requireThat(sceneIndex >= 0, 'Sahne onaylı zaman çizelgesinde bulunamadı.');
+    const nextShot = adjacent && next ? visualOf(next) : undefined;
     const key = hash(
-      'film-3',
+      'film-4-motion-dissolve',
+      sceneIndex,
       m.image!.file,
-      s.camera,
-      s.motion,
-      s.effect,
-      s.object,
+      visualOf(s),
       s.transition,
       s.animation,
       p.intensity,
       words,
       frames,
       adjacent?.file,
+      nextShot,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : []),
@@ -339,9 +343,10 @@ export class Production {
     this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, 0);
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
-    const props = {
+    const props: FilmProps = {
       image: url(m.image!),
-      next: adjacent ? url(adjacent) : '',
+      next: adjacent && nextShot ? { image: url(adjacent), shot: nextShot } : null,
+      sceneIndex,
       scene: s,
       words,
       frames,

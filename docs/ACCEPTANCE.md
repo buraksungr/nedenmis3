@@ -13,6 +13,8 @@ Bu liste bir test sonucu değildir. Gerçek bir Windows 10/11 x64 bilgisayarda, 
 9. “İkinci sahnedeki kamerayı yavaşlat” revizyonunu yapın, yeniden onaylayın. Değişmemiş görsel ve seslerin dosya adları değişmemeli. Müzik seviyesi değişiminde yalnız final miksajı yenilenmeli. Eski sürümü geri alıp izleyin.
 10. MP4, SRT, JSON ve ZIP dışa aktarın. Anahtarı güncelleyip yeniden test edin, ardından silin. Kaydedilmiş medya oynatılabilir kalmalı; yeni bulut üretimi engellenmeli.
 
+**Kamera ve geçişleri ayrıca doğrulayın:** Art arda en az üç sahnede kartta yazan kayma, nefes (önce büyüme, sonra küçülme) ve süzülmeyi izleyin. **Yumuşak geçiş** sırasında siyah parlama veya ikinci sahne başladığında kadraj sıçraması olmamalı. **Kesme** seçildiğinde iki görsel karışmamalı. Ses bitişi ve altyazı zamanları her iki seçimde de aynı kalmalı.
+
 **Hizalama geri dönüşünü ayrıca doğrulayın:** Onaylı, sesli ve görseli yüklenmiş bir sahnede Whisper kullanılamıyorsa veya geçersiz zaman dönerse MP4 tamamlanmalı. “Tahmini altyazı” etiketi ile sahne araçlarındaki gerekçeyi kontrol edin. SRT’de ve videoda aynı cümleler, JSON’da `estimated: true` görülmeli. Bu sonuç kesin akustik hizalama başarısı olarak kaydedilmemelidir.
 
 Kabul kaydına model kimlikleri, işlem tarihi, sahne sayısı, gerçek süre, çıktı SHA-256, FFprobe özeti, insan tarafından görsel/ses/altyazı değerlendirmesi ve başarısız kontrolleri ekleyin. Yalnızca tüm gerekli adımlar gerçekten yürütüldüğünde tamamlandı olarak işaretleyin.

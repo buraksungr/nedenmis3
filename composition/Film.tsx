@@ -1,18 +1,15 @@
 import React from 'react';
-import {
-  AbsoluteFill,
-  Composition,
-  Img,
-  registerRoot,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame, useVideoConfig } from 'remotion';
 import { groups } from '../shared/captions';
 import type { Scene, Word } from '../shared/schema';
+import type { ShotVisual } from '../shared/shot';
+import { Parallax, type Artwork } from './Parallax';
+import { poseAt, dissolveAt } from './motion';
 export type FilmProps = {
-  image: string;
-  next: string;
-  scene: Scene;
+  image: Artwork;
+  next: { image: Artwork; shot: ShotVisual } | null;
+  sceneIndex: number;
+  scene: ShotVisual & Pick<Scene, 'transition'>;
   words: Word[];
   sentenceCaptions?: boolean;
   frames: number;
@@ -24,27 +21,9 @@ const noise = (n: number) => {
   const a = Math.sin(n * 12.9898 + 4.233) * 43758.5453;
   return a - Math.floor(a);
 };
-const imgStyle: React.CSSProperties = { width: '100%', height: '100%', objectFit: 'cover' };
-function optics(camera: Scene['camera'], p: number, k: number) {
-  switch (camera) {
-    case 'push':
-      return `scale(${1.025 + p * 0.12 * k})`;
-    case 'pull':
-      return `scale(${1.03 + (1 - p) * 0.14 * k})`;
-    case 'pan':
-      return `scale(1.18) translateX(${(p - 0.5) * 10 * k}%)`;
-    case 'tilt':
-      return `scale(1.19) translateY(${(0.5 - p) * 10 * k}%)`;
-    case 'track':
-      return `scale(1.17) translate(${(p - 0.5) * 7 * k}%,${(0.5 - p) * 4 * k}%) rotate(${(p - 0.5) * 0.7}deg)`;
-    default:
-      return `scale(${1.05 + p * 0.025 * k})`;
-  }
-}
-function Atmosphere({ scene, frame, k }: { scene: Scene; frame: number; k: number }) {
+function Atmosphere({ scene, t, k }: { scene: ShotVisual; t: number; k: number }) {
   const fx = scene.effect;
   if (fx === 'none') return null;
-  const t = frame / 30;
   if (fx === 'fog' || fx === 'rays' || fx === 'water')
     return (
       <AbsoluteFill style={{ overflow: 'hidden', opacity: 0.18 * k, mixBlendMode: 'screen' }}>
@@ -103,7 +82,7 @@ function Atmosphere({ scene, frame, k }: { scene: Scene; frame: number; k: numbe
     </AbsoluteFill>
   );
 }
-function Details({ s, t, p, k }: { s: Scene; t: number; p: number; k: number }) {
+function Details({ s, t, p, k }: { s: ShotVisual; t: number; p: number; k: number }) {
   if (s.object === 'none') return null;
   return (
     <svg
@@ -169,6 +148,33 @@ function Details({ s, t, p, k }: { s: Scene; t: number; p: number; k: number }) 
     </svg>
   );
 }
+function Picture({
+  art,
+  shot,
+  index,
+  frame,
+  fps,
+  frames,
+  k,
+}: {
+  art: Artwork;
+  shot: ShotVisual;
+  index: number;
+  frame: number;
+  fps: number;
+  frames: number;
+  k: number;
+}) {
+  const t = frame / fps,
+    p = frame / Math.max(1, frames - 1);
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#101514', overflow: 'hidden' }}>
+      <Parallax source={art} pose={poseAt(frame, fps, frames, index, shot, k)} />
+      <Atmosphere scene={shot} t={t} k={k} />
+      <Details s={shot} t={t} p={p} k={k} />
+    </AbsoluteFill>
+  );
+}
 export function Film({
   image,
   next,
@@ -178,50 +184,52 @@ export function Film({
   subtitleSize,
   highlight,
   sentenceCaptions = false,
+  sceneIndex,
 }: FilmProps) {
   const f = useCurrentFrame(),
     { durationInFrames, fps } = useVideoConfig(),
-    p = f / Math.max(1, durationInFrames - 1),
     k = { Düşük: 0.58, Orta: 1, Yüksek: 1.35 }[intensity] ?? 1,
-    motion = Math.min(k * scene.motion, 1.45);
-  const cam = optics(scene.camera, p, motion),
     t = f / fps;
   const cap = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
     (g) => t >= g[0].start && t < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
   );
-  const edge = Math.min(10, Math.floor(durationInFrames / 4)),
-    fade = edge ? Math.max(0, (f - durationInFrames + edge + 1) / edge) : 0;
+  const fade = next && scene.transition !== 'cut' ? dissolveAt(f, fps, durationInFrames) : 0;
   return (
     <AbsoluteFill style={{ background: '#101514', overflow: 'hidden' }}>
-      <AbsoluteFill
-        style={{
-          transform: cam,
-          filter: scene.camera === 'focus' ? `blur(${(1 - Math.min(1, p * 3)) * 3}px)` : undefined,
-        }}
-      >
-        <Img src={image} style={imgStyle} />
-      </AbsoluteFill>
-      <AbsoluteFill
-        style={{
-          transform: cam + ` translateX(${Math.sin(p * Math.PI) * 8 * motion}px)`,
-          maskImage: 'linear-gradient(transparent 66%,black 100%)',
-          WebkitMaskImage: 'linear-gradient(transparent 66%,black 100%)',
-        }}
-      >
-        <Img src={image} style={imgStyle} />
-      </AbsoluteFill>
-      <Atmosphere scene={scene} frame={f} k={k} />
-      <Details s={scene} t={t} p={p} k={k} />
-      {next && fade > 0 && scene.transition !== 'cut' && (
+      <Picture
+        art={image}
+        shot={scene}
+        index={sceneIndex}
+        frame={f}
+        fps={fps}
+        frames={durationInFrames}
+        k={k}
+      />
+      {next && fade > 0 && (
+        // Over an opaque outgoing picture, source-over gives (1-fade)*old + fade*new.
+        // Fading both DOM layers independently would introduce a dark dip in the middle.
         <AbsoluteFill
           style={{
-            opacity: scene.transition === 'iris' ? 1 : fade,
-            clipPath: scene.transition === 'iris' ? `circle(${fade * 120}% at 50% 44%)` : undefined,
+            opacity: fade,
+            clipPath:
+              scene.transition === 'iris' && fade < 1
+                ? `circle(${fade * 120}% at 50% 44%)`
+                : undefined,
             transform:
-              scene.transition === 'drift' ? `translateX(${(1 - fade) * 6}%)` : 'scale(1.025)',
+              scene.transition === 'drift' && fade < 1
+                ? `translateX(${(1 - fade) * 4}%)`
+                : undefined,
           }}
         >
-          <Img src={next} style={imgStyle} />
+          <Picture
+            art={next.image}
+            shot={next.shot}
+            index={sceneIndex + 1}
+            frame={0}
+            fps={fps}
+            frames={1}
+            k={k}
+          />
         </AbsoluteFill>
       )}
       {cap && (
@@ -268,8 +276,9 @@ export function Film({
 }
 const defaults: FilmProps = {
   image: '',
-  next: '',
-  scene: {} as Scene,
+  next: null,
+  sceneIndex: 0,
+  scene: { camera: 'track', motion: 1, effect: 'none', object: 'none', transition: 'dissolve' },
   words: [],
   frames: 30,
   intensity: 'Orta',

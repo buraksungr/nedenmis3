@@ -97,6 +97,7 @@ try {
     speaker.selectOption('Puck'),
   ]);
   await page.getByRole('button', { name: 'Sahne ekle' }).click();
+  await page.locator('.scene-motion').getByText('Sağa kayma · Takip', { exact: true }).waitFor();
   await page.getByLabel('Anlatım', { exact: true }).fill('Karıncalar kışın toprak altına çekilir.');
   await page
     .getByLabel('Görsel betimleme', { exact: true })

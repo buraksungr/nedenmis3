@@ -57,6 +57,7 @@ import {
   useRun,
   useStudio,
 } from './lib';
+import { motionNames, motionForScene } from '../../shared/shot';
 import { captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
 // Persist unsent text immediately; serialize database writes and use optimistic revisions.
@@ -442,7 +443,9 @@ export function BoardEditor({ p }: { p: Project }) {
               <p className="scene-description">{s.description || 'Betimleme ekle.'}</p>
               <div className="scene-motion">
                 <Image size={13} />
-                {cameraNames[s.camera]}
+                <span>
+                  {motionNames[motionForScene(i)]} · {cameraNames[s.camera]}
+                </span>
                 <b>·</b>
                 {s.animation || 'Hareket planı bekleniyor'}
               </div>

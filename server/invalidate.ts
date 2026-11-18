@@ -1,4 +1,5 @@
 import type { Project } from '../shared/schema';
+import { visualOf } from '../shared/shot';
 import { imageKey, voiceKey } from './production';
 /** Detach stale outputs, don't delete files. Snapshots retain the original versions. */
 export function invalidate(p: Project, old: Project) {
@@ -7,7 +8,8 @@ export function invalidate(p: Project, old: Project) {
   for (const [i, s] of p.scenes.entries()) {
     const m = p.assets[s.id];
     if (!m) continue;
-    const was = old.scenes.find((x) => x.id === s.id);
+    const oldIndex = old.scenes.findIndex((x) => x.id === s.id);
+    const was = old.scenes[oldIndex];
     if (m.image && m.image.key !== imageKey(p, s)) {
       if (p.cover.endsWith(m.image.file))
         p.cover = old.example && old.category === 'DOĞA' ? '/art/ants.jpg' : '';
@@ -23,6 +25,7 @@ export function invalidate(p: Project, old: Project) {
       delete m.clip;
     }
     if (
+      oldIndex !== i ||
       JSON.stringify(was) !== JSON.stringify(s) ||
       p.subtitleSize !== old.subtitleSize ||
       p.highlight !== old.highlight ||
@@ -30,11 +33,14 @@ export function invalidate(p: Project, old: Project) {
     )
       delete m.clip;
     const next = p.scenes[i + 1],
-      oldNext = old.scenes[old.scenes.findIndex((x) => x.id === s.id) + 1];
+      oldNext = oldIndex < 0 ? undefined : old.scenes[oldIndex + 1];
     if (
       s.transition !== 'cut' &&
       (next?.id !== oldNext?.id ||
-        (next && oldNext && imageKey(p, next) !== imageKey(old, oldNext)))
+        (next &&
+          oldNext &&
+          (imageKey(p, next) !== imageKey(old, oldNext) ||
+            JSON.stringify(visualOf(next)) !== JSON.stringify(visualOf(oldNext)))))
     )
       delete m.clip;
   }

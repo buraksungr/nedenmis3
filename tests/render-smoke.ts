@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Gemini, memoryVault } from '../server/gemini';
+import { motionControl } from './motion-control';
 import { fallbackControl } from './fallback-control';
 import { acousticControl } from './acoustic-control';
 import { probe, verifyVideo } from '../server/media';
@@ -93,6 +94,7 @@ async function main() {
   console.log('Rendered control:', final);
   store.db.close();
   await fallbackControl(root);
+  await motionControl(root);
 }
 main().catch((e) => {
   console.error(e);
