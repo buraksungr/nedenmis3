@@ -1,5 +1,13 @@
 # Doğrulama kaydı
 
+## 1.0.5 — sahne hareketleri ve görüntü geçişleri
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44223452275/artifacts/14391199938)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44223452275) · Derleme: `2f8b9091e54a10406f497bbf1d4fdc9dc1230bfb`.
+
+- Windows’ta 29 test, yerel MP4 üretimi ve derlenmiş arayüz kontrolleri geçti. [Render ve kurulum çıktıları](https://github.com/buraksungr/nedenmis3/actions/runs/44223452275/artifacts/14392725368) içinde iki sahneli MP4, `motion-report.json`, altyazı geri dönüş örneği ve `install-report.json` bulunur. Kurulan `Nedenmis-Studio-1.0.5-Setup.exe` içindeki kompozisyon sistem Edge’iyle açıldı. İmzasız kurucuyu içeren **ZIP paketinin** SHA-256 değeri: `117ac649e1aff28e5629bb52ba05a9a226d4fbd13d47158eb9d693ac1578c17f`.
+- Kare testi gerçek `DocumentaryScene` çıktısında ön/arka PNG işaretlerinin farklı hızlarını, tek görselde büyüyüp tekrar küçülmeyi ve dikey süzülmeyi ölçer. Geçiş ortasında iki renk eşit katkı yapmalı; son kare komşu sahnenin bağımsız işlenen açılış karesiyle (kamera ve nesne dahil, altyazı hariç) aynı olmalı. Kesme kontrolünde son kare önceki sahnede kalır.
+- Aynı kaynakla yerel ölçüm: 270 × 480 kontrol karelerinde arka plan 5 px, ön plan 13 px kaydı; nefes hareketinde renk işaretinin alanı 1824 → 2050 → 1824 piksel oldu. Asıl iki sahneli MP4 **1080 × 1920, 30 FPS, 109 kare**; H.264 3,633333 sn, AAC 3,633 sn. Kısa kontrol, canlı Gemini üretimi değildir. [Ayrı Türkçe CPU hizalama testi](https://github.com/buraksungr/nedenmis3/actions/runs/44223452275/artifacts/14391821661) de tahmini zaman kullanmadan geçti.
+
 ## 1.0.4 — kesin hizalama başarısızken render
 
 **[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44217017902/artifacts/14389451254)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44217017902) · Derleme: `d3becfda4e104b9ea946d8019200aeaeccc1b929`.
