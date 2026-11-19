@@ -2,7 +2,7 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, nostaljik 2D piksel sanatı, sabit kadraj ve yumuşak geçiş, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-[Windows x64 Setup · 1.1.1 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849/artifacts/14501395640) · [Tatlı ve Susama — gerçek render](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849/artifacts/14500174738) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
+[Windows x64 Setup · 1.2.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44480484749/artifacts/14508762526) · [Uçaklar neden yüksekten uçar? — 12 şablonlu sesli film](https://github.com/buraksungr/nedenmis3/actions/runs/44480484749/artifacts/14508543409) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
