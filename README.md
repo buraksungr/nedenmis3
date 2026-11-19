@@ -2,7 +2,7 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, nostaljik 2D piksel sanatı, sabit kadraj ve yumuşak geçiş, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-[Windows x64 kurucu derlemeleri](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
+[Windows x64 kurucu · 1.1.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897/artifacts/14496088572) · [Tüm derlemeler](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
 
 ## Windows’ta başla
 

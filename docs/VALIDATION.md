@@ -1,5 +1,14 @@
 # Doğrulama kaydı
 
+## 1.1.0 — Kod Tabanlı SVG Animasyon
+
+**[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897/artifacts/14496088572)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897) · Derlenen uygulama: `e582025d7341f81e886ca467bad4bcd18c5e85ed`.
+
+- İmzasız `Nedenmis-Studio-1.1.0-Setup.exe` temiz Windows ortamına kuruldu. Kurulu uygulama SQLite’ı, dört sağlayıcının şifreli anahtar depolarını, FFmpeg/FFprobe’u ve sistem Edge’i ile paketlenmiş kompozisyonu açmayı sınadı. **EXE** SHA-256: `0678cc23b4e01ec47414cc290a596590ac20ee761c17b96c0349bbbd64d59a7b`; **Actions ZIP** SHA-256: `d41087f9b4eaa222e93479de16c1b39daaabd2f8e14c1d598e780090768bfed2`.
+- [Karma MP4 ve render raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897/artifacts/14497285544): `svg-atlas-control.mp4`, beş farklı SVG şablonunu, bir manuel fotoğrafı ve içe aktarılmış anlatımı normal toplu üretim yoluyla işler. **294 kare, 1080 × 1920, 30 FPS, 9,8 sn, H.264/AAC; sıfır sağlayıcı isteği.** Kare örnekleri beş şablonda hareketi, fotoğrafta sabit kadrajı ve opaklık geçişlerinin sonraki sahnenin açılışına ulaştığını denetler. Ayrı fotoğraf testi yerel görselleri kaynak piksellerine kadar karşılaştırır.
+- TypeScript, **41 test**, paketleme ve Edge arayüz testi geçti. Kontrollü bir OpenRouter HTTP 503 yanıtından sonra kullanıcı sahne türünü, şablonu ve değerleri değiştirebildi ve yalnız SVG içeren 1,2 saniyelik videoyu görsel ve TTS anahtarı olmadan üretti. Yerel tarayıcı kontrolünde yedi alanın tamamı kaydedildi; ayrıca diskteki 1.0.7 fotoğraf projesinin onayları, sahne klipleri ve son MP4’ü tekrar üretim gerekmeden doğrulandı.
+- Groq, OpenRouter ve Ollama planlama istekleri/yanıtları izole sözleşme testleridir; canlı hesap, ücretsiz kota veya kurulu bir Ollama modeli ile çıkarım doğrulanmadı. [Gerçek Türkçe CPU ses hizalama kontrolü](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897/artifacts/14496865351) ayrı bir Windows işinde geçti.
+
 ## 1.0.7 — Pollinations storyboard görselleri
 
 [Windows x64 kurucusu](https://github.com/buraksungr/nedenmis3/actions/runs/44450544608/artifacts/14495592855) · [Başarılı CI](https://github.com/buraksungr/nedenmis3/actions/runs/44450544608) · `2c5d7dd31f46e2fb76e0e876fae8856791ca7176`. Yerel iki adresli sözleşme testi, manuel yükleme, fotoğraf geçişleri ve kurulu uygulamada ayrı şifreli anahtar depoları denetlendi. Bu sürümde SVG şablonları yoktur.
