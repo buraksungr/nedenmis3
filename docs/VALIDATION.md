@@ -1,5 +1,14 @@
 # Doğrulama kaydı
 
+## 1.4.1 — Sahne kaydı, tek sahne tekrarı ve güvenli durdurma
+
+**[Windows x64 Setup (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44602679040/artifacts/14569073565)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44602679040) · Uygulama: `9346d5283e2cf98bac9d5be88e93f11afa80120e`.
+
+- İmzasız `Nedenmis-Studio-1.4.1-Setup.exe` temiz Windows koşucusuna kuruldu. Kurulu uygulama düz zemin tamamlama, güvenli anahtar depoları, SQLite, FFmpeg ve sistem Edge’i ile Remotion kontrollerini geçti. **EXE SHA-256:** `abafe4fbd237748660c4673ba0f4794723bc43b38cd8671dd4bed05bb854e738`. ZIP SHA-256: `30e12f6e9cb530fd3a89c09b093bc12c659657c3a9fcff8554899301e8c7ab72`.
+- **51 otomatik test**, TypeScript ve Edge arayüz kontrolü geçti. Düz/gradyan zemin ilk yanıtta kabul edildi. Ortadaki bozuk sahne için toplam üç yanıt denendi; önceki ve sonraki başarılı sahneler proje dosyasında kaldı. Yalnız başarısız kimlik tekrar çizildi. XML, eksik/tekrar katman, etkin içerik ve harici kaynak retleri korundu.
+- **Durdur ve yeniden başlat:** Kontrollü OpenRouter ve Gemini istekleri iptal sinyalini aldı. Temizlik sürerken yeni iş, sonraki işe karşı da eski durdurma isteği reddedildi. Hizalayıcı alt süreç testinde dosya ve dinleme portu serbest kaldı, tahmini altyazı üretilmedi. `test:stop` gerçek Remotion kare üretimini **ikinci çekimde**, ardından **son FFmpeg miksajını** durdurdu. Geçici proje dosyası kalmadı; kaydedilmiş klipler, ses ve zamanlar yeniden kullanılarak **6,8 sn’lik doğrulanmış MP4** tamamlandı. Bu kısa durdurma kontrolünün altyazısı bilinçli olarak tahminidir. [Windows kurulum ve durdurma raporları (`cancellation.json`)](https://github.com/buraksungr/nedenmis3/actions/runs/44602679040/artifacts/14569138384).
+- Ayrı [sesli vektör filminde](https://github.com/buraksungr/nedenmis3/actions/runs/44602679040/artifacts/14569726840) **7 sahne, 866 kare / 28,87 sn, 56 gerçek CPU Whisper sözcük zamanı**, sıfır tahmini sahne, sıfır görsel servisi isteği. Çözülen son filmde 21/21 hareketli katman ve yedi başlık ayırt edildi. Buradaki model yanıtları ve TTS test kayıtlarıdır; canlı OpenRouter/Gemini kalite veya kota testi değildir. Eski uçuş/susama filmleriyle akustik zaman kayması kontrolü de aynı CI'da geçti.
+
 ## 1.4.0 — Tam ekran özel vektör sahnesi
 
 **[Windows x64 Setup (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44570912788/artifacts/14554574239)** · **[Karaya vuran balinalar neden ölür? — Windows MP4, SRT, zamanlar, yedi çizim ve kareler](https://github.com/buraksungr/nedenmis3/actions/runs/44570912788/artifacts/14555300622)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44570912788) · Derlenen uygulama: `ee2bb1e7d08e812f290f14f0185df108259f8e46`.

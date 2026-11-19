@@ -2,7 +2,7 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, nostaljik 2D piksel sanatı, sabit kadraj ve yumuşak geçiş, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-[Windows x64 Setup · 1.4.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44570912788/artifacts/14554574239) · [Karaya vuran balinalar neden ölür? — tam ekran vektör Windows test filmi](https://github.com/buraksungr/nedenmis3/actions/runs/44570912788/artifacts/14555300622) · [Çizim kaynağı ve doğrulama kaydı](docs/VALIDATION.md)
+[Windows x64 Setup · 1.4.1 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44602679040/artifacts/14569073565) · [Karaya vuran balinalar neden ölür? — tam ekran vektör Windows test filmi](https://github.com/buraksungr/nedenmis3/actions/runs/44602679040/artifacts/14569726840) · [Çizim kaynağı ve doğrulama kaydı](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
