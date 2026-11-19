@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Gemini, memoryVault } from '../server/gemini';
+import { Gemini } from '../server/gemini';
+import { memoryVault } from '../server/vault';
+import { testImages } from './offline';
 import { staticFadeControl } from './static-fade-control';
 import { fallbackControl } from './fallback-control';
 import { acousticControl } from './acoustic-control';
@@ -20,7 +22,16 @@ async function main() {
       pythonDir: path.resolve('python'),
       composition: path.resolve('build/composition'),
     };
-  const prod = new Production(store, new Gemini(store, memoryVault()), paths);
+  // Feed a real still through the Pollinations download, validation and publication path,
+  // then render that local asset alongside a manual upload. No provider is contacted.
+  let imageGets = 0;
+  const images = testImages(store, async () => {
+    imageGets++;
+    return new Response(new Uint8Array(fs.readFileSync('ui/public/art/ants.jpg')), {
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+  });
+  const prod = new Production(store, new Gemini(store, memoryVault()), paths, images);
   const tracks = ['forest', 'ocean'].map(
     (n) => JSON.parse(fs.readFileSync(`tests/fixtures/${n}.json`, 'utf8')) as Word[],
   );
@@ -42,7 +53,10 @@ async function main() {
   approveBoard(p);
   store.save(p);
   for (const [i, s] of p.scenes.entries()) {
-    await prod.import(p, 'image', fs.readFileSync(`ui/public/art/${i ? 'ocean' : 'ants'}.jpg`), s);
+    if (i === 0) {
+      await prod.asset(p, s, 'image', false);
+      assert.equal(p.assets[s.id].image?.source, 'pollinations');
+    } else await prod.import(p, 'image', fs.readFileSync('ui/public/art/ocean.jpg'), s);
     await prod.import(
       p,
       'voice',
@@ -51,6 +65,7 @@ async function main() {
     );
     p.assets[s.id].edits = tracks[i];
   }
+  assert.equal(imageGets, 1);
   const end = p.scenes.reduce((n, s) => n + framesForVoice(p.assets[s.id].voice!.duration!), 0);
   for (const [i, s] of p.scenes.entries()) {
     const frames = framesForVoice(p.assets[s.id].voice!.duration!);

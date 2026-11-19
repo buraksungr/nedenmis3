@@ -8,15 +8,26 @@ import express from 'express';
 import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
-// Only this in-memory transport is enabled during the script contract check; no traffic to Google.
+// All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
+const imageCalls = [],
+  imageCredential = 'sk_isolated-ui-fixture';
 let enableTextFixture = false,
   scriptAttempts = 0;
 const ctx = studio.createStudio(
   { root: home, pythonDir: path.resolve('python'), composition: path.resolve('build/composition') },
   {
     transport: async (url, opts) => {
+      const host = new URL(url).host;
+      if (['gen.pollinations.ai', 'image.pollinations.ai'].includes(host)) {
+        imageCalls.push([host, new Headers(opts.headers).get('authorization')]);
+        return host === 'gen.pollinations.ai'
+          ? new Response(fs.readFileSync('ui/public/art/ocean.jpg'), {
+              headers: { 'content-type': 'image/jpeg' },
+            })
+          : new Response(null, { status: 503 });
+      }
       if (!enableTextFixture) throw new Error('Network deliberately disabled in UI control');
       const base = 'https://generativelanguage.googleapis.com/v1/models';
       if (
@@ -62,7 +73,11 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(10000);
-const errors = [];
+const errors = [],
+  browserProviderRequests = [];
+page.on('request', (r) => {
+  if (/\.pollinations\.ai$/.test(new URL(r.url()).host)) browserProviderRequests.push(r.url());
+});
 page.on('pageerror', (e) => errors.push(e.message));
 try {
   await page.goto(origin);
@@ -80,7 +95,10 @@ try {
   ]);
   await page.reload();
   assert.equal(await speaker.inputValue(), 'Kore');
-  await page.getByText('Manuel yükleme', { exact: true }).waitFor();
+  await page.getByText('Eski uç · anahtarsız', { exact: true }).waitFor();
+  assert.ok(
+    await page.getByLabel('Toplu üretimde eksik görselleri Pollinations ile üret').isChecked(),
+  );
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
@@ -122,18 +140,45 @@ try {
   await page.getByRole('button', { name: 'Sahne üretim araçları' }).click();
   assert.equal(p.voice, 'Puck');
   assert.match(await page.locator('.job-note.config').innerText(), /Seslendirme/);
-  assert.equal(await page.getByRole('button', { name: 'Görsel üret', exact: true }).count(), 0);
+  assert.equal(imageCalls.length, 0);
+  await page.getByRole('button', { name: 'Görsel üret', exact: true }).click();
+  await page.locator('.job-note.waiting').filter({ hasText: 'Pollinations: HTTP 503' }).waitFor();
+  assert.deepEqual(imageCalls, [['image.pollinations.ai', null]]);
   assert.ok(await page.getByRole('button', { name: 'Görsel yükle' }).isEnabled());
   const voiceEvent = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Anlatım yükle' }).click();
-  await (await voiceEvent).setFiles('tests/fixtures/forest.wav');
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/import/voice?') && r.ok()),
+    (await voiceEvent).setFiles('tests/fixtures/forest.wav'),
+  ]);
   await page.locator('.job-note.waiting').waitFor();
   await page.getByRole('button', { name: 'Storyboard', exact: true }).first().click();
   const fileEvent = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Görsel yükle' }).click();
   await (await fileEvent).setFiles('ui/public/art/ants.jpg');
   await page.locator('.scene-card .station-art').waitFor();
-  assert.ok(ctx.store.get(id).assets[p.scenes[0].id].image);
+  assert.equal(ctx.store.get(id).assets[p.scenes[0].id].image.source, 'import');
+  await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
+  const keyInput = page.getByLabel('Pollinations API anahtarı (isteğe bağlı)');
+  assert.equal(await keyInput.getAttribute('type'), 'password');
+  await keyInput.fill(imageCredential);
+  await page.getByRole('button', { name: 'Pollinations anahtarını kaydet', exact: true }).click();
+  await page.getByText('Güncel API · anahtarlı', { exact: true }).waitFor();
+  await page.reload();
+  assert.equal(await keyInput.inputValue(), '');
+  await page.locator('.sidebar').getByRole('button', { name: 'Storyboard', exact: true }).click();
+  await page.getByRole('button', { name: 'Görseli yeniden üret', exact: true }).click();
+  const localImage = page.locator('.scene-card img[src*="/media/storyboard/"]');
+  await localImage.waitFor();
+  await localImage.evaluate((img) => img.decode());
+  assert.equal(ctx.store.get(id).assets[p.scenes[0].id].image.source, 'pollinations');
+  assert.deepEqual(imageCalls, [
+    ['image.pollinations.ai', null],
+    ['gen.pollinations.ai', 'Bearer ' + imageCredential],
+  ]);
+  await page.reload();
+  await localImage.waitFor();
+  await localImage.evaluate((img) => img.decode());
   // The isolated project has no Whisper runtime. The shipped UI must allow viewing and editing its estimate.
   await page
     .locator('.sidebar')
@@ -186,6 +231,10 @@ try {
   assert.ok(await editor.isEditable());
   assert.equal(ctx.store.get(page.url().split('/').at(-1)).script, fixtureScript);
   await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
+  await page.getByRole('button', { name: 'Pollinations anahtarını kaldır', exact: true }).click();
+  await page.getByRole('button', { name: 'Kaldır', exact: true }).click();
+  await page.getByText('Eski uç · anahtarsız', { exact: true }).waitFor();
+  assert.equal(ctx.g.settings().models.text.consent, 'free');
   await page.getByRole('button', { name: 'Sil', exact: true }).click();
   await page.getByRole('button', { name: 'Anahtarı sil', exact: true }).click();
   await page.getByRole('button', { name: 'Anahtarı kaydet' }).waitFor();
@@ -239,8 +288,9 @@ try {
   await page.getByRole('heading', { name: 'Projeler', exact: true }).waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   assert.deepEqual(errors, []);
+  assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, manual storyboard upload, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation.',
   );
 } finally {
   await browser.close();

@@ -32,12 +32,14 @@ try {
   Write-Output $rawReport
   if ($process.ExitCode -ne 0) { throw "Installed app exit code $($process.ExitCode): $rawReport" }
   $report = $rawReport | ConvertFrom-Json
+  if (!$report.secureStorage -or !$report.pollinationsSecureStorage) { throw 'Provider credential isolation not verified' }
   $remotion = $report.checks | Where-Object id -eq 'remotion'
   if (!$report.installed -or !$remotion.ok -or $remotion.detail -notmatch '(msedge|chrome|chromium)\.exe$') {
     throw "Expected a connected system browser: $rawReport"
   }
   Copy-Item -LiteralPath $reportFile -Destination 'out/render-control/install-report.json'
-  Write-Output "::notice title=Verified Windows installer::${expected}: $($remotion.detail)"
+  $exeHash = (Get-FileHash -LiteralPath $setups[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  Write-Output "::notice title=Verified Windows installer::${expected} (SHA-256: $exeHash); $($remotion.detail)"
 } catch {
   $detail = $_.Exception.Message -replace '[\r\n]+', ' '
   Write-Output "::error title=${stage}::${detail}"

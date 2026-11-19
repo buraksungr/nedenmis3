@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { Gemini, memoryVault } from '../server/gemini';
+import { Gemini } from '../server/gemini';
+import { memoryVault } from '../server/vault';
 import { Store } from '../server/store';
 
 const host = 'https://generativelanguage.googleapis.com';
@@ -53,7 +54,7 @@ async function setup(t: TestContext, respond: (attempt: number) => Response) {
   await g.test();
   assert.deepEqual(
     g.settings().catalog.map((m) => m.id),
-    [model, 'gemini-test-tts', 'gemini-test-image'],
+    [model, 'gemini-test-tts'],
   );
   g.configure('text', { model, consent: 'free' });
   return { g, posts, delays };
@@ -99,11 +100,9 @@ test('non-503, indeterminate network failures, structured boards and media are s
   await assert.rejects(g.text('Storyboard', { type: 'object' }), /HTTP 503/);
   g.configure('tts', { model: 'gemini-test-tts', consent: 'free' });
   await assert.rejects(g.voice('Ses.', 'Charon', 'Sakin'), /HTTP 503/);
-  g.configure('image', { model: 'gemini-test-image', consent: 'paid' });
-  await assert.rejects(g.image('Görsel'), /HTTP 503/);
   g.configure('text', { model, consent: 'blocked' });
   await assert.rejects(g.text('Senaryo'), /kullanım iznini/);
-  assert.equal(posts.length, 9);
+  assert.equal(posts.length, 8);
   assert.deepEqual(delays, []);
   assert.ok(!JSON.stringify(g.settings()).includes(key));
 });

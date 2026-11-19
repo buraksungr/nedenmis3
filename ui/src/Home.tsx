@@ -531,7 +531,7 @@ export function NewProject() {
                 ['Format', '1080 × 1920 · 9:16'],
                 ['Kare hızı', '30 FPS'],
                 ['Anlatım', 'Türkçe · Erkek'],
-                ['Görsel stil', 'Sinematik 2D'],
+                ['Görsel stil', 'Nostaljik 2D piksel sanatı'],
                 ['Kurgu', 'Sabit kadraj · Yumuşak geçiş'],
                 ['Üretim', 'İki aşamalı onay'],
               ].map(([k, v]) => (

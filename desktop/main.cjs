@@ -20,8 +20,7 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       const { createStudio } = require('../build/server.cjs');
-      const state = app.getPath('userData'),
-        secret = path.join(state, 'gemini.credential');
+      const state = app.getPath('userData');
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
       // Local OS association lookup; does not open the URL or contact the network.
       const defaultBrowser =
@@ -31,24 +30,29 @@ if (!app.requestSingleInstanceLock()) {
               .then((info) => info.path)
               .catch(() => undefined)
           : undefined;
-      const vault = {
-        mode: 'encrypted',
-        has: () => fs.existsSync(secret),
-        get: () =>
-          fs.existsSync(secret) ? safeStorage.decryptString(fs.readFileSync(secret)) : undefined,
-        set: (key) => {
-          if (
-            !safeStorage.isEncryptionAvailable() ||
-            (process.platform === 'linux' &&
-              safeStorage.getSelectedStorageBackend() === 'basic_text')
-          )
-            throw new Error('Güvenli kimlik deposu kullanılamıyor.');
-          fs.mkdirSync(state, { recursive: true });
-          fs.writeFileSync(secret + '.tmp', safeStorage.encryptString(key), { mode: 0o600 });
-          fs.renameSync(secret + '.tmp', secret);
-        },
-        clear: () => fs.rmSync(secret, { force: true }),
-      };
+      function vaultFor(provider) {
+        const secret = path.join(state, provider + '.credential');
+        return {
+          mode: 'encrypted',
+          has: () => fs.existsSync(secret),
+          get: () =>
+            fs.existsSync(secret) ? safeStorage.decryptString(fs.readFileSync(secret)) : undefined,
+          set: (key) => {
+            if (
+              !safeStorage.isEncryptionAvailable() ||
+              (process.platform === 'linux' &&
+                safeStorage.getSelectedStorageBackend() === 'basic_text')
+            )
+              throw new Error('Güvenli kimlik deposu kullanılamıyor.');
+            fs.mkdirSync(state, { recursive: true });
+            fs.writeFileSync(secret + '.tmp', safeStorage.encryptString(key), { mode: 0o600 });
+            fs.renameSync(secret + '.tmp', secret);
+          },
+          clear: () => fs.rmSync(secret, { force: true }),
+        };
+      }
+      const vault = vaultFor('gemini'),
+        pollinationsVault = vaultFor('pollinations');
       const token = randomBytes(32).toString('hex'),
         studio = createStudio(
           {
@@ -57,7 +61,7 @@ if (!app.requestSingleInstanceLock()) {
             composition: path.join(resources, app.isPackaged ? 'composition' : 'build/composition'),
             defaultBrowser,
           },
-          { vault, desktopToken: token },
+          { vault, pollinationsVault, desktopToken: token },
         );
       studio.app.use((_q, r, n) => {
         r.set(
@@ -110,10 +114,21 @@ if (!app.requestSingleInstanceLock()) {
       await win.loadURL(origin);
       if (verify) {
         // Isolated native install test: never read a real user's projects or credentials.
-        const probe = randomBytes(26).toString('hex');
-        vault.set(probe);
-        if (vault.get() !== probe || fs.readFileSync(secret).includes(probe))
-          throw new Error('Credential encryption round trip failed');
+        const geminiProbe = randomBytes(26).toString('hex');
+        for (const [name, candidate, key] of [
+          ['gemini', vault, geminiProbe],
+          ['pollinations', pollinationsVault, randomBytes(26).toString('hex')],
+        ]) {
+          candidate.set(key);
+          if (
+            vaultFor(name).get() !== key ||
+            fs.readFileSync(path.join(state, name + '.credential')).includes(key)
+          )
+            throw new Error('Credential encryption round trip failed: ' + name);
+        }
+        pollinationsVault.clear();
+        if (pollinationsVault.has() || vault.get() !== geminiProbe)
+          throw new Error('Credential stores are not isolated');
         vault.clear();
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,
@@ -138,6 +153,7 @@ if (!app.requestSingleInstanceLock()) {
               renderer: true,
               sqlite: true,
               secureStorage: true,
+              pollinationsSecureStorage: true,
               checks,
             },
             null,

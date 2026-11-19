@@ -9,6 +9,7 @@ import {
   stageOf,
   type Project,
   type ProjectSummary,
+  type ProviderSettings,
   type Scene,
   type Task,
 } from '../shared/schema';
@@ -44,14 +45,11 @@ export function approved(p: Project) {
     'Görsel, ses ve render için storyboard onayı gerekiyor.',
   );
 }
-export function approveBoard(p: Project, requireImagePrompt = true) {
+export function approveBoard(p: Project) {
   requireThat(p.scriptApproval === scriptSig(p), 'Senaryo onayı gerekiyor.');
   requireThat(
-    p.scenes.length > 0 &&
-      p.scenes.every((s) => s.description && s.narration && (!requireImagePrompt || s.prompt)),
-    requireImagePrompt
-      ? 'Her sahnenin anlatım, betimleme ve görsel istemi alanlarını doldurun.'
-      : 'Her sahnenin anlatım ve betimleme alanlarını doldurun.',
+    p.scenes.length > 0 && p.scenes.every((s) => s.description && s.narration),
+    'Her sahnenin anlatım ve betimleme alanlarını doldurun.',
   );
   requireThat(
     new Set(p.scenes.map((s) => s.id)).size === p.scenes.length,
@@ -95,7 +93,7 @@ export function makeProject(topic: string, script = '', instructions = ''): Proj
     boardApproval: null,
     scenes: [],
     styleGuide:
-      'Dokulu, elle çizilmiş sinematik 2D doğa belgeseli. Doğal tonlar, yönlü ışık, güçlü ön ve arka plan ayrımı. Aynı özneyi, renk paletini ve çizim tekniğini koru.',
+      'Nostaljik 2D piksel sanatıyla ayrıntılı doğa belgeseli. Doğal tonlar, yönlü ışık, güçlü ön ve arka plan ayrımı. Aynı özneyi, renk paletini ve çizim tekniğini koru.',
     voice: defaultSpeaker,
     voiceStyle: 'Sakin, merak uyandıran, doğal bir Türkçe belgesel anlatımı.',
     pace: 'Doğal',
@@ -149,6 +147,19 @@ export class Store {
     this.db.exec(
       'PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, summary TEXT); CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);',
     );
+    // Drop the 1.0.6 Gemini image model, not the user's text/TTS choices, historical
+    // request counts, or already generated project media.
+    const prior = this.setting<ProviderSettings | null>('gemini', null);
+    if (prior?.models && Object.hasOwn(prior.models, 'image')) {
+      this.set('gemini', {
+        ...prior,
+        models: { text: prior.models.text, tts: prior.models.tts },
+        services: Object.fromEntries(
+          Object.entries(prior.services ?? {}).filter(([k]) => k !== 'image'),
+        ),
+        catalog: (prior.catalog ?? []).filter((m) => m.kind === 'text' || m.kind === 'tts'),
+      });
+    }
     this.db.exec('DELETE FROM projects');
     for (const ent of fs.readdirSync(this.projects, { withFileTypes: true })) {
       if (!ent.isDirectory()) continue;

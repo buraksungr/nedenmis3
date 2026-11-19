@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Gemini, memoryVault } from '../server/gemini';
+import { Gemini } from '../server/gemini';
+import { memoryVault } from '../server/vault';
+import { testImages } from './offline';
 import { ff, probe, setupPython, verifyVideo } from '../server/media';
 import { Production, framesForVoice } from '../server/production';
 import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
@@ -34,7 +36,9 @@ export async function acousticControl() {
   );
   const store = new Store(root, false);
   try {
-    const engine = new Production(store, new Gemini(store, memoryVault()), paths);
+    const images = testImages(store);
+    images.setAutoFill(false);
+    const engine = new Production(store, new Gemini(store, memoryVault()), paths, images);
     const create = () => {
       const p = makeProject('Akustik hizalama denetimi', transcript);
       const s = {

@@ -20,7 +20,8 @@ jobs:
       - run: npm run build
       - name: Validate Windows video, static framing, opacity crossfades and subtitle fallback
         run: npm run test:render
-      - run: npm run test:ui
+      - name: Check storyboard routes (offline), local thumbnails and manual upload in Edge
+        run: npm run test:ui
       - name: Package Windows installer
         run: npx --no-install electron-builder --win nsis --x64 --publish never
         env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }

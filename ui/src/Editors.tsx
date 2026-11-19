@@ -28,14 +28,7 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  blankScene,
-  manualImages,
-  normalize,
-  type Project,
-  type Scene,
-  type Word,
-} from '../../shared/schema';
+import { blankScene, normalize, type Project, type Scene, type Word } from '../../shared/schema';
 import {
   Badge,
   Button,
@@ -303,7 +296,7 @@ export function ScriptEditor({ p }: { p: Project }) {
 }
 export function BoardEditor({ p }: { p: Project }) {
   const { go, notify, refresh, setP, settings } = useStudio();
-  const manual = !settings || manualImages(settings.models.image);
+  const autoFill = settings?.pollinations.autoFill;
   const { run, busy } = useRun();
   const d = useDraft(p, 'board', { scenes: p.scenes, styleGuide: p.styleGuide }, (v) => v);
   const [open, setOpen] = useState<string | null>(null);
@@ -383,8 +376,11 @@ export function BoardEditor({ p }: { p: Project }) {
             />
             <p className="help">
               Seslendirme, storyboard onayından sonra seçtiğin sesle yapılır.
-              {manual &&
-                ' Görsel istekleri kapalı: sahnelerin görsellerini onaydan sonra yükleyebilirsin.'}
+              {autoFill
+                ? ' Onayla ve üret, eksik görsellerin istemlerini Pollinations’a gönderir.'
+                : ' Toplu üretim görselleri senin yüklemeni bekler.'}{' '}
+              İstersen yalnızca onaylayıp tek sahne için görsel üretebilir veya dosya
+              yükleyebilirsin.
             </p>
           </div>
           <div className="section-head spaced">
@@ -438,18 +434,25 @@ export function BoardEditor({ p }: { p: Project }) {
               <div className="scene-format">
                 <Image size={13} /> Sabit kadraj · Yumuşak geçiş
               </div>
-              {manual && (
-                <div className="manual-image-slot">
-                  <SceneThumbnail p={p} s={s} />
-                  <div className="grow">
-                    <b>{p.assets[s.id]?.image ? 'Sahne görseli' : 'Görsel bekleniyor'}</b>
-                    <p className="help">
-                      {p.boardApproval
-                        ? 'JPG, PNG veya WebP · en fazla 30 MB'
-                        : 'Storyboard onayından sonra görsel yüklenebilir.'}
-                    </p>
-                  </div>
-                  {p.boardApproval && (
+              <div className="manual-image-slot">
+                <SceneThumbnail p={p} s={s} />
+                <div className="grow">
+                  <b>{p.assets[s.id]?.image ? 'Sahne görseli' : 'Görsel bekleniyor'}</b>
+                  <p className="help">
+                    {p.boardApproval
+                      ? 'İstem boşsa sahne betimlemesi kullanılır. Yükleme: JPG, PNG veya WebP · en fazla 30 MB.'
+                      : 'Onaydan sonra Pollinations ile üret veya görsel yükle.'}
+                  </p>
+                </div>
+                {p.boardApproval && (
+                  <div className="actions">
+                    <Button
+                      disabled={locked || d.status !== 'Kaydedildi'}
+                      onClick={() => void run(() => gen('image', s.id))}
+                    >
+                      <Sparkles size={13} />
+                      {p.assets[s.id]?.image ? 'Görseli yeniden üret' : 'Görsel üret'}
+                    </Button>
                     <UploadFile
                       p={p}
                       scene={s.id}
@@ -457,9 +460,9 @@ export function BoardEditor({ p }: { p: Project }) {
                       title={p.assets[s.id]?.image ? 'Görsel değiştir' : 'Görsel yükle'}
                       disabled={locked || d.status !== 'Kaydedildi'}
                     />
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
               {open === s.id && (
                 <fieldset disabled={locked} className="scene-fields">
                   <div className="form-grid">
@@ -467,7 +470,7 @@ export function BoardEditor({ p }: { p: Project }) {
                       [
                         ['narration', 'Anlatım'],
                         ['description', 'Görsel betimleme'],
-                        ['prompt', manual ? 'Görsel istemi (isteğe bağlı)' : 'Görsel istemi'],
+                        ['prompt', 'Görsel istemi (isteğe bağlı)'],
                         ['environment', 'Çevre ayrıntıları'],
                         ['sound', 'Ses tasarımı'],
                       ] as const
@@ -565,6 +568,19 @@ export function BoardEditor({ p }: { p: Project }) {
               <CheckCheck size={14} />
               {d.status}
             </span>
+            <Button
+              disabled={
+                locked || !d.v.scenes.length || (!!p.boardApproval && d.status === 'Kaydedildi')
+              }
+              onClick={() =>
+                void run(async () => {
+                  await d.flush({ approve: true });
+                  notify('Storyboard onaylandı. Görsel üretimi başlatılmadı.');
+                })
+              }
+            >
+              Yalnızca onayla
+            </Button>
             <Button
               variant="primary"
               disabled={locked || !d.v.scenes.length}
@@ -721,7 +737,7 @@ function Captions({ p, s, close }: { p: Project; s: Scene; close: () => void }) 
 }
 export function ProductionView({ p }: { p: Project }) {
   const { go, mutate, settings } = useStudio();
-  const manual = !settings || manualImages(settings.models.image);
+  const autoFill = settings?.pollinations.autoFill;
   const { run, busy } = useRun();
   const [editCaps, setEditCaps] = useState<Scene | null>(null),
     [prefs, setPrefs] = useState(false),
@@ -787,8 +803,9 @@ export function ProductionView({ p }: { p: Project }) {
               )}
             </div>
             <p className="help">
-              {manual &&
-                'Manuel görsel modu: Her sahneye bir görsel yükle, ardından üretime devam et. '}
+              {autoFill
+                ? 'Eksik görseller Pollinations ile üretilir. '
+                : 'Toplu üretimde her sahneye bir görsel yükle, ardından üretime devam et. '}
               Başarılı varlıklar yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe
               aktarabilirsin. Müzik eklemezsen stüdyonun özgün ambiyans müziği kullanılır.
             </p>
@@ -810,7 +827,7 @@ export function ProductionView({ p }: { p: Project }) {
                     <h3>{s.narration}</h3>
                     <div className="asset-states">
                       {[
-                        [m.image, manual && !m.image ? 'Görsel bekleniyor' : 'Görsel'],
+                        [m.image, !m.image ? 'Görsel bekleniyor' : 'Görsel'],
                         [m.voice, 'Ses'],
                         [
                           captionEntries(m).length,
@@ -824,15 +841,13 @@ export function ProductionView({ p }: { p: Project }) {
                       ))}
                     </div>
                   </div>
-                  {manual && (
-                    <UploadFile
-                      p={p}
-                      kind="image"
-                      scene={s.id}
-                      title={m.image ? 'Görsel değiştir' : 'Görsel yükle'}
-                      disabled={locked}
-                    />
-                  )}
+                  <UploadFile
+                    p={p}
+                    kind="image"
+                    scene={s.id}
+                    title={m.image ? 'Görsel değiştir' : 'Görsel yükle'}
+                    disabled={locked}
+                  />
                   <button
                     className="icon-btn"
                     aria-label="Sahne üretim araçları"
@@ -857,7 +872,7 @@ export function ProductionView({ p }: { p: Project }) {
                     )}
                     <div className="actions">
                       {[
-                        ...(manual ? [] : [['image', 'Görsel üret']]),
+                        ['image', m.image ? 'Görseli yeniden üret' : 'Görsel üret'],
                         ['voice', 'Ses üret'],
                         ['align', 'Sesi hizala'],
                         ['clip', 'Sahneyi işle'],
@@ -879,15 +894,6 @@ export function ProductionView({ p }: { p: Project }) {
                       ))}
                     </div>
                     <div className="actions">
-                      {!manual && (
-                        <UploadFile
-                          p={p}
-                          kind="image"
-                          scene={s.id}
-                          title={m.image ? 'Görsel değiştir' : 'Görsel yükle'}
-                          disabled={locked}
-                        />
-                      )}
                       <UploadFile
                         p={p}
                         kind="voice"

@@ -7,8 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createStudio } from '../server/app';
+import { noNetwork } from './offline';
 import { blankScene, type Project } from '../shared/schema';
-async function app(t: any, token?: string, transport?: typeof fetch) {
+async function app(t: any, token?: string, transport: typeof fetch = noNetwork) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nedenmis-http-'));
   const ctx = createStudio(
     { root, pythonDir: path.resolve('python'), composition: path.resolve('build/composition') },
@@ -245,15 +246,17 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
     }
     return Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 });
   });
-  const permissions = t.mock.method(g, 'allowed');
+
   // No key or catalog is needed to disable images or choose a default speaker.
-  assert.equal((await req('/settings/model', { kind: 'image', consent: 'blocked' })).status, 200);
+  assert.equal((await req('/settings/model', { kind: 'image', consent: 'blocked' })).status, 400);
+  assert.equal((await req('/settings/pollinations', { autoFill: false })).status, 200);
   assert.equal((await req('/settings/speaker', { speaker: 'not-a-voice' })).status, 400);
   assert.equal((await req('/settings/speaker', { speaker: 'Puck' })).status, 200);
   await req('/settings/key', { key: 'offline-test-credential' });
   const settings = await (await req('/settings/test', {})).json();
   assert.equal(settings.defaultSpeaker, 'Puck');
-  assert.deepEqual(settings.models.image, { model: '', consent: 'blocked' });
+  assert.equal(settings.models.image, undefined);
+  assert.deepEqual(settings.pollinations, { hasKey: false, autoFill: false, storage: 'session' });
   for (const [kind, model] of [
     ['text', textModel],
     ['tts', 'gemini-test-tts'],
@@ -304,10 +307,6 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
   );
   for (const m of Object.values(p.assets)) assert.ok(!m.image && !m.clip && !m.align);
   const first = p.scenes[0].id;
-  assert.equal(
-    (await req(route + '/generate', { kind: 'image', scene: first }, p.rev)).status,
-    409,
-  );
   const upload = await fetch(`${base}${route}/import/image?scene=${first}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/octet-stream', 'If-Match': String(p.rev) },
@@ -334,8 +333,7 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
   p = await settle(route);
   assert.equal(p.job.state, 'done');
   assert.equal(calls.at(-1)?.voice, 'Zephyr');
-  assert.equal(g.raw().services.image, undefined);
-  assert.ok(!permissions.mock.calls.some((c) => c.arguments[0] === 'image'));
+  assert.ok(!('image' in g.raw().services));
 });
 
 test('a listed text model can still return 404: preserve the draft, show the actual model, never retry or switch automatically', async (t) => {
@@ -454,4 +452,146 @@ test('persistent script HTTP 503 stops the background job after four real SDK re
   const log = fs.readFileSync(path.join(store.dir(p.id), 'production.ndjson'), 'utf8');
   assert.ok(!log.includes(secret));
   for (const label of ['(1/3)', '(2/3)', '(3/3)']) assert.ok(log.includes(label));
+});
+
+test('storyboard uses one key-selected Pollinations route, publishes locally, and allows upload after either route fails', async (t) => {
+  const prompt = 'Kış / göl? %20 & ışık#🍃',
+    suffix = ', nostalgic 2D pixel art style, highly detailed, nature documentary aesthetic';
+  const gemini = 'isolated-gemini-secret',
+    key = 'sk_pollinations-first-secret',
+    rotated = 'sk_pollinations-rotated-secret';
+  const calls: {
+    url: string;
+    method: string | undefined;
+    auth: string | null;
+    google: string | null;
+    redirect: RequestRedirect | undefined;
+  }[] = [];
+  let mode: 'image' | 'unavailable' | 'invalid' = 'unavailable';
+  const { req, settle, base, store, prod, g } = await app(t, undefined, async (url, options) => {
+    const h = new Headers(options?.headers);
+    calls.push({
+      url: String(url),
+      method: options?.method,
+      auth: h.get('authorization'),
+      google: h.get('x-goog-api-key'),
+      redirect: options?.redirect,
+    });
+    if (mode === 'unavailable') return new Response(rotated, { status: 503 });
+    // JPEG magic is not enough: this must fail the local decode/size check.
+    const bytes =
+      mode === 'image'
+        ? fs.readFileSync('ui/public/art/ocean.jpg')
+        : Buffer.from([255, 216, 255, 0, 1]);
+    return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': 'image/jpeg' } });
+  });
+  g.key(gemini);
+  const originalGemini = g.raw();
+  let p: Project = await (
+    await req('/projects', { topic: 'Kış belgeseli', script: 'Kuşlar gölde dinlenir.' })
+  ).json();
+  const route = '/projects/' + p.id;
+  const s = {
+    ...blankScene(randomUUID()),
+    description: 'Gölde dinlenen kuşlar',
+    narration: p.script,
+    prompt,
+  };
+  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+  p = await (await req(route + '/board', { scenes: [s], styleGuide: p.styleGuide }, p.rev)).json();
+  assert.equal((await req(route + '/generate', { kind: 'image', scene: s.id }, p.rev)).status, 409);
+  p = await (
+    await req(route + '/board', { scenes: [s], styleGuide: p.styleGuide, approve: true }, p.rev)
+  ).json();
+  assert.equal(calls.length, 0);
+  const gen = async () => {
+    assert.equal(
+      (await req(route + '/generate', { kind: 'image', scene: s.id }, p.rev)).status,
+      202,
+    );
+    p = await settle(route);
+  };
+  const saveKey = async (secret: string) => {
+    const r = await req('/settings/pollinations/key', { key: secret });
+    assert.equal(r.status, 200);
+    const body = await r.text();
+    assert.ok(![key, rotated, gemini].some((x) => body.includes(x)));
+    assert.deepEqual(JSON.parse(body).pollinations, {
+      autoFill: true,
+      hasKey: true,
+      storage: 'session',
+    });
+    assert.deepEqual(g.raw(), originalGemini);
+  };
+  await gen();
+  assert.equal(p.job.state, 'waiting');
+  assert.match(p.job.label, /HTTP 503.*Görsel yükle/);
+  assert.equal(p.assets[s.id]?.image, undefined);
+  const upload = await fetch(base + route + '/import/image?scene=' + s.id, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', 'If-Match': String(p.rev) },
+    body: fs.readFileSync('ui/public/art/ants.jpg'),
+  });
+  assert.equal(upload.status, 200);
+  p = await upload.json();
+  const imported = p.assets[s.id].image!;
+  assert.equal(imported.source, 'import');
+  await saveKey(key);
+  mode = 'image';
+  await gen();
+  assert.equal(p.job.state, 'done', p.job.label);
+  const img = p.assets[s.id].image!;
+  assert.equal(img.source, 'pollinations');
+  assert.match(img.file, /^media\/storyboard\/[\da-f-]{36}\.jpg$/);
+  const disk = fs.readFileSync(prod.file(p, img.file));
+  assert.deepEqual(store.get(p.id).assets[s.id].image, img);
+  const mediaResponse = await fetch(base + route + '/media/' + img.file.slice('media/'.length));
+  assert.equal(mediaResponse.status, 200);
+  assert.match(mediaResponse.headers.get('content-type') || '', /image\/jpeg/);
+  assert.deepEqual(Buffer.from(await mediaResponse.arrayBuffer()), disk);
+  assert.equal(
+    p.cover,
+    route.replace('/projects', '/api/projects') + '/media/' + img.file.slice('media/'.length),
+  );
+  await saveKey(rotated);
+  mode = 'invalid';
+  await gen();
+  assert.equal(p.job.state, 'failed');
+  assert.match(p.job.label, /Görsel yükle/);
+  assert.deepEqual(p.assets[s.id].image, img);
+  assert.deepEqual(fs.readFileSync(prod.file(p, img.file)), disk);
+  assert.ok(fs.existsSync(prod.file(p, imported.file)));
+  const del = await fetch(base + '/settings/pollinations/key', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(del.status, 200);
+  assert.equal((await del.json()).pollinations.hasKey, false);
+  assert.deepEqual(g.raw(), originalGemini);
+  await prod.asset(p, s, 'image', false);
+  assert.equal(calls.length, 3); // successful local asset reused regardless of route
+  mode = 'image';
+  await gen();
+  assert.equal(p.job.state, 'done', p.job.label);
+  assert.deepEqual(
+    calls.map((c) => c.auth),
+    [null, 'Bearer ' + key, 'Bearer ' + rotated, null],
+  );
+  const pathPart = encodeURIComponent(prompt + suffix);
+  for (const [i, c] of calls.entries()) {
+    assert.equal(c.method, 'GET');
+    assert.equal(c.google, null);
+    assert.equal(c.redirect, 'error');
+    assert.equal(
+      c.url,
+      i === 0 || i === 3
+        ? `https://image.pollinations.ai/prompt/${pathPart}?width=1080&height=1920&nologo=true`
+        : `https://gen.pollinations.ai/image/${pathPart}?width=1080&height=1920`,
+    );
+  }
+  const serialized =
+    JSON.stringify([p, g.settings(), await (await req('/settings')).json()]) +
+    fs.readFileSync(path.join(store.dir(p.id), 'production.ndjson'), 'utf8');
+  for (const secret of [gemini, key, rotated]) assert.ok(!serialized.includes(secret));
 });

@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { Gemini, memoryVault, wav } from '../server/gemini';
+import { Gemini, wav } from '../server/gemini';
+import { memoryVault } from '../server/vault';
+import { testImages } from './offline';
 import { invalidate } from '../server/invalidate';
 import { framesForVoice, imageKey, Production, voiceKey } from '../server/production';
 import {
@@ -146,7 +148,7 @@ test('caption timing uses audio bounds, real milliseconds and sentence breaks', 
   assert.equal(b.toString('ascii', 0, 4), 'RIFF');
   assert.equal(b.readUInt32LE(40), 48000);
 });
-test('one key; discovery is read-only, paginated, and does not authorize generation', async (t) => {
+test('Gemini text and voice discovery is read-only, paginated, and does not authorize generation', async (t) => {
   const store = temp(t),
     calls: string[] = [];
   const transport = async (url: any, opts: any) => {
@@ -168,19 +170,14 @@ test('one key; discovery is read-only, paginated, and does not authorize generat
   assert.equal(g.settings().status, 'untested');
   const s = await g.test();
   assert.equal(s.status, 'connected');
-  assert.equal(s.catalog.length, 3);
+  assert.deepEqual(
+    s.catalog.map((m) => m.id),
+    ['gemini-test-flash', 'gemini-test-tts'],
+  );
   assert.equal(calls.length, 4); // two pages each on stable text and beta media catalogs
   assert.ok(calls.every((u) => !u.includes(secret)));
   assert.equal(s.services.text, undefined);
   assert.throws(() => g.allowed('text'));
-  assert.throws(
-    () => g.configure('image', { model: 'gemini-test-image', consent: 'free' }),
-    /ücretsiz/,
-  );
-  g.configure('image', { model: 'gemini-test-image', consent: 'paid' });
-  assert.equal(g.allowed('image'), 'gemini-test-image');
-  g.configure('image', { model: 'no-longer-listed', consent: 'blocked' });
-  assert.deepEqual(g.raw().models.image, { model: '', consent: 'blocked' });
   g.configure('text', { model: 'gemini-test-flash', consent: 'free' });
   assert.equal(g.allowed('text'), 'gemini-test-flash');
   g.key('updated-test-credential');
@@ -288,18 +285,23 @@ test('adapter sends verbatim narration, parses WAV/PCM and keeps per-service evi
   assert.equal(calls[0].generation_config.speech_config[0].voice, 'Charon');
   assert.equal(bytes.toString('ascii', 8, 12), 'WAVE');
   assert.equal(g.settings().services.tts?.status, 'connected');
-  assert.equal(g.settings().services.image, undefined);
+  assert.ok(!('image' in g.settings().services));
 });
 test('damaged image import and unavailable TTS preserve previously verified assets', async (t) => {
   const store = temp(t),
     p = store.create(draft());
   p.scriptApproval = scriptSig(p);
   approveBoard(p);
-  const engine = new Production(store, new Gemini(store, memoryVault()), {
-    root: store.root,
-    pythonDir: 'python',
-    composition: 'build/composition',
-  });
+  const engine = new Production(
+    store,
+    new Gemini(store, memoryVault()),
+    {
+      root: store.root,
+      pythonDir: 'python',
+      composition: 'build/composition',
+    },
+    testImages(store),
+  );
   await engine.import(p, 'image', fs.readFileSync('ui/public/art/ants.jpg'), p.scenes[0]);
   const a = structuredClone(p.assets[p.scenes[0].id].image);
   await assert.rejects(() => engine.import(p, 'image', Buffer.from('not an image'), p.scenes[0]));

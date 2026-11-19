@@ -6,7 +6,9 @@ import { z } from 'zod';
 import { validWords } from '../shared/captions';
 import { kinds, sceneSchema, wordSchema, type Task, type Project } from '../shared/schema';
 import { speakers } from '../shared/speakers';
-import { Gemini, memoryVault, type Vault } from './gemini';
+import { Gemini } from './gemini';
+import { memoryVault, type Vault } from './vault';
+import { Pollinations } from './pollinations';
 import { invalidate } from './invalidate';
 import { checks, setupPython, type Paths } from './media';
 import { script, storyboard } from './planner';
@@ -46,11 +48,19 @@ const pref = z
   .partial();
 export function createStudio(
   paths: Paths,
-  options: { vault?: Vault; seed?: boolean; desktopToken?: string; transport?: typeof fetch } = {},
+  options: {
+    vault?: Vault;
+    pollinationsVault?: Vault;
+    seed?: boolean;
+    desktopToken?: string;
+    transport?: typeof fetch;
+  } = {},
 ) {
   const store = new Store(paths.root, options.seed),
     g = new Gemini(store, options.vault ?? memoryVault(), options.transport),
-    prod = new Production(store, g, paths),
+    images = new Pollinations(store, options.pollinationsVault ?? memoryVault(), options.transport),
+    prod = new Production(store, g, paths, images),
+    settings = () => ({ ...g.settings(), pollinations: images.settings() }),
     app = express();
   let busy: string | null = null,
     setup = { working: false, message: '' };
@@ -187,7 +197,7 @@ export function createStudio(
       .parse(q.body);
     const old = structuredClone(p);
     const next = { ...p, scenes: b.scenes, styleGuide: b.styleGuide };
-    if (b.approve) approveBoard(next, !g.usesManualImages());
+    if (b.approve) approveBoard(next);
     const changed =
       JSON.stringify([p.scenes, p.styleGuide]) !== JSON.stringify([b.scenes, b.styleGuide]);
     if (changed || b.approve) {
@@ -237,7 +247,6 @@ export function createStudio(
     if (['all', 'image', 'voice', 'align', 'clip'].includes(b.kind)) approved(p);
     if (['image', 'voice', 'align', 'clip', 'concept'].includes(b.kind))
       requireThat(s, 'Bir sahne seçin.');
-    if (b.kind === 'image') g.requireAutomaticImages();
     requireThat(!(b.kind === 'all' && s), 'Tam üretim tüm zaman çizelgesini kullanır.', 400);
     r.status(202).json(
       run(p, b.kind, async () => {
@@ -310,7 +319,10 @@ export function createStudio(
       busy = p.id;
       try {
         await prod.import(p, kind, q.body, s);
-        const pending = g.usesManualImages() ? prod.waitingForImages(p) : undefined;
+        const pending =
+          !images.autoFill() || p.job.kind === 'manual-images'
+            ? prod.waitingForImages(p)
+            : undefined;
         p.job = pending ?? {
           state: 'done',
           kind,
@@ -326,12 +338,17 @@ export function createStudio(
   app.get('/api/projects/:id/media/:folder/:file', (q, r) => {
     const { id, folder, file } = q.params;
     requireThat(
-      /^(images|audio|music|renders|subtitles|scenes)$/.test(folder) &&
+      (/^(images|audio|music|renders|subtitles|scenes)$/.test(folder) ||
+        (folder === 'storyboard' && file.endsWith('.jpg'))) &&
         /^[\da-f-]{36}\.(jpg|wav|mp4|json|srt)$/.test(file),
       'Varlık bulunamadı.',
       404,
     );
-    const target = path.join(store.dir(id), folder, file);
+    const target = path.join(
+      store.dir(id),
+      folder === 'storyboard' ? 'media/storyboard' : folder,
+      file,
+    );
     requireThat(fs.existsSync(target), 'Dosya bulunamadı.', 404);
     if (q.query.download === '1') r.attachment('Nedenmis-' + file);
     r.sendFile(target);
@@ -347,22 +364,38 @@ export function createStudio(
     a.glob('**/*', { cwd: store.dir(p.id), ignore: ['cache/**', '*.tmp'] });
     void a.finalize();
   });
-  app.get('/api/settings', (_q, r) => r.json(g.settings()));
+  app.get('/api/settings', (_q, r) => r.json(settings()));
+  app.post('/api/settings/pollinations', (q, r) => {
+    idle();
+    images.setAutoFill(z.boolean().parse(q.body.autoFill));
+    r.json(settings());
+  });
+  app.post('/api/settings/pollinations/key', (q, r) => {
+    idle();
+    images.key(z.string().trim().min(1).max(512).parse(q.body.key));
+    r.json(settings());
+  });
+  app.delete('/api/settings/pollinations/key', (_q, r) => {
+    idle();
+    images.key();
+    r.json(settings());
+  });
   app.post('/api/settings/key', (q, r) => {
     idle();
     g.key(z.string().trim().min(1).parse(q.body.key));
-    r.json(g.settings());
+    r.json(settings());
   });
   app.delete('/api/settings/key', (_q, r) => {
     idle();
     g.key();
-    r.json(g.settings());
+    r.json(settings());
   });
   app.post('/api/settings/test', async (_q, r) => {
     idle();
     busy = 'settings';
     try {
-      r.json(await g.test());
+      await g.test();
+      r.json(settings());
     } finally {
       busy = null;
     }
@@ -370,7 +403,7 @@ export function createStudio(
   app.post('/api/settings/speaker', (q, r) => {
     idle();
     store.set('tts-speaker', z.enum(speakers).parse(q.body.speaker));
-    r.json(g.settings());
+    r.json(settings());
   });
   app.post('/api/settings/model', (q, r) => {
     idle();
@@ -382,7 +415,7 @@ export function createStudio(
       })
       .parse(q.body);
     g.configure(b.kind, b);
-    r.json(g.settings());
+    r.json(settings());
   });
   app.post('/api/settings/checks', async (_q, r) => {
     idle();
@@ -410,7 +443,7 @@ export function createStudio(
   });
   app.post('/api/settings/setup', (_q, r) => {
     store.set('setup-done', true);
-    r.json(g.settings());
+    r.json(settings());
   });
   app.post('/api/projects/:id/revision', async (q, r) => {
     const p = writable(q);

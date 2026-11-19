@@ -3,10 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { FilmProps } from '../composition/Film';
 import { captionEntries, cue, groups, srtFromCues, validWords } from '../shared/captions';
-import type { Asset, Project, Scene, Task, TimedText, Word } from '../shared/schema';
+import {
+  mediaUrl,
+  type Asset,
+  type Project,
+  type Scene,
+  type Task,
+  type TimedText,
+  type Word,
+} from '../shared/schema';
 import { readWhisper, sentenceEstimates, verifiedAlignment } from './alignment';
 import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
+import { Pollinations, ImageUnavailable } from './pollinations';
 import {
   audioDuration,
   checks,
@@ -33,6 +42,7 @@ export class Production {
     private store: Store,
     private g: Gemini,
     private paths: Paths,
+    private images: Pollinations,
     private readonly runWhisper = readWhisper,
   ) {}
   file(p: Project, rel: string) {
@@ -66,7 +76,9 @@ export class Production {
     duration?: number,
   ): Asset {
     const dest = `${folder}/${randomUUID()}.${ext}`;
-    fs.renameSync(src, this.file(p, dest));
+    const file = this.file(p, dest);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.renameSync(src, file);
     return { file: dest, key, duration, source: 'local', created: now() };
   }
   async import(
@@ -74,7 +86,9 @@ export class Production {
     kind: 'image' | 'voice' | 'music' | 'sfx',
     data: Buffer,
     s?: Scene,
-    model?: string,
+    origin: { source: 'import' | 'pollinations' } | { source: 'gemini'; model: string } = {
+      source: 'import',
+    },
   ) {
     approved(p);
     const tmp = this.temp(p, 'input'),
@@ -86,8 +100,10 @@ export class Production {
       if (kind === 'image') {
         const dimensions = (await probe(tmp)).streams[0];
         requireThat(
-          dimensions?.width * dimensions?.height <= 40000000,
-          'Görsel 40 megapikselden büyük.',
+          dimensions?.width > 0 &&
+            dimensions?.height > 0 &&
+            dimensions.width * dimensions.height <= 40000000,
+          'Görsel boyutu okunamadı veya 40 megapiksel sınırını aşıyor.',
           422,
         );
         await ff([...input, '-frames:v', '1', '-vf', "scale='min(1920,iw)':-2", '-q:v', '2', out]);
@@ -99,14 +115,19 @@ export class Production {
         );
         const m = (p.assets[s!.id] ??= {});
         m.image = {
-          ...this.publish(p, out, 'images', 'jpg', imageKey(p, s!)),
-          source: model ? 'gemini' : 'import',
-          model,
+          ...this.publish(
+            p,
+            out,
+            origin.source === 'pollinations' ? 'media/storyboard' : 'images',
+            'jpg',
+            imageKey(p, s!),
+          ),
+          ...origin,
         };
         const prev = p.scenes[p.scenes.findIndex((x) => x.id === s!.id) - 1];
         if (prev && p.assets[prev.id]) delete p.assets[prev.id].clip;
         delete m.clip;
-        if (s!.id === p.scenes[0]?.id) p.cover = `/api/projects/${p.id}/media/${m.image.file}`;
+        if (s!.id === p.scenes[0]?.id) p.cover = mediaUrl(p, m.image.file);
       } else {
         await audioDuration(tmp);
         await ff([
@@ -131,8 +152,7 @@ export class Production {
           kind === 'voice' ? voiceKey(p, s!) : hash(data),
           d,
         );
-        a.source = model ? 'gemini' : 'import';
-        a.model = model;
+        Object.assign(a, origin);
         if (kind === 'music') p.music = a;
         else {
           const m = (p.assets[s!.id] ??= {});
@@ -182,32 +202,32 @@ export class Production {
     const m = (p.assets[s.id] ??= {}),
       k = kind === 'image' ? imageKey(p, s) : voiceKey(p, s);
     if (!force && this.usable(p, m[kind], k)) return this.verifyCached(p, m[kind]!, kind);
-    if (kind === 'image') this.g.requireAutomaticImages();
     this.tick(
       p,
-      kind === 'image' ? 'Sinematik görsel üretiliyor' : 'Türkçe seslendirme üretiliyor',
+      kind === 'image'
+        ? 'Pollinations sahne görseli hazırlanıyor'
+        : 'Türkçe seslendirme üretiliyor',
       kind,
       s.id,
     );
-    let data: Buffer;
     if (kind === 'image') {
-      const first = p.assets[p.scenes[0].id]?.image;
-      const ref =
-        first && fs.existsSync(this.file(p, first.file))
-          ? fs.readFileSync(this.file(p, first.file))
-          : undefined;
-      data = await this.g.image(
-        `Cinematic 2D documentary, vertical 9:16. Full bleed. No lettering, subtitles or logos. Use the reference for identity, palette and technique, not composition. Layered foreground, midground and background, restrained color, atmospheric lighting. ${JSON.stringify({ bible: p.styleGuide, scene: s.description, prompt: s.prompt, angle: s.angle, environment: s.environment, narration: s.narration })}`,
-        ref,
-      );
-    } else data = await this.g.voice(s.narration, p.voice, `${p.voiceStyle} Tempo: ${p.pace}.`);
-    await this.import(
-      p,
-      kind,
-      data,
-      s,
-      this.g.raw().models[kind === 'voice' ? 'tts' : 'image'].model,
-    );
+      const data = await this.images.image(s.prompt.trim() || s.description);
+      // Reuse the verified, single-frame import path. Do not publish or invalidate
+      // any prior image, clip, or export until the downloaded bytes decode locally.
+      try {
+        await this.import(p, 'image', data, s, { source: 'pollinations' });
+      } catch (e) {
+        if (e instanceof Issue && e.status === 422)
+          throw new ImageUnavailable('İndirilen görsel doğrulanamadı.');
+        throw e;
+      }
+    } else {
+      const data = await this.g.voice(s.narration, p.voice, `${p.voiceStyle} Tempo: ${p.pace}.`);
+      await this.import(p, 'voice', data, s, {
+        source: 'gemini',
+        model: this.g.raw().models.tts.model,
+      });
+    }
   }
   private alignmentKey(voice: Asset, s: Scene, estimated: boolean) {
     return estimated
@@ -388,7 +408,7 @@ export class Production {
     approved(p);
     const scenes = target ? p.scenes.filter((s) => s.id === target) : p.scenes;
     requireThat(scenes.length, 'Sahne bulunamadı.');
-    const manual = this.g.usesManualImages();
+    const manual = !this.images.autoFill();
     const waiting = kind === 'all' && manual ? this.waitingForImages(p) : undefined;
     let whisperUnavailable: string | undefined;
     if (kind === 'all') {
@@ -397,7 +417,6 @@ export class Production {
       let needWhisper = false;
       for (const s of scenes) {
         const m = p.assets[s.id];
-        if (!manual && !this.usable(p, m?.image, imageKey(p, s))) this.g.allowed('image');
         if (!this.usable(p, m?.voice, voiceKey(p, s))) this.g.allowed('tts');
         if (!waiting && !this.cachedAlignment(p, s)) needWhisper = true;
       }
@@ -424,9 +443,27 @@ export class Production {
       return { ...waiting, at: now() };
     }
     for (const s of scenes) {
-      if (kind === 'all' && manual) await this.verifyCached(p, p.assets[s.id].image!, 'image');
-      else if (kind === 'all' || kind === 'image')
-        await this.asset(p, s, 'image', kind === 'image');
+      if (kind === 'all' && manual) {
+        // A lost file after preflight must not trigger a GET when batch generation is off.
+        await this.verifyCached(p, p.assets[s.id].image!, 'image');
+      } else if (kind === 'all' || kind === 'image') {
+        try {
+          await this.asset(p, s, 'image', kind === 'image');
+        } catch (e) {
+          if (!(e instanceof ImageUnavailable)) throw e;
+          const label = `Sahne ${p.scenes.indexOf(s) + 1} · ${e.message} Görsel yükleyebilir veya bu sahneyi yeniden deneyebilirsin.`;
+          // Never retry a potentially billable GET or switch host on failure.
+          // An unsuccessful explicit replacement leaves the existing image usable.
+          if (this.usable(p, p.assets[s.id]?.image, imageKey(p, s))) throw new Issue(502, label);
+          return {
+            state: 'waiting',
+            kind: 'manual-images',
+            scene: s.id,
+            label,
+            at: now(),
+          } satisfies Task;
+        }
+      }
       if (kind === 'all' || kind === 'voice') await this.asset(p, s, 'voice', kind === 'voice');
       if (kind === 'all' || kind === 'align')
         await this.align(p, s, kind === 'align', whisperUnavailable);

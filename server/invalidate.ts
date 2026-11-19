@@ -1,4 +1,4 @@
-import type { Project } from '../shared/schema';
+import { mediaUrl, type Project } from '../shared/schema';
 import { imageKey, voiceKey } from './production';
 /** Detach stale outputs, don't delete files. Snapshots retain the original versions. */
 export function invalidate(p: Project, old: Project) {
@@ -9,7 +9,7 @@ export function invalidate(p: Project, old: Project) {
     if (!m) continue;
     const oldIndex = old.scenes.findIndex((x) => x.id === s.id);
     if (m.image && m.image.key !== imageKey(p, s)) {
-      if (p.cover.endsWith(m.image.file))
+      if (p.cover === mediaUrl(p, m.image.file))
         p.cover = old.example && old.category === 'DOĞA' ? '/art/ants.jpg' : '';
       delete m.image;
       delete m.clip;

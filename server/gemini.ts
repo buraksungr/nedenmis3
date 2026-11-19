@@ -2,7 +2,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import {
   kinds,
-  manualImages,
   type Connection,
   type Kind,
   type ModelConfig,
@@ -12,31 +11,10 @@ import {
 import type { Speaker } from '../shared/speakers';
 import type { Store } from './store';
 import { Issue, now, requireThat } from './store';
-export interface Vault {
-  mode: 'session' | 'encrypted';
-  has?(): boolean;
-  get(): string | undefined;
-  set(v: string): void;
-  clear(): void;
-}
-export function memoryVault(): Vault {
-  let secret: string | undefined;
-  return {
-    mode: 'session',
-    has: () => !!secret,
-    get: () => secret,
-    set: (v) => {
-      secret = v;
-    },
-    clear: () => {
-      secret = undefined;
-    },
-  };
-}
+import type { Vault } from './vault';
 const fresh = (): ProviderSettings => ({
   models: {
     text: { model: '', consent: 'blocked' },
-    image: { model: '', consent: 'blocked' },
     tts: { model: '', consent: 'blocked' },
   },
   catalog: [],
@@ -73,14 +51,13 @@ function modelId(name: unknown): string {
 }
 export function modality(id: string): Kind | undefined {
   if (
-    !/^(gemini-|nano-banana)/.test(id) ||
-    /embedding|robotics|computer-use|omni|live|native-audio|transcribe|customtools|deep-research/.test(
+    !id.startsWith('gemini-') ||
+    /image|embedding|robotics|computer-use|omni|live|native-audio|transcribe|customtools|deep-research/.test(
       id,
     )
   )
     return;
   if (/tts/.test(id)) return 'tts';
-  if (/image|nano-banana/.test(id)) return 'image';
   return 'text';
 }
 function fault(
@@ -116,7 +93,7 @@ function fault(
     `Gemini isteği tamamlanamadı (HTTP ${status}). Model erişimini ve yapılandırmasını kontrol edin.`,
   ] as const;
 }
-type MediaPart = { type: 'image' | 'audio'; data: string; mime_type?: string };
+type AudioPart = { type: 'audio'; data: string; mime_type?: string };
 export class Gemini {
   constructor(
     private store: Store,
@@ -127,16 +104,9 @@ export class Gemini {
   raw() {
     return this.store.setting('gemini', fresh());
   }
-  usesManualImages() {
-    return manualImages(this.raw().models.image);
-  }
-  requireAutomaticImages() {
-    if (this.usesManualImages())
-      throw new Issue(409, 'Görsel istekleri kapalı. Bu sahneye kendi görselinizi yükleyin.');
-  }
-  settings(): Settings {
+  settings(): Omit<Settings, 'pollinations'> {
     const s = this.raw();
-    const hasKey = this.vault.has ? this.vault.has() : !!this.vault.get();
+    const hasKey = this.vault.has();
     return {
       ...s,
       status: hasKey ? s.status : 'not-configured',
@@ -157,22 +127,10 @@ export class Gemini {
   }
   configure(kind: Kind, c: ModelConfig) {
     const s = this.raw();
-    if (kind === 'image' && c.consent === 'blocked') {
-      // Disabling is a local preference: no key, discovery or model required.
-      s.models.image = { model: '', consent: 'blocked' };
-      delete s.services.image;
-      this.store.set('gemini', s);
-      return;
-    }
     const model = modelId(c.model);
     requireThat(
       model && s.catalog.some((m) => m.kind === kind && modelId(m.id) === model),
       'Bu model bağlantı testinde bulunmadı.',
-      400,
-    );
-    requireThat(
-      kind !== 'image' || c.consent !== 'free',
-      'Görsel API için ücretsiz erişim doğrulanmadı. Kendi görselinizi içe aktarabilir veya bu model için ücretli kullanıma açıkça izin verebilirsiniz.',
       400,
     );
     s.models[kind] = { model, consent: c.consent };
@@ -320,22 +278,17 @@ export class Gemini {
     const catalog = (await this.listModels(scriptVersion)).filter((m) => m.kind === 'text');
     let mediaNote = '';
     // A preview-only voice must not disappear when moving script discovery to stable v1.
-    // A media catalog outage must not block a verified script model in manual-image mode.
+    // A TTS catalog outage must not block a verified script model.
     try {
-      catalog.push(...(await this.listModels(mediaVersion)).filter((m) => m.kind !== 'text'));
+      catalog.push(...(await this.listModels(mediaVersion)).filter((m) => m.kind === 'tts'));
     } catch (e) {
       if (!(e instanceof Issue) || e.code === 'config') throw e;
-      catalog.push(...this.raw().catalog.filter((m) => m.kind !== 'text'));
+      catalog.push(...this.raw().catalog.filter((m) => m.kind === 'tts'));
       mediaNote = ' Medya model listesi yenilenemedi; varsa önceki liste korundu.';
     }
     const s = this.raw();
     s.catalog = catalog;
     for (const k of kinds) {
-      if (k === 'image' && manualImages(s.models.image)) {
-        s.models.image = { model: '', consent: 'blocked' };
-        delete s.services.image;
-        continue;
-      }
       s.models[k].model = modelId(s.models[k].model);
       if (!catalog.some((m) => m.id === s.models[k].model && m.kind === k)) {
         const choices = catalog
@@ -345,7 +298,7 @@ export class Gemini {
               Number(/pro|preview|latest/.test(a.id)) - Number(/pro|preview|latest/.test(b.id)) ||
               b.id.localeCompare(a.id, 'en', { numeric: true }),
           );
-        s.models[k] = { model: k === 'image' ? '' : choices[0]?.id || '', consent: 'blocked' };
+        s.models[k] = { model: choices[0]?.id || '', consent: 'blocked' };
         delete s.services[k];
       }
     }
@@ -361,16 +314,10 @@ export class Gemini {
     const s = this.settings(),
       c = s.models[kind],
       model = modelId(c.model);
-    if (
-      !s.hasKey ||
-      s.status === 'invalid' ||
-      modality(model) !== kind ||
-      c.consent === 'blocked' ||
-      (kind === 'image' && c.consent === 'free')
-    )
+    if (!s.hasKey || s.status === 'invalid' || modality(model) !== kind || c.consent === 'blocked')
       throw new Issue(
         412,
-        `${{ text: 'Metin', image: 'Görsel', tts: 'Seslendirme' }[kind]} için Ayarlar’da anahtarı test edin, model seçin ve kullanım iznini belirleyin. Ücretli istek yapılmadı.`,
+        `${{ text: 'Metin', tts: 'Seslendirme' }[kind]} için Ayarlar’da anahtarı test edin, model seçin ve kullanım iznini belirleyin. Ücretli istek yapılmadı.`,
         'config',
       );
     return model;
@@ -434,52 +381,35 @@ export class Gemini {
     this.record('connected', 'Geçerli servis yanıtı alındı.', 'text');
     return text;
   }
-  private async mediaInteraction(
-    kind: 'image' | 'tts',
-    params: (model: string) => object,
-  ): Promise<MediaPart> {
-    const model = this.allowed(kind);
+  async voice(text: string, voice: Speaker, style: string) {
+    const model = this.allowed('tts');
     const out = await this.request(
       `/${mediaVersion}/interactions`,
-      { model, store: false, ...params(model) },
-      kind,
+      {
+        model,
+        store: false,
+        input: !/^gemini-(2\.|3\.1-)/.test(model)
+          ? [
+              {
+                type: 'user_input',
+                content: [
+                  { type: 'text', text, annotations: [{ type: 'speech_metadata', style }] },
+                ],
+              },
+            ]
+          : `${style} Aşağıdaki Türkçe metni ekleme yapmadan aynen oku:\n\n${text}`,
+        response_format: { type: 'audio' },
+        generation_config: { speech_config: [{ voice }] },
+      },
+      'tts',
     );
-    const type = kind === 'image' ? 'image' : 'audio';
-    const part = (out?.steps ?? [])
+    const p = (out?.steps ?? [])
       .filter((x: any) => x.type === 'model_output')
       .flatMap((x: any) => x.content ?? [])
-      .filter((x: MediaPart) => x.type === type && x.data)
+      .filter((x: AudioPart) => x.type === 'audio' && x.data)
       .at(-1);
-    if (out?.status !== 'completed' || !part) this.noOutput(kind);
-    this.record('connected', 'Geçerli servis yanıtı alındı.', kind);
-    return part;
-  }
-  async image(prompt: string, ref?: Buffer) {
-    const input = ref
-      ? [
-          { type: 'text', text: prompt },
-          { type: 'image', data: ref.toString('base64'), mime_type: 'image/jpeg' },
-        ]
-      : prompt;
-    const p = await this.mediaInteraction('image', () => ({
-      input,
-      response_format: { type: 'image', aspect_ratio: '9:16', mime_type: 'image/jpeg' },
-    }));
-    return Buffer.from(p.data, 'base64');
-  }
-  async voice(text: string, voice: Speaker, style: string) {
-    const p = await this.mediaInteraction('tts', (model) => ({
-      input: !/^gemini-(2\.|3\.1-)/.test(model)
-        ? [
-            {
-              type: 'user_input',
-              content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }],
-            },
-          ]
-        : `${style} Aşağıdaki Türkçe metni ekleme yapmadan aynen oku:\n\n${text}`,
-      response_format: { type: 'audio' },
-      generation_config: { speech_config: [{ voice }] },
-    }));
+    if (out?.status !== 'completed' || !p) this.noOutput('tts');
+    this.record('connected', 'Geçerli servis yanıtı alındı.', 'tts');
     const data = Buffer.from(p.data, 'base64');
     if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WAVE')
       return data;

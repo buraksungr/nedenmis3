@@ -46,7 +46,7 @@ export async function api<T>(url: string, opt?: RequestInit): Promise<T> {
 }
 export const post = <T,>(url: string, body: unknown = {}, headers?: HeadersInit) =>
   api<T>(url, { method: 'POST', body: JSON.stringify(body), headers });
-export const media = (p: Project, file: string) => `/api/projects/${p.id}/media/${file}`;
+export { mediaUrl as media } from '../../shared/schema';
 export const colors = (stage: string) =>
   stage === 'Tamamlandı'
     ? 'green'

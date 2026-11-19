@@ -23,7 +23,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   kinds,
   labels,
-  manualImages,
   statusNames,
   type Check as CheckResult,
   type Kind,
@@ -41,8 +40,7 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
   const { setSettings, notify } = useStudio(),
     { busy, run } = useRun();
   const saved = s.models[kind];
-  const manual = kind === 'image' && manualImages(saved);
-  const savedModel = manual ? '' : saved.model;
+  const savedModel = saved.model;
   const [model, setModel] = useState(savedModel),
     [consent, setConsent] = useState<ModelConfig['consent']>(saved.consent),
     [confirm, setConfirm] = useState(false);
@@ -51,9 +49,8 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
     setConsent(saved.consent);
   }, [savedModel, saved.consent]);
   const options = s.catalog.filter((m) => m.kind === kind),
-    Icon = kind === 'text' ? FileText : kind === 'image' ? Image : AudioLines;
-  const st = manual ? undefined : s.services[kind]?.status;
-  const turningOffImages = kind === 'image' && consent === 'blocked';
+    Icon = kind === 'text' ? FileText : AudioLines;
+  const st = s.services[kind]?.status;
   async function apply() {
     setSettings(await post<SettingsType>('/settings/model', { kind, model, consent }));
     notify('Model ve kullanım izni kaydedildi.');
@@ -66,13 +63,7 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
         <h3>{labels[kind]}</h3>
         <span className="right">
           <Badge tone={st === 'connected' ? 'green' : st === 'quota' ? 'amber' : 'gray'}>
-            {manual
-              ? 'Manuel yükleme'
-              : st
-                ? statusNames[st]
-                : !s.hasKey
-                  ? 'Yapılandırılmadı'
-                  : 'Üretim test edilmedi'}
+            {st ? statusNames[st] : !s.hasKey ? 'Yapılandırılmadı' : 'Üretim test edilmedi'}
           </Badge>
         </span>
       </div>
@@ -86,11 +77,7 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
             setConsent('blocked');
           }}
         >
-          {kind === 'image' ? (
-            <option value="">Manuel yükleme · model gerekmez</option>
-          ) : (
-            !options.length && <option value="">Bağlantı testi gerekli</option>
-          )}
+          {!options.length && <option value="">Bağlantı testi gerekli</option>}
           {options.map((m) => (
             <option key={m.id} value={m.id}>
               {m.id}
@@ -100,36 +87,25 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
         <select
           aria-label={`${labels[kind]} kullanım izni`}
           value={consent}
-          disabled={!model && kind !== 'image'}
+          disabled={!model}
           onChange={(e) => setConsent(e.target.value as ModelConfig['consent'])}
         >
-          {Object.entries(defaults)
-            .filter(([k]) => kind !== 'image' || k !== 'free')
-            .map(([k, v]) => (
-              <option key={k} value={k} disabled={k !== 'blocked' && !model}>
-                {v}
-              </option>
-            ))}
+          {Object.entries(defaults).map(([k, v]) => (
+            <option key={k} value={k} disabled={k !== 'blocked' && !model}>
+              {v}
+            </option>
+          ))}
         </select>
         <Button
-          disabled={
-            busy ||
-            (turningOffImages
-              ? manual
-              : !model || (model === saved.model && consent === saved.consent))
-          }
+          disabled={busy || !model || (model === saved.model && consent === saved.consent)}
           onClick={() => (consent === 'blocked' ? void run(apply) : setConfirm(true))}
         >
           Uygula
         </Button>
       </div>
       <p className="help">
-        {manual
-          ? 'Görselleri storyboard onayından sonra sen yüklersin. Görsel API anahtarı, modeli veya izni aranmaz.'
-          : s.services[kind]?.message ||
-            (kind === 'image'
-              ? 'API üzerinden ücretsiz görsel üretimi varsayılmaz. Alternatif: kendi görselini içe aktar.'
-              : 'Üretim yalnızca seçilen modelde yapılır. Otomatik ücretli geçiş yoktur.')}
+        {s.services[kind]?.message ||
+          'Üretim yalnızca seçilen modelde yapılır. Otomatik ücretli geçiş yoktur.'}
       </p>
       {kind === 'text' && (
         <p className="help">
@@ -189,6 +165,141 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
     </div>
   );
 }
+function PollinationsPanel({ s }: { s: SettingsType['pollinations'] }) {
+  const { setSettings, notify } = useStudio(),
+    { busy, run } = useRun();
+  const input = useRef<HTMLInputElement>(null);
+  const [entered, setEntered] = useState(false),
+    [confirm, setConfirm] = useState(false);
+  function clearInput() {
+    if (input.current) input.current.value = '';
+    setEntered(false);
+  }
+  return (
+    <section className="panel padded spaced" aria-label="Pollinations görsel ayarları">
+      <div className="provider-head">
+        <div className="provider-mark">
+          <Image size={23} />
+        </div>
+        <div>
+          <h2>Pollinations</h2>
+          <p>Storyboard sahneleri için sabit görseller.</p>
+        </div>
+        <span className="right">
+          <Badge tone={s.hasKey ? 'purple' : 'gray'}>
+            {s.hasKey ? 'Güncel API · anahtarlı' : 'Eski uç · anahtarsız'}
+          </Badge>
+        </span>
+      </div>
+      <div className="form-stack">
+        <label htmlFor="pollinations-key">Pollinations API anahtarı (isteğe bağlı)</label>
+        <div className="secret-field">
+          <KeyRound size={15} />
+          <input
+            id="pollinations-key"
+            ref={input}
+            type="password"
+            autoComplete="new-password"
+            autoCapitalize="none"
+            spellCheck={false}
+            maxLength={512}
+            placeholder={
+              s.hasKey
+                ? '••••••••••••••••  ·  Kayıtlı anahtar'
+                : 'Pollinations gizli anahtarı (sk_…)'
+            }
+            onInput={() => setEntered(!!input.current?.value.trim())}
+          />
+        </div>
+        <div className="credential-note">
+          <LockKeyhole size={13} />
+          {s.storage === 'encrypted'
+            ? 'Windows hesabında şifreli saklanır.'
+            : 'Önizlemede yalnızca sunucu belleğinde tutulur.'}{' '}
+          Kayıtlı anahtar gösterilmez.
+        </div>
+        <p className="help">
+          Anahtar kaydedersen istekler gen.pollinations.ai üzerinden hesabının bütçesini
+          kullanabilir. Anahtar yoksa eski image.pollinations.ai adresi denenir. Servis yanıt
+          vermezse başka adrese geçilmez; kendi görselini yükleyebilirsin.
+        </p>
+        <div className="actions">
+          <Button
+            disabled={busy || !entered}
+            onClick={() =>
+              void run(async () => {
+                setSettings(
+                  await post<SettingsType>('/settings/pollinations/key', {
+                    key: input.current!.value.trim(),
+                  }),
+                );
+                clearInput();
+                notify('Pollinations anahtarı kaydedildi.');
+              })
+            }
+          >
+            <Save size={14} />
+            {s.hasKey ? 'Pollinations anahtarını güncelle' : 'Pollinations anahtarını kaydet'}
+          </Button>
+          {s.hasKey && (
+            <Button variant="quiet" disabled={busy} onClick={() => setConfirm(true)}>
+              <Trash2 size={14} />
+              Pollinations anahtarını kaldır
+            </Button>
+          )}
+        </div>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            checked={s.autoFill}
+            disabled={busy}
+            onChange={(e) => {
+              const autoFill = e.target.checked;
+              void run(async () =>
+                setSettings(await post<SettingsType>('/settings/pollinations', { autoFill })),
+              );
+            }}
+          />{' '}
+          Toplu üretimde eksik görselleri Pollinations ile üret
+        </label>
+        <p className="help">
+          Kapalıyken toplu üretim görsellerini yüklemeni bekler. Tek sahnede görsel üretme ve manuel
+          yükleme seçenekleri her zaman kullanılabilir.
+        </p>
+      </div>
+      {confirm && (
+        <Modal title="Pollinations anahtarı kaldırılsın mı?" close={() => setConfirm(false)}>
+          <p>
+            Sonraki görsel isteği eski anahtarsız adresi kullanacak. Gemini ayarları ve mevcut sahne
+            görselleri değişmez.
+          </p>
+          <div className="actions end">
+            <Button onClick={() => setConfirm(false)}>Vazgeç</Button>
+            <Button
+              variant="danger"
+              busy={busy}
+              onClick={() =>
+                void run(async () => {
+                  setSettings(
+                    await api<SettingsType>('/settings/pollinations/key', {
+                      method: 'DELETE',
+                      body: '{}',
+                    }),
+                  );
+                  clearInput();
+                  setConfirm(false);
+                  notify('Pollinations anahtarı kaldırıldı.');
+                })
+              }
+            >
+              Kaldır
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
+}
 function ApiTab({ s }: { s: SettingsType }) {
   const { setSettings, notify } = useStudio(),
     { busy, run } = useRun();
@@ -217,7 +328,7 @@ function ApiTab({ s }: { s: SettingsType }) {
           </div>
           <div>
             <h2>Google Gemini</h2>
-            <p>Tek anahtar ile metin, görsel ve seslendirme.</p>
+            <p>Senaryo, storyboard metni ve Türkçe seslendirme.</p>
           </div>
           <span className="right">
             <Badge
@@ -327,10 +438,11 @@ function ApiTab({ s }: { s: SettingsType }) {
           </a>
         </div>
       </div>
+      <PollinationsPanel s={s.pollinations} />
       <div className="panel padded spaced">
         <div className="panel-title">
           <SlidersHorizontal size={17} />
-          <h2>Modeller ve kullanım izinleri</h2>
+          <h2>Gemini modelleri ve kullanım izinleri</h2>
         </div>
         <p className="muted">
           Yalnızca gerçek bağlantı testinde listelenen modeller seçilebilir. Üretim izni varsayılan
@@ -341,7 +453,7 @@ function ApiTab({ s }: { s: SettingsType }) {
         ))}
         <div className="kv">
           <span>
-            Bugün gönderilen üretim istekleri <small>(UTC)</small>
+            Bugün gönderilen Gemini istekleri <small>(UTC)</small>
           </span>
           <b>
             {Object.entries(s.requests)
@@ -351,7 +463,7 @@ function ApiTab({ s }: { s: SettingsType }) {
         </div>
       </div>
       {del && (
-        <Modal title="Kayıtlı anahtar silinsin mi?" close={() => setDel(false)}>
+        <Modal title="Gemini anahtarı silinsin mi?" close={() => setDel(false)}>
           <p>
             Model izinleri ve bağlantı durumu sıfırlanır. Projelerin ve üretilmiş dosyaların
             korunur.

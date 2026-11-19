@@ -34,7 +34,7 @@ export type Asset = {
   file: string;
   key: string;
   duration?: number;
-  source?: 'gemini' | 'import' | 'local';
+  source?: 'gemini' | 'pollinations' | 'import' | 'local';
   model?: string;
   created?: string;
 };
@@ -92,11 +92,13 @@ export type Project = {
   job: Task;
   history: number;
 };
+export const mediaUrl = (p: Pick<Project, 'id'>, file: string) =>
+  `/api/projects/${p.id}/media/${file.replace(/^media\//, '')}`;
 export type ProjectSummary = Pick<
   Project,
   'id' | 'title' | 'topic' | 'updated' | 'category' | 'cover' | 'example' | 'job'
 > & { stage: string; scenes: number; duration: number; exported: boolean };
-export const kinds = ['text', 'image', 'tts'] as const;
+export const kinds = ['text', 'tts'] as const;
 export type Kind = (typeof kinds)[number];
 export type Connection =
   | 'not-configured'
@@ -106,8 +108,11 @@ export type Connection =
   | 'quota'
   | 'unavailable';
 export type ModelConfig = { model: string; consent: 'blocked' | 'free' | 'paid' };
-// Only an explicit paid opt-in enables the remote image adapter.
-export const manualImages = (image: ModelConfig) => image.consent !== 'paid';
+export type PollinationsSettings = {
+  autoFill: boolean;
+  hasKey: boolean;
+  storage: 'encrypted' | 'session';
+};
 export type ProviderSettings = {
   models: Record<Kind, ModelConfig>;
   catalog: { id: string; kind: Kind; name: string }[];
@@ -118,6 +123,7 @@ export type ProviderSettings = {
   message: string;
 };
 export type Settings = ProviderSettings & {
+  pollinations: PollinationsSettings;
   defaultSpeaker: Speaker;
   hasKey: boolean;
   storage: 'encrypted' | 'session';
@@ -151,7 +157,7 @@ export const stageOf = (p: Project) =>
             : p.script
               ? 'Senaryo'
               : 'Taslak';
-export const labels = { text: 'Metin', image: 'Görsel', tts: 'Seslendirme' };
+export const labels = { text: 'Metin', tts: 'Seslendirme' };
 export const statusNames: Record<Connection, string> = {
   'not-configured': 'Yapılandırılmadı',
   untested: 'Test edilmedi',

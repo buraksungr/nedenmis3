@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { sentenceEstimates, verifiedAlignment } from '../server/alignment';
-import { Gemini, memoryVault } from '../server/gemini';
+import { Gemini } from '../server/gemini';
+import { memoryVault } from '../server/vault';
+import { testImages } from './offline';
 import { exec } from '../server/media';
 import { Production } from '../server/production';
 import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
@@ -74,13 +76,14 @@ test('fallback is versioned, editable, cached and replaceable with a verified tr
   p.scenes = [scene];
   store.create(p);
   p.scriptApproval = scriptSig(p);
-  approveBoard(p, false);
+  approveBoard(p);
   let attempts = 0,
     working = false;
   const engine = new Production(
     store,
     new Gemini(store, memoryVault()),
     { root, pythonDir: 'python', composition: 'build/composition' },
+    testImages(store),
     async () => {
       attempts++;
       return {
