@@ -10,8 +10,12 @@ import {
 import { groups } from '../shared/captions';
 import type { Word } from '../shared/schema';
 import { dissolveAt } from './fade';
+import type { SvgPlan } from '../shared/svg';
+import { AnimatedPlate } from './ScientificPlate';
 
 export type FilmProps = {
+  svg?: SvgPlan;
+  nextSvg?: SvgPlan;
   image: string;
   next: string | null;
   words: Word[];
@@ -29,6 +33,8 @@ const still: React.CSSProperties = {
   objectFit: 'cover',
 };
 export function Film({
+  svg,
+  nextSvg,
   image,
   next,
   words,
@@ -42,12 +48,19 @@ export function Film({
   const cap = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
     (g) => t >= g[0].start && t < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
   );
-  const alpha = next ? dissolveAt(f, fps, durationInFrames) : 0;
+  const alpha = next || nextSvg ? dissolveAt(f, fps, durationInFrames) : 0;
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
-      {image && <Img src={image} style={still} />}
+      {svg ? <AnimatedPlate plan={svg} /> : image && <Img src={image} style={still} />}
       {/* Source-over on the opaque first photo gives (1-alpha)*old + alpha*new. */}
-      {next && alpha > 0 && <Img src={next} style={{ ...still, opacity: alpha }} />}
+      {alpha > 0 &&
+        (nextSvg ? (
+          <AbsoluteFill style={{ opacity: alpha }}>
+            <AnimatedPlate plan={nextSvg} opening />
+          </AbsoluteFill>
+        ) : (
+          next && <Img src={next} style={{ ...still, opacity: alpha }} />
+        ))}
       {cap && (
         <div
           style={{

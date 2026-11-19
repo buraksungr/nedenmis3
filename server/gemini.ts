@@ -104,7 +104,7 @@ export class Gemini {
   raw() {
     return this.store.setting('gemini', fresh());
   }
-  settings(): Omit<Settings, 'pollinations'> {
+  settings(): Omit<Settings, 'pollinations' | 'svgPlanner'> {
     const s = this.raw();
     const hasKey = this.vault.has();
     return {

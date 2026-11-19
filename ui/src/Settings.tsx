@@ -30,6 +30,7 @@ import {
   type Settings as SettingsType,
 } from '../../shared/schema';
 import { Badge, Button, Head, Modal, Notice, api, post, useRun, useStudio } from './lib';
+import { SvgPlannerSettings } from './SvgPlannerSettings';
 import { SpeakerSelect } from './SpeakerSelect';
 const defaults: Record<string, string> = {
   blocked: 'İstekler kapalı',
@@ -636,6 +637,7 @@ export function SettingsPage() {
       <div className="tabs">
         {[
           { id: 'api', title: 'API ve modeller', I: KeyRound },
+          { id: 'planner', title: 'SVG planlayıcı', I: Layers3 },
           { id: 'local', title: 'Yerel servisler', I: Cpu },
           { id: 'workspace', title: 'Çalışma alanı', I: HardDrive },
         ].map((x) => (
@@ -648,6 +650,8 @@ export function SettingsPage() {
       {s &&
         (tab === 'api' ? (
           <ApiTab s={s} />
+        ) : tab === 'planner' ? (
+          <SvgPlannerSettings s={s} />
         ) : tab === 'local' ? (
           <LocalTab s={s} />
         ) : (

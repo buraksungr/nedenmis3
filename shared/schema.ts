@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Speaker } from './speakers';
+import { svgPlanSchema, type PlannerSettings } from './svg';
 // Retain legacy board fields in saved approvals/version history; none drive the composition.
 const cameras = ['push', 'pull', 'pan', 'tilt', 'track', 'focus'] as const;
 const environments = ['dust', 'snow', 'bubbles', 'water', 'rays', 'fog', 'stars', 'none'] as const;
@@ -8,6 +9,8 @@ const transitions = ['dissolve', 'iris', 'drift', 'cut'] as const;
 const str = z.string().trim().max(5000);
 export const sceneSchema = z.object({
   id: z.string().uuid(),
+  visualMode: z.enum(['photo', 'svg']).optional(), // absent in pre-1.1 projects: keep content-bound approvals intact
+  svgPlan: svgPlanSchema.optional(),
   narration: str,
   description: str,
   prompt: str,
@@ -124,6 +127,7 @@ export type ProviderSettings = {
 };
 export type Settings = ProviderSettings & {
   pollinations: PollinationsSettings;
+  svgPlanner: PlannerSettings;
   defaultSpeaker: Speaker;
   hasKey: boolean;
   storage: 'encrypted' | 'session';

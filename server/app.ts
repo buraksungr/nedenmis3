@@ -9,6 +9,7 @@ import { speakers } from '../shared/speakers';
 import { Gemini } from './gemini';
 import { memoryVault, type Vault } from './vault';
 import { Pollinations } from './pollinations';
+import { SvgPlanner, type PlannerVaults } from './svg-planner';
 import { invalidate } from './invalidate';
 import { checks, setupPython, type Paths } from './media';
 import { script, storyboard } from './planner';
@@ -30,7 +31,7 @@ const short = z.string().trim().min(2).max(240),
   txt = z.string().trim().max(10000),
   uuid = z.string().uuid();
 const sceneList = z
-  .array(sceneSchema)
+  .array(sceneSchema.refine((s) => s.visualMode !== 'svg' || !!s.svgPlan, 'SVG şablonu eksik.'))
   .max(24)
   .refine(
     (a) => new Set(a.map((s) => s.id)).size === a.length,
@@ -51,6 +52,7 @@ export function createStudio(
   options: {
     vault?: Vault;
     pollinationsVault?: Vault;
+    plannerVaults?: PlannerVaults;
     seed?: boolean;
     desktopToken?: string;
     transport?: typeof fetch;
@@ -60,7 +62,16 @@ export function createStudio(
     g = new Gemini(store, options.vault ?? memoryVault(), options.transport),
     images = new Pollinations(store, options.pollinationsVault ?? memoryVault(), options.transport),
     prod = new Production(store, g, paths, images),
-    settings = () => ({ ...g.settings(), pollinations: images.settings() }),
+    planner = new SvgPlanner(
+      store,
+      options.plannerVaults ?? { groq: memoryVault(), openrouter: memoryVault() },
+      options.transport,
+    ),
+    settings = () => ({
+      ...g.settings(),
+      pollinations: images.settings(),
+      svgPlanner: planner.settings(),
+    }),
     app = express();
   let busy: string | null = null,
     setup = { working: false, message: '' };
@@ -230,6 +241,7 @@ export function createStudio(
           'lengthen',
           'paragraph',
           'board',
+          'svg-board',
           'concept',
           'all',
           'image',
@@ -242,16 +254,34 @@ export function createStudio(
       })
       .parse(q.body);
     const s = b.scene ? find(p, b.scene) : undefined;
-    if (['board', 'concept'].includes(b.kind))
+    if (['board', 'svg-board', 'concept'].includes(b.kind))
       requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
     if (['all', 'image', 'voice', 'align', 'clip'].includes(b.kind)) approved(p);
     if (['image', 'voice', 'align', 'clip', 'concept'].includes(b.kind))
       requireThat(s, 'Bir sahne seçin.');
+    if (b.kind === 'image')
+      requireThat(s?.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
     requireThat(!(b.kind === 'all' && s), 'Tam üretim tüm zaman çizelgesini kullanır.', 400);
     r.status(202).json(
       run(p, b.kind, async () => {
         if (['script', 'shorten', 'lengthen', 'paragraph'].includes(b.kind)) {
           return generateScript(p, b.kind, b.paragraph);
+        }
+        if (b.kind === 'svg-board') {
+          const result = await planner.plan(p),
+            old = structuredClone(p);
+          p.scenes = result.scenes;
+          p.boardApproval = null;
+          clearFinal(p);
+          invalidate(p, old);
+          if (result.warning)
+            return {
+              state: 'waiting',
+              kind: 'svg-plan-fallback',
+              label: result.warning,
+              at: now(),
+            };
+          return;
         }
         if (b.kind === 'board' || b.kind === 'concept') {
           const result = await storyboard(g, p, s);
@@ -365,6 +395,25 @@ export function createStudio(
     void a.finalize();
   });
   app.get('/api/settings', (_q, r) => r.json(settings()));
+  app.post('/api/settings/svg-planner', (q, r) => {
+    idle();
+    planner.configure(q.body);
+    r.json(settings());
+  });
+  const cloudPlanner = z.enum(['groq', 'openrouter']);
+  app.post('/api/settings/svg-planner/key/:provider', (q, r) => {
+    idle();
+    planner.key(
+      cloudPlanner.parse(q.params.provider),
+      z.string().trim().min(1).max(512).parse(q.body.key),
+    );
+    r.json(settings());
+  });
+  app.delete('/api/settings/svg-planner/key/:provider', (q, r) => {
+    idle();
+    planner.key(cloudPlanner.parse(q.params.provider));
+    r.json(settings());
+  });
   app.post('/api/settings/pollinations', (q, r) => {
     idle();
     images.setAutoFill(z.boolean().parse(q.body.autoFill));
@@ -473,6 +522,11 @@ export function createStudio(
         Math.min(0.5, p.musicVolume + (/azalt|kıs/.test(t) ? -0.04 : 0.04)),
       );
     } else if (scene && /görsel|çiz|resim/.test(t)) {
+      requireThat(
+        scene.visualMode !== 'svg',
+        'SVG şablonunu storyboard alanlarından düzenleyin.',
+        422,
+      );
       store.checkpoint(p);
       scene.prompt += '\nRevizyon: ' + b.text;
       p.boardApproval = null;

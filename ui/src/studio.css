@@ -2451,3 +2451,73 @@ audio {
 .alignment-detail summary {
   cursor: pointer;
 }
+
+/* The inspector and offline frame preview share the renderer's authored SVG plate. */
+.visual-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  font-size: 12px;
+}
+.visual-selector select {
+  width: auto;
+  margin: 0;
+}
+.svg-planning {
+  border-left: 3px solid #a4c79e;
+}
+.svg-planning p {
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.svg-planning small {
+  color: var(--muted);
+}
+.svg-editor {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) 1fr;
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+.svg-monitor {
+  min-width: 0;
+}
+.svg-paper {
+  aspect-ratio: 9/16;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.svg-thumb {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.svg-monitor .actions {
+  flex-wrap: nowrap;
+  margin-top: 6px;
+}
+.svg-monitor input {
+  min-width: 0;
+  width: 100%;
+}
+.svg-editor input[type='color'] {
+  padding: 2px;
+  height: 34px;
+}
+.svg-editor .help {
+  display: block;
+  margin: 4px 0;
+}
+@media (max-width: 720px) {
+  .svg-editor {
+    grid-template-columns: 1fr;
+  }
+  .svg-monitor {
+    max-width: 160px;
+  }
+  .tabs {
+    flex-wrap: wrap;
+  }
+}

@@ -27,7 +27,7 @@ import {
   Upload,
   WandSparkles,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { blankScene, normalize, type Project, type Scene, type Word } from '../../shared/schema';
 import {
   Badge,
@@ -45,8 +45,14 @@ import {
   useRun,
   useStudio,
 } from './lib';
-import { captionEntries } from '../../shared/captions';
+import { defaultSvg, templateNames, plannerLabels } from '../../shared/svg';
+import { sceneCaptions, unvoicedSvg, captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
+// Photo-only projects do not need to load the diagram renderer.
+const SvgEditor = lazy(() => import('./SvgEditor').then((m) => ({ default: m.SvgEditor })));
+const AtlasPreview = lazy(() =>
+  import('../../composition/ScientificPlate').then((m) => ({ default: m.ScientificPlate })),
+);
 // Persist unsent text immediately; serialize database writes and use optimistic revisions.
 function useDraft<T>(project: Project, route: string, initial: T, toBody: (v: T) => object) {
   const { setP, refresh, notify } = useStudio();
@@ -151,7 +157,8 @@ export function ScriptEditor({ p }: { p: Project }) {
   const { go, refresh, setP, notify } = useStudio();
   const { run, busy } = useRun();
   const draft = useDraft(p, 'script', p.script, (text) => ({ text }));
-  const [para, setPara] = useState(0);
+  const [para, setPara] = useState(0),
+    [boardType, setBoardType] = useState('photo');
   const locked = busy || p.job.state === 'working';
   async function generate(kind: string) {
     await draft.flush();
@@ -202,6 +209,19 @@ export function ScriptEditor({ p }: { p: Project }) {
               {draft.status}
             </span>
           </div>
+          {!p.scenes.length && (
+            <label className="small-label">
+              Storyboard biçimi
+              <select
+                value={boardType}
+                disabled={locked}
+                onChange={(e) => setBoardType(e.target.value)}
+              >
+                <option value="photo">Fotoğraf · Gemini ile planla</option>
+                <option value="svg">Kod Tabanlı SVG Animasyon · görsel API gerekmez</option>
+              </select>
+            </label>
+          )}
           <div className="actions between">
             <Button
               disabled={locked || !draft.v.trim()}
@@ -227,7 +247,7 @@ export function ScriptEditor({ p }: { p: Project }) {
                     setP(
                       await post<Project>(
                         `/projects/${p.id}/generate`,
-                        { kind: 'board' },
+                        { kind: boardType === 'svg' ? 'svg-board' : 'board' },
                         { 'If-Match': String(saved.rev) },
                       ),
                     );
@@ -299,7 +319,8 @@ export function BoardEditor({ p }: { p: Project }) {
   const autoFill = settings?.pollinations.autoFill;
   const { run, busy } = useRun();
   const d = useDraft(p, 'board', { scenes: p.scenes, styleGuide: p.styleGuide }, (v) => v);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null),
+    [confirmSvg, setConfirmSvg] = useState(false);
   const locked = busy || p.job.state === 'working';
   const edit = (id: string, x: Partial<Scene>) =>
     d.edit({ ...d.v, scenes: d.v.scenes.map((s) => (s.id === id ? { ...s, ...x } : s)) });
@@ -377,12 +398,57 @@ export function BoardEditor({ p }: { p: Project }) {
             <p className="help">
               Seslendirme, storyboard onayından sonra seçtiğin sesle yapılır.
               {autoFill
-                ? ' Onayla ve üret, eksik görsellerin istemlerini Pollinations’a gönderir.'
-                : ' Toplu üretim görselleri senin yüklemeni bekler.'}{' '}
+                ? ' Onayla ve üret, yalnız eksik fotoğrafların istemlerini Pollinations’a gönderir.'
+                : ' Toplu üretim eksik fotoğrafları yüklemeni bekler.'}{' '}
               İstersen yalnızca onaylayıp tek sahne için görsel üretebilir veya dosya
               yükleyebilirsin.
             </p>
           </div>
+          <div className="panel padded spaced svg-planning">
+            <div className="panel-title">
+              <Layers3 size={17} />
+              <h2>Kod Tabanlı SVG Animasyon</h2>
+            </div>
+            <p>
+              Onaylı anlatımı beş hazır bilim şablonuyla görselleştir. Anahtar gerekmez. Ses
+              eklemezsen SVG sahnesi seçtiğin süre, ekran metni ve ambiyansla işlenir.
+            </p>
+            <div className="actions">
+              <Button
+                disabled={locked}
+                onClick={() =>
+                  d.v.scenes.length ? setConfirmSvg(true) : void run(() => gen('svg-board'))
+                }
+              >
+                <Sparkles size={14} />
+                SVG planı oluştur
+              </Button>
+              <small>Planlayıcı: {plannerLabels[settings?.svgPlanner.provider ?? 'local']}</small>
+            </div>
+          </div>
+          {confirmSvg && (
+            <Modal title="Sahneler SVG olarak planlansın mı?" close={() => setConfirmSvg(false)}>
+              <p>
+                Plan tüm sahnelere uygulanır ve yeniden onay gerekir. Anlatımlar senaryoyla
+                eşleşiyorsa sahne kimlikleri ve kayıtlı medya korunur; eşleşmiyorsa senaryodan yeni
+                bir sahne sırası çıkarılır.
+              </p>
+              <div className="actions end">
+                <Button onClick={() => setConfirmSvg(false)}>Vazgeç</Button>
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    void run(async () => {
+                      setConfirmSvg(false);
+                      await gen('svg-board');
+                    })
+                  }
+                >
+                  SVG planını hazırla
+                </Button>
+              </div>
+            </Modal>
+          )}
           <div className="section-head spaced">
             <div className="section-name">
               <h2>Sahne planı</h2>
@@ -410,7 +476,7 @@ export function BoardEditor({ p }: { p: Project }) {
             <Empty
               icon={Grid2X2}
               title="Henüz sahne yok"
-              sub="Gemini ile otomatik planla veya ilk sahneni kendin ekle."
+              sub="SVG şablonlarıyla başla, Gemini ile fotoğraf planı hazırla veya ilk sahneyi kendin ekle."
             />
           )}
           {d.v.scenes.map((s, i) => (
@@ -431,40 +497,83 @@ export function BoardEditor({ p }: { p: Project }) {
                 </button>
               </div>
               <p className="scene-description">{s.description || 'Betimleme ekle.'}</p>
-              <div className="scene-format">
-                <Image size={13} /> Sabit kadraj · Yumuşak geçiş
-              </div>
-              <div className="manual-image-slot">
-                <SceneThumbnail p={p} s={s} />
-                <div className="grow">
-                  <b>{p.assets[s.id]?.image ? 'Sahne görseli' : 'Görsel bekleniyor'}</b>
-                  <p className="help">
-                    {p.boardApproval
-                      ? 'İstem boşsa sahne betimlemesi kullanılır. Yükleme: JPG, PNG veya WebP · en fazla 30 MB.'
-                      : 'Onaydan sonra Pollinations ile üret veya görsel yükle.'}
-                  </p>
-                </div>
-                {p.boardApproval && (
-                  <div className="actions">
-                    <Button
-                      disabled={locked || d.status !== 'Kaydedildi'}
-                      onClick={() => void run(() => gen('image', s.id))}
-                    >
-                      <Sparkles size={13} />
-                      {p.assets[s.id]?.image ? 'Görseli yeniden üret' : 'Görsel üret'}
-                    </Button>
-                    <UploadFile
-                      p={p}
-                      scene={s.id}
-                      kind="image"
-                      title={p.assets[s.id]?.image ? 'Görsel değiştir' : 'Görsel yükle'}
-                      disabled={locked || d.status !== 'Kaydedildi'}
-                    />
+              <label className="visual-selector">
+                Sahne türü
+                <select
+                  disabled={locked}
+                  value={s.visualMode ?? 'photo'}
+                  onChange={(e) => {
+                    if (e.target.value === 'svg') {
+                      edit(s.id, {
+                        visualMode: 'svg',
+                        svgPlan: s.svgPlan ?? defaultSvg(s.narration, i),
+                      });
+                      setOpen(s.id);
+                    } else edit(s.id, { visualMode: 'photo' });
+                  }}
+                >
+                  <option value="photo">Fotoğraf</option>
+                  <option value="svg">SVG Animasyon</option>
+                </select>
+              </label>
+              {s.visualMode === 'svg' && s.svgPlan ? (
+                <div className="manual-image-slot">
+                  <SceneThumbnail p={p} s={s} />
+                  <div className="grow">
+                    <b>{templateNames[s.svgPlan.template]}</b>
+                    <p className="help">Yerel SVG · görsel indirilmez</p>
                   </div>
-                )}
-              </div>
+                  <Button onClick={() => setOpen(open === s.id ? null : s.id)}>
+                    Şablon ayrıntıları
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="scene-format">
+                    <Image size={13} /> Sabit kadraj · Yumuşak geçiş
+                  </div>
+                  <div className="manual-image-slot">
+                    <SceneThumbnail p={p} s={s} />
+                    <div className="grow">
+                      <b>{p.assets[s.id]?.image ? 'Sahne görseli' : 'Görsel bekleniyor'}</b>
+                      <p className="help">
+                        {p.boardApproval
+                          ? 'İstem boşsa sahne betimlemesi kullanılır. Yükleme: JPG, PNG veya WebP · en fazla 30 MB.'
+                          : 'Onaydan sonra Pollinations ile üret veya görsel yükle.'}
+                      </p>
+                    </div>
+                    {p.boardApproval && (
+                      <div className="actions">
+                        <Button
+                          disabled={locked || d.status !== 'Kaydedildi'}
+                          onClick={() => void run(() => gen('image', s.id))}
+                        >
+                          <Sparkles size={13} />
+                          {p.assets[s.id]?.image ? 'Görseli yeniden üret' : 'Görsel üret'}
+                        </Button>
+                        <UploadFile
+                          p={p}
+                          scene={s.id}
+                          kind="image"
+                          title={p.assets[s.id]?.image ? 'Görsel değiştir' : 'Görsel yükle'}
+                          disabled={locked || d.status !== 'Kaydedildi'}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
               {open === s.id && (
                 <fieldset disabled={locked} className="scene-fields">
+                  {s.visualMode === 'svg' && s.svgPlan && (
+                    <Suspense fallback={<p>Şablon yükleniyor…</p>}>
+                      <SvgEditor
+                        plan={s.svgPlan}
+                        seconds={s.seconds}
+                        onChange={(svgPlan) => edit(s.id, { svgPlan })}
+                      />
+                    </Suspense>
+                  )}
                   <div className="form-grid">
                     {(
                       [
@@ -474,23 +583,27 @@ export function BoardEditor({ p }: { p: Project }) {
                         ['environment', 'Çevre ayrıntıları'],
                         ['sound', 'Ses tasarımı'],
                       ] as const
-                    ).map(([k, l]) => (
-                      <label key={k}>
-                        {l}
-                        <textarea
-                          rows={2}
-                          value={s[k]}
-                          onChange={(e) => edit(s.id, { [k]: e.target.value })}
+                    )
+                      .filter(([k]) => s.visualMode !== 'svg' || k === 'narration' || k === 'sound')
+                      .map(([k, l]) => (
+                        <label key={k}>
+                          {l}
+                          <textarea
+                            rows={2}
+                            value={s[k]}
+                            onChange={(e) => edit(s.id, { [k]: e.target.value })}
+                          />
+                        </label>
+                      ))}
+                    {s.visualMode !== 'svg' && (
+                      <label>
+                        Kamera açısı
+                        <input
+                          value={s.angle}
+                          onChange={(e) => edit(s.id, { angle: e.target.value })}
                         />
                       </label>
-                    ))}
-                    <label>
-                      Kamera açısı
-                      <input
-                        value={s.angle}
-                        onChange={(e) => edit(s.id, { angle: e.target.value })}
-                      />
-                    </label>
+                    )}
                     <label>
                       Tahmini süre (sn)
                       <input
@@ -504,10 +617,12 @@ export function BoardEditor({ p }: { p: Project }) {
                     </label>
                   </div>
                   <div className="actions">
-                    <Button onClick={() => void run(() => gen('concept', s.id))}>
-                      <Sparkles size={13} />
-                      Konsepti yenile
-                    </Button>
+                    {s.visualMode !== 'svg' && (
+                      <Button onClick={() => void run(() => gen('concept', s.id))}>
+                        <Sparkles size={13} />
+                        Konsepti yenile
+                      </Button>
+                    )}
                     <button
                       className="icon-btn"
                       aria-label="Sahneyi yukarı taşı"
@@ -612,6 +727,14 @@ export function BoardEditor({ p }: { p: Project }) {
   );
 }
 function SceneThumbnail({ p, s }: { p: Project; s: Scene }) {
+  if (s.visualMode === 'svg' && s.svgPlan)
+    return (
+      <div className="station-art svg-thumb">
+        <Suspense fallback={null}>
+          <AtlasPreview plan={s.svgPlan} frame={20} frames={60} />
+        </Suspense>
+      </div>
+    );
   const image = p.assets[s.id]?.image;
   return image ? (
     <img className="station-art" src={media(p, image.file)} alt={s.description} />
@@ -748,7 +871,7 @@ export function ProductionView({ p }: { p: Project }) {
       <Head
         over="ÜRETİM / ADIM 03"
         title="Üretim Merkezi"
-        sub="Onaylı planı sabit görseller, anlatım ve yumuşak geçişlerle videoya dönüştür."
+        sub="Sabit fotoğrafları ve yerel SVG şablonlarını yumuşak geçişlerle videoya dönüştür."
       />
       <WorkspaceBar />
       <JobNote />
@@ -804,8 +927,8 @@ export function ProductionView({ p }: { p: Project }) {
             </div>
             <p className="help">
               {autoFill
-                ? 'Eksik görseller Pollinations ile üretilir. '
-                : 'Toplu üretimde her sahneye bir görsel yükle, ardından üretime devam et. '}
+                ? 'Eksik fotoğraflar Pollinations ile üretilir; SVG şablonları yereldir. '
+                : 'Eksik fotoğrafları yükle, ardından üretime devam et. SVG sahnelerine görsel yüklenmez. '}
               Başarılı varlıklar yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe
               aktarabilirsin. Müzik eklemezsen stüdyonun özgün ambiyans müziği kullanılır.
             </p>
@@ -817,7 +940,9 @@ export function ProductionView({ p }: { p: Project }) {
             </div>
           </div>
           {p.scenes.map((s, i) => {
-            const m = p.assets[s.id] ?? {};
+            const m = p.assets[s.id] ?? {},
+              svg = s.visualMode === 'svg',
+              silent = unvoicedSvg(s, m);
             return (
               <div className="panel station" key={s.id}>
                 <div className="station-top">
@@ -827,11 +952,18 @@ export function ProductionView({ p }: { p: Project }) {
                     <h3>{s.narration}</h3>
                     <div className="asset-states">
                       {[
-                        [m.image, !m.image ? 'Görsel bekleniyor' : 'Görsel'],
-                        [m.voice, 'Ses'],
                         [
-                          captionEntries(m).length,
-                          m.align?.method === 'estimated' ? 'Tahmini altyazı' : 'Altyazı',
+                          svg || m.image,
+                          svg ? 'Yerel SVG' : !m.image ? 'Görsel bekleniyor' : 'Görsel',
+                        ],
+                        [silent || m.voice, silent ? `Anlatımsız · ${s.seconds} sn` : 'Ses'],
+                        [
+                          silent || captionEntries(m).length,
+                          silent
+                            ? 'Sahne metni'
+                            : m.align?.method === 'estimated'
+                              ? 'Tahmini altyazı'
+                              : 'Altyazı',
                         ],
                         [m.clip, 'Sahne klibi'],
                       ].map(([a, n]) => (
@@ -841,13 +973,15 @@ export function ProductionView({ p }: { p: Project }) {
                       ))}
                     </div>
                   </div>
-                  <UploadFile
-                    p={p}
-                    kind="image"
-                    scene={s.id}
-                    title={m.image ? 'Görsel değiştir' : 'Görsel yükle'}
-                    disabled={locked}
-                  />
+                  {!svg && (
+                    <UploadFile
+                      p={p}
+                      kind="image"
+                      scene={s.id}
+                      title={m.image ? 'Görsel değiştir' : 'Görsel yükle'}
+                      disabled={locked}
+                    />
+                  )}
                   <button
                     className="icon-btn"
                     aria-label="Sahne üretim araçları"
@@ -872,7 +1006,9 @@ export function ProductionView({ p }: { p: Project }) {
                     )}
                     <div className="actions">
                       {[
-                        ['image', m.image ? 'Görseli yeniden üret' : 'Görsel üret'],
+                        ...(svg
+                          ? []
+                          : [['image', m.image ? 'Görseli yeniden üret' : 'Görsel üret']]),
                         ['voice', 'Ses üret'],
                         ['align', 'Sesi hizala'],
                         ['clip', 'Sahneyi işle'],
@@ -882,7 +1018,7 @@ export function ProductionView({ p }: { p: Project }) {
                           disabled={
                             locked ||
                             (k === 'align' && !m.voice) ||
-                            (k === 'clip' && (!m.image || !m.voice))
+                            (k === 'clip' && !svg && (!m.image || !m.voice))
                           }
                           onClick={() =>
                             void run(() => mutate('generate', { kind: k, scene: s.id }))
@@ -1021,7 +1157,8 @@ export function Preview({ p }: { p: Project }) {
     return { s, at, end: offset };
   });
   const current = timeline.find((x) => time >= x.at && time < x.end);
-  const words = captionEntries(current ? p.assets[current.s.id] : undefined);
+  const words = current ? sceneCaptions(current.s, p.assets[current.s.id]) : [];
+  const targetSvg = p.scenes.find((s) => s.id === scene)?.visualMode === 'svg';
   const estimatedCount = p.scenes.filter(
     (s) => p.assets[s.id]?.align?.method === 'estimated',
   ).length;
@@ -1161,13 +1298,17 @@ export function Preview({ p }: { p: Project }) {
                 disabled={busy || p.job.state === 'working' || !scene}
                 onClick={() =>
                   void run(async () => {
+                    if (targetSvg) {
+                      go('board', p.id);
+                      return;
+                    }
                     await mutate('generate', { kind: 'image', scene });
                     go('production', p.id);
                   })
                 }
               >
                 <RefreshCw size={14} />
-                Sahne görselini yenile
+                {targetSvg ? 'SVG şablonunu düzenle' : 'Sahne görselini yenile'}
               </Button>
             </div>
           </div>

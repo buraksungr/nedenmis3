@@ -595,3 +595,77 @@ test('storyboard uses one key-selected Pollinations route, publishes locally, an
     fs.readFileSync(path.join(store.dir(p.id), 'production.ndjson'), 'utf8');
   for (const secret of [gemini, key, rotated]) assert.ok(!serialized.includes(secret));
 });
+
+test('approved script → 503 SVG planner → editable fallback, strict review, independent keys and no image calls', async (t) => {
+  let requests = 0;
+  const { req, base, settle } = await app(t, undefined, async () => {
+    requests++;
+    return new Response('do-not-echo-response', { status: 503 });
+  });
+  const secret = 'groq-isolated-http-credential';
+  const saved = await req('/settings/svg-planner/key/groq', { key: secret });
+  assert.equal(saved.status, 200);
+  const body = await saved.text();
+  assert.ok(!body.includes(secret));
+  assert.deepEqual(JSON.parse(body).svgPlanner.keys, { groq: true, openrouter: false });
+  assert.equal(
+    (
+      await req('/settings/svg-planner', {
+        provider: 'groq',
+        groqFreeConfirmed: true,
+        ollamaModel: 'qwen2.5:7b',
+      })
+    ).status,
+    200,
+  );
+  let p: Project = await (
+    await req('/projects', { topic: 'Toprak kesiti', script: 'Yağmur yağar. Su toprağa sızar.' })
+  ).json();
+  const route = '/projects/' + p.id;
+  assert.equal((await req(route + '/generate', { kind: 'svg-board' }, p.rev)).status, 409);
+  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+  assert.equal((await req(route + '/generate', { kind: 'svg-board' }, p.rev)).status, 202);
+  p = await settle(route);
+  assert.match(p.job.label, /Groq: HTTP 503.*Yerel şablon/);
+  assert.ok(!p.boardApproval && p.scenes.length === 2);
+  assert.equal(p.job.kind, 'svg-plan-fallback');
+  const s = p.scenes[0],
+    plan = s.svgPlan!;
+  const board = (svgPlan: any) =>
+    req(
+      route + '/board',
+      { scenes: [{ ...s, svgPlan }, p.scenes[1]], styleGuide: p.styleGuide, approve: true },
+      p.rev,
+    );
+  assert.equal((await board({ ...plan, extra: 'no' })).status, 400);
+  assert.equal((await board(undefined)).status, 400);
+  p = await (
+    await board({
+      ...plan,
+      template: 'ThermometerGaugeScene',
+      fromValue: -5,
+      toValue: 4,
+      title: 'Toprak sıcaklığı',
+    })
+  ).json();
+  assert.ok(p.boardApproval);
+  assert.equal(p.scenes[0].svgPlan!.title, 'Toprak sıcaklığı');
+  assert.equal((await req(route + '/generate', { kind: 'image', scene: s.id }, p.rev)).status, 409);
+  const imp = await fetch(base + route + '/import/image?scene=' + s.id, {
+    method: 'POST',
+    headers: { 'If-Match': String(p.rev), 'Content-Type': 'application/octet-stream' },
+    body: fs.readFileSync('ui/public/art/ants.jpg'),
+  });
+  assert.equal(imp.status, 409);
+  assert.equal(requests, 1);
+  p = await (
+    await req(
+      route + '/board',
+      { scenes: [{ ...p.scenes[0], visualMode: 'photo' }, p.scenes[1]], styleGuide: p.styleGuide },
+      p.rev,
+    )
+  ).json();
+  assert.equal(p.boardApproval, null);
+  assert.ok(p.scenes[0].svgPlan);
+  assert.equal(p.scenes[1].visualMode, 'svg');
+});

@@ -1,5 +1,8 @@
-import { mediaUrl, type Project } from '../shared/schema';
+import { mediaUrl, type Project, type Scene } from '../shared/schema';
 import { imageKey, voiceKey } from './production';
+import { hash } from './store';
+const visualKey = (p: Project, s: Scene) =>
+  s.visualMode === 'svg' ? hash('svg', s.svgPlan) : imageKey(p, s);
 /** Detach stale outputs, don't delete files. Snapshots retain the original versions. */
 export function invalidate(p: Project, old: Project) {
   const active = new Set(p.scenes.map((s) => s.id));
@@ -25,10 +28,16 @@ export function invalidate(p: Project, old: Project) {
     const next = p.scenes[i + 1],
       oldNext = oldIndex < 0 ? undefined : old.scenes[oldIndex + 1];
     if (
+      oldIndex < 0 ||
+      visualKey(p, s) !== visualKey(old, old.scenes[oldIndex]) ||
+      (s.visualMode === 'svg' &&
+        !m.voice &&
+        (s.seconds !== old.scenes[oldIndex].seconds ||
+          s.narration !== old.scenes[oldIndex].narration)) ||
       p.subtitleSize !== old.subtitleSize ||
       p.highlight !== old.highlight ||
       next?.id !== oldNext?.id ||
-      (next && oldNext && imageKey(p, next) !== imageKey(old, oldNext))
+      (next && oldNext && visualKey(p, next) !== visualKey(old, oldNext))
     )
       delete m.clip;
   }

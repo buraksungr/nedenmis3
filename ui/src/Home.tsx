@@ -531,8 +531,8 @@ export function NewProject() {
                 ['Format', '1080 × 1920 · 9:16'],
                 ['Kare hızı', '30 FPS'],
                 ['Anlatım', 'Türkçe · Erkek'],
-                ['Görsel stil', 'Nostaljik 2D piksel sanatı'],
-                ['Kurgu', 'Sabit kadraj · Yumuşak geçiş'],
+                ['Sahne türleri', 'Fotoğraf / SVG Animasyon'],
+                ['Kurgu', 'Yumuşak opaklık geçişleri'],
                 ['Üretim', 'İki aşamalı onay'],
               ].map(([k, v]) => (
                 <div className="kv" key={k}>

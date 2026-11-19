@@ -18,7 +18,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Validate Windows video, static framing, opacity crossfades and subtitle fallback
+      - name: Render all five SVG templates, mixed storyboard, static photo fades and subtitle fallback
         run: npm run test:render
       - name: Check storyboard routes (offline), local thumbnails and manual upload in Edge
         run: npm run test:ui
@@ -39,6 +39,8 @@ jobs:
           path: |
             out/render-control/local-render-control.mp4
             out/render-control/probe.json
+            out/render-control/svg-atlas-control.mp4
+            out/render-control/svg-atlas-report.json
             out/render-control/static-fade-report.json
             out/render-control/install-report.json
             out/render-control/fallback-control.*

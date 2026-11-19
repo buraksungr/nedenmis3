@@ -2,7 +2,16 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FilmProps } from '../composition/Film';
-import { captionEntries, cue, groups, srtFromCues, validWords } from '../shared/captions';
+import {
+  sceneSeconds,
+  sceneCaptions,
+  unvoicedSvg,
+  captionEntries,
+  cue,
+  groups,
+  srtFromCues,
+  validWords,
+} from '../shared/captions';
 import {
   mediaUrl,
   type Asset,
@@ -29,6 +38,7 @@ import {
   verifyVideo,
   type Paths,
 } from './media';
+import { svgPlanSchema } from '../shared/svg';
 import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
 export type Step = 'all' | 'image' | 'voice' | 'align' | 'clip';
@@ -91,6 +101,8 @@ export class Production {
     },
   ) {
     approved(p);
+    if (kind === 'image')
+      requireThat(s?.visualMode !== 'svg', 'Fotoğraf yüklemek için sahne türünü değiştirin.');
     const tmp = this.temp(p, 'input'),
       out = this.temp(p, kind === 'image' ? 'jpg' : 'wav');
     const format = inputFormat(data, kind === 'image');
@@ -199,6 +211,7 @@ export class Production {
   }
   async asset(p: Project, s: Scene, kind: 'image' | 'voice', force: boolean) {
     approved(p);
+    if (kind === 'image') requireThat(s.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
     const m = (p.assets[s.id] ??= {}),
       k = kind === 'image' ? imageKey(p, s) : voiceKey(p, s);
     if (!force && this.usable(p, m[kind], k)) return this.verifyCached(p, m[kind]!, kind);
@@ -324,25 +337,31 @@ export class Production {
   }
   async clip(p: Project, s: Scene, next: Scene | undefined, frames: number, force = false) {
     approved(p);
-    const m = p.assets[s.id];
+    const m = (p.assets[s.id] ??= {}),
+      silent = unvoicedSvg(s, m);
+    const diagram = (scene?: Scene) =>
+      scene?.visualMode === 'svg' ? svgPlanSchema.parse(scene.svgPlan) : undefined;
+    const svg = diagram(s),
+      nextSvg = diagram(next);
     requireThat(
-      this.usable(p, m?.image, imageKey(p, s)) && this.usable(p, m?.voice, voiceKey(p, s)),
-      'Güncel görsel ve seslendirme gerekiyor.',
+      (svg || this.usable(p, m.image, imageKey(p, s))) &&
+        (silent || this.usable(p, m.voice, voiceKey(p, s))),
+      'Güncel sahne görseli ve seslendirme gerekiyor.',
     );
-    if (!validWords(captionEntries(m), m.voice!.duration!)) {
+    if (!silent && !validWords(captionEntries(m), m.voice!.duration!)) {
       await this.align(p, s);
       frames = framesForVoice(m.voice!.duration!);
     }
-    const words = captionEntries(m),
-      sentenceCaptions = m.align?.method === 'estimated';
-    // Legacy cut/iris/drift and camera fields are deliberately not render inputs.
-    const adjacent = next ? p.assets[next.id]?.image : undefined;
+    const words = sceneCaptions(s, m),
+      sentenceCaptions = silent || m.align?.method === 'estimated';
+    // Incoming diagrams always start at frame zero. Photo-only keys remain compatible with 1.0.7.
+    const adjacent = next && !nextSvg ? p.assets[next.id]?.image : undefined;
     const key = hash(
       'film-5-static-crossfade',
-      m.image!.file,
+      svg ? ['atlas-svg-v1', svg] : m.image!.file,
       words,
       frames,
-      adjacent?.file,
+      nextSvg ? ['atlas-svg-v1', nextSvg] : adjacent?.file,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : []),
@@ -355,7 +374,9 @@ export class Production {
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
-      image: url(m.image!),
+      ...(svg ? { svg } : {}),
+      ...(nextSvg ? { nextSvg } : {}),
+      image: svg ? '' : url(m.image!),
       next: adjacent ? url(adjacent) : null,
       words,
       frames,
@@ -394,7 +415,7 @@ export class Production {
   // A placeholder is a UI state, never an image asset or a renderable frame.
   waitingForImages(p: Project): Task | undefined {
     const count = p.scenes.filter(
-      (s) => !this.usable(p, p.assets[s.id]?.image, imageKey(p, s)),
+      (s) => s.visualMode !== 'svg' && !this.usable(p, p.assets[s.id]?.image, imageKey(p, s)),
     ).length;
     if (count)
       return {
@@ -403,6 +424,15 @@ export class Production {
         label: `${count} sahne için görsel bekleniyor. Görselleri yükleyip üretime devam edin.`,
         at: now(),
       };
+  }
+  private async batchVoice(p: Project, s: Scene) {
+    if (s.visualMode !== 'svg') return this.asset(p, s, 'voice', false);
+    // SVG mode never buys narration implicitly. An imported/explicitly generated track wins.
+    const voice = p.assets[s.id]?.voice;
+    if (voice) {
+      requireThat(this.usable(p, voice, voiceKey(p, s)), 'Kayıtlı anlatımı yeniden yükleyin.');
+      await this.verifyCached(p, voice, 'voice');
+    }
   }
   async render(p: Project, kind: Step, target?: string) {
     approved(p);
@@ -417,8 +447,9 @@ export class Production {
       let needWhisper = false;
       for (const s of scenes) {
         const m = p.assets[s.id];
-        if (!this.usable(p, m?.voice, voiceKey(p, s))) this.g.allowed('tts');
-        if (!waiting && !this.cachedAlignment(p, s)) needWhisper = true;
+        if (s.visualMode !== 'svg' && !this.usable(p, m?.voice, voiceKey(p, s)))
+          this.g.allowed('tts');
+        if (!waiting && !unvoicedSvg(s, m) && !this.cachedAlignment(p, s)) needWhisper = true;
       }
       this.tick(p, 'Yerel üretim araçları doğrulanıyor', 'preflight');
       const report = await checks(this.paths, {
@@ -437,16 +468,16 @@ export class Production {
         );
     }
     if (waiting) {
-      for (const scene of scenes) await this.asset(p, scene, 'voice', false);
+      for (const scene of scenes) await this.batchVoice(p, scene);
       delete p.final;
       delete p.subtitleFiles;
       return { ...waiting, at: now() };
     }
     for (const s of scenes) {
-      if (kind === 'all' && manual) {
+      if (kind === 'all' && manual && s.visualMode !== 'svg') {
         // A lost file after preflight must not trigger a GET when batch generation is off.
         await this.verifyCached(p, p.assets[s.id].image!, 'image');
-      } else if (kind === 'all' || kind === 'image') {
+      } else if ((kind === 'all' && s.visualMode !== 'svg') || kind === 'image') {
         try {
           await this.asset(p, s, 'image', kind === 'image');
         } catch (e) {
@@ -464,15 +495,16 @@ export class Production {
           } satisfies Task;
         }
       }
-      if (kind === 'all' || kind === 'voice') await this.asset(p, s, 'voice', kind === 'voice');
-      if (kind === 'all' || kind === 'align')
+      if (kind === 'all') await this.batchVoice(p, s);
+      if (kind === 'voice') await this.asset(p, s, 'voice', true);
+      if ((kind === 'all' && !unvoicedSvg(s, p.assets[s.id])) || kind === 'align')
         await this.align(p, s, kind === 'align', whisperUnavailable);
     }
     if (kind === 'all' || kind === 'clip') {
       // Pad to a frame boundary: never trim narration or timing to fit an estimate.
       for (const [i, s] of p.scenes.entries()) {
         if (scenes.includes(s)) {
-          const frames = framesForVoice(p.assets[s.id]?.voice?.duration ?? 0);
+          const frames = framesForVoice(sceneSeconds(s, p.assets[s.id]));
           await this.clip(p, s, p.scenes[i + 1], frames, kind === 'clip');
         }
       }
@@ -501,7 +533,7 @@ export class Production {
     ) {
       await verifyVideo(
         this.file(p, p.final!.file),
-        p.scenes.reduce((n, s) => n + framesForVoice(p.assets[s.id].voice!.duration!), 0),
+        p.scenes.reduce((n, s) => n + framesForVoice(sceneSeconds(s, p.assets[s.id])), 0),
         true,
       );
       return;
@@ -521,8 +553,9 @@ export class Production {
         const m = p.assets[s.id],
           duration = m.clip!.duration!;
         const offset = frames / 30,
-          estimated = m.align?.method === 'estimated';
-        const entries = captionEntries(m).map((w) => ({
+          scripted = unvoicedSvg(s, m),
+          estimated = scripted || m.align?.method === 'estimated';
+        const entries = sceneCaptions(s, m).map((w) => ({
           text: w.text,
           start: offset + w.start,
           end: offset + Math.min(w.end, duration),
@@ -535,6 +568,7 @@ export class Production {
             ...c,
             scene: s.id,
             estimated,
+            ...(scripted ? { timing: 'scene-duration' } : {}),
           })),
         );
         frames += Math.round(duration * 30);
@@ -552,8 +586,9 @@ export class Production {
         atomic(foley, soundBed(duration, s));
         const aout = work(`mix-${i}.wav`);
         const inputs = [
-          '-i',
-          this.file(p, m.voice!.file),
+          ...(scripted
+            ? ['-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=r=48000:cl=mono']
+            : ['-i', this.file(p, m.voice!.file)]),
           '-i',
           foley,
           ...(m.sfx ? ['-i', this.file(p, m.sfx.file)] : []),

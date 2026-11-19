@@ -11,7 +11,8 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
-const imageCalls = [],
+const plannerCalls = [],
+  imageCalls = [],
   imageCredential = 'sk_isolated-ui-fixture';
 let enableTextFixture = false,
   scriptAttempts = 0;
@@ -20,6 +21,10 @@ const ctx = studio.createStudio(
   {
     transport: async (url, opts) => {
       const host = new URL(url).host;
+      if (host === 'openrouter.ai') {
+        plannerCalls.push(host);
+        return new Response(null, { status: 503 });
+      }
       if (['gen.pollinations.ai', 'image.pollinations.ai'].includes(host)) {
         imageCalls.push([host, new Headers(opts.headers).get('authorization')]);
         return host === 'gen.pollinations.ai'
@@ -76,7 +81,8 @@ page.setDefaultTimeout(10000);
 const errors = [],
   browserProviderRequests = [];
 page.on('request', (r) => {
-  if (/\.pollinations\.ai$/.test(new URL(r.url()).host)) browserProviderRequests.push(r.url());
+  if (/^https?:/.test(r.url()) && new URL(r.url()).origin !== origin)
+    browserProviderRequests.push(r.url());
 });
 page.on('pageerror', (e) => errors.push(e.message));
 try {
@@ -243,6 +249,55 @@ try {
   await page.getByRole('button', { name: 'Servisleri kontrol et' }).click();
   await page.getByText('Kullanılabilir', { exact: true }).first().waitFor();
   assert.equal(await page.getByText('Kullanılabilir', { exact: true }).count(), 2);
+  // From own script to an actual all-SVG export with no image or TTS key.
+  await page.getByRole('button', { name: 'SVG planlayıcı', exact: true }).click();
+  await page.getByLabel('Planlama kaynağı').selectOption('openrouter');
+  const svgKey = page.getByLabel('OpenRouter API anahtarı');
+  await svgKey.fill('isolated-openrouter-fixture');
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/svg-planner/key/openrouter') && r.ok()),
+    page.getByRole('button', { name: 'Anahtarı kaydet', exact: true }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/settings/svg-planner') && r.ok()),
+    page.getByRole('button', { name: 'Planlayıcıyı kaydet' }).click(),
+  ]);
+  await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
+  await page.getByLabel('Belgesel konusu').fill('Kök kesiti');
+  await page.getByLabel('Kendi senaryomu kullanacağım').check();
+  await page.getByLabel('Mevcut senaryo').fill('Toprakta kökler gelişir.');
+  await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
+  await page.getByLabel('Storyboard biçimi').selectOption('svg');
+  await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
+  await page.locator('.job-note.waiting').filter({ hasText: 'OpenRouter: HTTP 503' }).waitFor();
+  const card = page.locator('.scene-card').first(),
+    mode = card.getByLabel('Sahne türü');
+  assert.equal(await mode.inputValue(), 'svg');
+  await mode.selectOption('photo');
+  await card.getByText('Sabit kadraj · Yumuşak geçiş').waitFor();
+  await mode.selectOption('svg');
+  await card.getByLabel('SVG şablonu').selectOption('ThermometerGaugeScene');
+  await card.getByLabel('Şema başlığı').fill('Toprak sıcaklığı');
+  await card.getByLabel('Başlangıç değeri').fill('-5');
+  await card.getByLabel('Bitiş değeri').fill('4');
+  await card.getByLabel('Tahmini süre (sn)').fill('1.2');
+  await card.getByRole('button', { name: 'Şemayı oynat' }).click();
+  await page.waitForFunction(
+    () => +document.querySelector('input[aria-label="Şema önizleme karesi"]').value > 0,
+  );
+  await page.getByRole('button', { name: 'Onayla ve üret' }).click();
+  await page.getByRole('button', { name: 'Videoyu izle' }).waitFor({ timeout: 120000 });
+  const svgResult = ctx.store.get(page.url().split('/').at(-1));
+  assert.equal(svgResult.final.duration, 1.2);
+  assert.equal(svgResult.scenes[0].svgPlan.title, 'Toprak sıcaklığı');
+  assert.equal(svgResult.scenes[0].svgPlan.fromValue, -5);
+  assert.equal(svgResult.scenes[0].svgPlan.toValue, 4);
+  assert.ok(
+    !svgResult.assets[svgResult.scenes[0].id].voice &&
+      !svgResult.assets[svgResult.scenes[0].id].image,
+  );
+  assert.deepEqual(plannerCalls, ['openrouter.ai']);
+  assert.equal(imageCalls.length, 2);
   // Play an already FFprobe-validated control, never a fabricated render in the dashboard.
   const previous = path.resolve('out/render-control/Projects');
   if (fs.existsSync(previous)) {
@@ -290,7 +345,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → editable SVG JSON → all-SVG export without images or TTS.',
   );
 } finally {
   await browser.close();

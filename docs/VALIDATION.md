@@ -1,5 +1,9 @@
 # Doğrulama kaydı
 
+## 1.0.7 — Pollinations storyboard görselleri
+
+[Windows x64 kurucusu](https://github.com/buraksungr/nedenmis3/actions/runs/44450544608/artifacts/14495592855) · [Başarılı CI](https://github.com/buraksungr/nedenmis3/actions/runs/44450544608) · `2c5d7dd31f46e2fb76e0e876fae8856791ca7176`. Yerel iki adresli sözleşme testi, manuel yükleme, fotoğraf geçişleri ve kurulu uygulamada ayrı şifreli anahtar depoları denetlendi. Bu sürümde SVG şablonları yoktur.
+
 ## 1.0.6 — sabit görseller, opaklık geçişi ve senaryoda HTTP 503
 
 **[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44278142035/artifacts/14416007302)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44278142035) · Derleme: `ceb487e718244de1656e78718305db4363c044a7`.

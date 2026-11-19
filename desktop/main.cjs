@@ -52,7 +52,8 @@ if (!app.requestSingleInstanceLock()) {
         };
       }
       const vault = vaultFor('gemini'),
-        pollinationsVault = vaultFor('pollinations');
+        pollinationsVault = vaultFor('pollinations'),
+        plannerVaults = { groq: vaultFor('groq'), openrouter: vaultFor('openrouter') };
       const token = randomBytes(32).toString('hex'),
         studio = createStudio(
           {
@@ -61,7 +62,7 @@ if (!app.requestSingleInstanceLock()) {
             composition: path.join(resources, app.isPackaged ? 'composition' : 'build/composition'),
             defaultBrowser,
           },
-          { vault, pollinationsVault, desktopToken: token },
+          { vault, pollinationsVault, plannerVaults, desktopToken: token },
         );
       studio.app.use((_q, r, n) => {
         r.set(
@@ -118,6 +119,8 @@ if (!app.requestSingleInstanceLock()) {
         for (const [name, candidate, key] of [
           ['gemini', vault, geminiProbe],
           ['pollinations', pollinationsVault, randomBytes(26).toString('hex')],
+          ['groq', plannerVaults.groq, randomBytes(26).toString('hex')],
+          ['openrouter', plannerVaults.openrouter, randomBytes(26).toString('hex')],
         ]) {
           candidate.set(key);
           if (
@@ -129,6 +132,8 @@ if (!app.requestSingleInstanceLock()) {
         pollinationsVault.clear();
         if (pollinationsVault.has() || vault.get() !== geminiProbe)
           throw new Error('Credential stores are not isolated');
+        plannerVaults.groq.clear();
+        plannerVaults.openrouter.clear();
         vault.clear();
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,

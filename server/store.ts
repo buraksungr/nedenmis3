@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSpeaker, type Speaker } from '../shared/speakers';
+import { svgPlanSchema } from '../shared/svg';
 import {
   blankScene,
   normalize,
@@ -48,8 +49,13 @@ export function approved(p: Project) {
 export function approveBoard(p: Project) {
   requireThat(p.scriptApproval === scriptSig(p), 'Senaryo onayı gerekiyor.');
   requireThat(
-    p.scenes.length > 0 && p.scenes.every((s) => s.description && s.narration),
-    'Her sahnenin anlatım ve betimleme alanlarını doldurun.',
+    p.scenes.length > 0 &&
+      p.scenes.every(
+        (s) =>
+          s.narration &&
+          (s.visualMode === 'svg' ? svgPlanSchema.safeParse(s.svgPlan).success : s.description),
+      ),
+    'Her sahnede anlatım ve geçerli bir SVG planı veya fotoğraf betimlemesi gerekiyor.',
   );
   requireThat(
     new Set(p.scenes.map((s) => s.id)).size === p.scenes.length,

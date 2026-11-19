@@ -6,13 +6,43 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.0.7-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.1.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
 2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Kesin sözcük zamanları için isteğe bağlı:** **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
-4. **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
-5. Listeden metin ve TTS modellerini seç. *Yalnızca ücretsiz proje* iznini, ancak Google projesinde faturalandırmanın kapalı olduğunu ve ücretsiz kotanı doğruladıysan ver. Görseller ayrı bir servis olan **Pollinations** ile üretilir: aynı ayarlar sekmesinde isteğe bağlı anahtarı kaydet veya eski adresi kullanmak için alanı boş bırak. Başka modele, sağlayıcıya veya ücretli izne otomatik geçiş yoktur.
+4. **Anahtarsız SVG kullanacaksan 6. adıma geç.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
+5. Listeden metin ve TTS modellerini seç. *Yalnızca ücretsiz proje* iznini, ancak Google projesinde faturalandırmanın kapalı olduğunu ve ücretsiz kotanı doğruladıysan ver. Otomatik fotoğraflar ayrı bir servis olan **Pollinations** ile üretilir: aynı ayarlar sekmesinde isteğe bağlı anahtarı kaydet veya eski adresi kullanmak için alanı boş bırak. Başka modele, sağlayıcıya veya ücretli izne otomatik geçiş yoktur.
 6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Üretime devam et** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
+
+### Kod Tabanlı SVG Animasyon · 1.1.0
+
+**Anahtarsız başlamak için:** Yeni Video → **Kendi senaryomu kullanacağım**. Senaryo ekranında **Storyboard biçimi → Kod Tabanlı SVG Animasyon** seç ve onayla. Varsayılan **Yerel şablonlar** internet kullanmaz. Var olan bir storyboard’da **SVG planı oluştur** tüm sahneleri planlar; yalnız tek bir sahneyi değiştirmek için karttaki **Sahne türü → SVG Animasyon** seçilir. **Fotoğraf** seçeneğine döndüğünde değişmemiş yerel fotoğraf yeniden kullanılır.
+
+Şablon ayrıntılarında alanları düzenle, kare sürgüsü veya oynat düğmesiyle önizle. **Onayla ve üret** gerçek MP4’ü oluşturur. Anlatım dosyası yoksa SVG sahnesi, seçilen süre boyunca ambiyans ve ekran metniyle işlenir: TTS, Whisper ve görsel servisi çağrılmaz. Altyazı JSON’unda bu cümleler `timing: "scene-duration"` olarak işaretlenir; ölçülmüş sözcükler değildir. Ses yüklersen ölçülen süre ve ses hizalaması kullanılır. Fotoğraf sahnelerinde mevcut anlatım/yükleme iş akışı aynıdır.
+
+Her SVG sahnesi `visualMode: "svg"` ve yalnızca şu yedi alanı kabul eden bir `svgPlan` taşır:
+
+```json
+{"template":"ThermometerGaugeScene","title":"Toprak sıcaklığı","subtitle":"Örnek ölçüm","fromValue":-5,"toValue":4,"weather":"none","accentColor":"#F1BB79"}
+```
+
+| Şablon | Gösterim |
+|---|---|
+| `CrossSectionScene` | Toprak katmanları, gelişen kökler; `snow`, `rain` veya `none` |
+| `ThermometerGaugeScene` | Başlangıç ve bitiş sıcaklıkları arasında yükselen veya düşen gösterge (°C) |
+| `FocusCalloutScene` | Odak halkası, iki ok ve `Etiket A \| Etiket B` biçiminde alt başlık |
+| `ComparisonScene` | Ortak sıfır çizgisine göre iki sayının çubukları; iki etiket |
+| `ProcessFlowScene` | Alt başlıkta `\|` ile ayrılan üç adım; sıralı belirme ve bağlantı okları |
+
+Ek alan, bilinmeyen şablon, geçersiz renk veya yanlış veri türü reddedilir. Metinler yalnızca metin olarak çizilir; modelden React kodu, SVG işaretlemesi, dosya veya render komutu alınmaz.
+
+**Ayarlar → SVG planlayıcı** sadece bu JSON planının kaynağını değiştirir:
+- **Yerel şablonlar:** API ve model olmadan, onaylı anlatımdan düzenlenebilir plan. Sayısal değerleri onaydan önce kontrol et.
+- **Groq:** Kendi ücretsiz hesabını doğrula ve anahtarını kaydet. Sunucudan `api.groq.com/openai/v1/chat/completions` kullanılır. Faturalandırma katmanı uzaktan doğrulanamaz; ücretli hesap kullanma.
+- **OpenRouter:** Kendi anahtarınla yalnız `openrouter/free` kullanılır. Kota dolarsa ücretli modele geçilmez.
+- **Ollama:** Stüdyonun çalıştığı bilgisayarda Ollama’yı başlat ve kurulu yerel modelin adını yaz. Sunucu `127.0.0.1:11434/api/show` ile modeli kontrol eder, ardından `/v1/chat/completions` kullanır. Model indirilmez, bulut modeli kullanılmaz. Tarayıcı önizlemesinde bu adres tarayıcının değil, sunucunun bilgisayarıdır.
+
+Uzak planlayıcıya yalnız onaylı sahne anlatımları gönderilir. Anahtar yoksa, süre aşılırsa, 503/kota hatası gelirse veya nesneler şemayı karşılamazsa başka servise istek yapılmaz. Neden storyboard’da görünür; geçerli mevcut şablonlar veya yerel varsayılanlar düzenlemeye açık kalır. Şablon ya da sahne türü değişikliği yeni onay gerektirir. Eski projelerde tür belirtilmemiş sahneler fotoğraf olarak açılır.
 
 ### Storyboard görselleri · Pollinations (1.0.7)
 
@@ -50,7 +80,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 - **Ücretli işlemlerden önce ön kontrol.** Tam üretim, ihtiyaç duyulan bulut izinlerini ve yerel servisleri kontrol eder. Kota hatasını bildirir; başarılı varlıkları korur. Bağlantı testi yalnız `models.list` çağrısıdır, Pollinations çağrısı veya üretim hakkı testi değildir.
 - **Üretilen medya doğrulanır.** Pollinations görseli çözümlenip JPEG olarak saklanır; WAV/PCM ses örnekleme hızı denetlenir ve FFprobe ile ölçülür. Bozuk varlık başarı sayılmaz. Bir sahnenin görselini, anlatımını veya ses efektini bağımsız değiştirebilirsin.
 - **Altyazılar ses verisinden.** Whisper önce bağımsız Türkçe transkripsiyon yapar. Aynı model stable-ts ile onaylı metni ses üzerine zorla hizalar. Metin/ses uyuşmazlığı veya bozuk zaman dizisi günlükte belirtilir; yalnız ilgili sahnede tahmini cümle altyazısına geçilir. Uyarı varsa anlatımı dinleyip metinle eşleştiğini kontrol et. Doğrulanmış sözcükler de tahmini cümleler de üretim merkezinde düzenlenebilir.
-- **Görüntü ve ses.** Her sahne sabit bir 9:16 kadrajdır. Remotion kamera, nesne veya atmosfer animasyonu çizmez; yalnızca sonraki görselin opaklığını artırır. FFmpeg özgün prosedürel fon/ambiyans ve Foley’yi veya içe aktarılan sesi kullanır; müzik ducking, yumuşak geçiş ve −16 LUFS hedefli normalizasyon uygular.
+- **Görüntü ve ses.** Fotoğraf sahneleri sabit 9:16 kadrajdır; kamera veya nesne hareketi eklenmez. SVG sahnelerinde yalnız seçilen şablonun çizimi hareket eder. Her iki türde geçiş opaklıkla yapılır. FFmpeg özgün prosedürel fon/ambiyans ve Foley’yi veya içe aktarılan sesi kullanır; müzik ducking, yumuşak geçiş ve −16 LUFS hedefli normalizasyon uygular.
 - **Artımlı kurgu.** Sahne süreleri gerçek sesin sonunu kesmeyecek şekilde tam kareye yukarı yuvarlanır. Klip kendi ve sıradaki görsele, altyazılara ve gerçek süreye bağlıdır. Eski kamera ayarları klip önbelleğini etkilemez. Klip anahtarı değişmeyen kareler yeniden render edilmez. Son dışa aktarım, klipleri tekrar video kodlamadan birleştirir; ses/görüntü süresi, codec, kare sayısı ve tüm dosyanın decode edilmesi doğrulanır.
 - **Sınırlı ve güvenli revizyonlar.** “Altyazı boyutunu küçült”, “Müziği azalt” ve seçili görseli yeniden çizme gibi istekler desteklenir. Belirsiz komutlar uygulanmaz. Anlatım kendiliğinden değiştirilmez; sahne konsepti değişiklikleri yeniden onaylanır.
 
@@ -58,7 +88,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 `Belgeler/NedenmisStudio/` içinde SQLite indeks/ayar dosyası ve `Projects/<UUID>/project.json`, `script/`, `storyboard/`, `media/storyboard/`, `images/`, `audio/`, `music/`, `scenes/`, `subtitles/`, `renders/`, `cache/`, `versions/` dizinleri bulunur. Dosyalar atomik olarak yayımlanır. Yeniden açılışta indeks diskten toparlanır ve yarım kalan iş başarısız/kurtarılabilir olarak işaretlenir. Sürüm dosyaları ve önceki medya korunur. Proje kartındaki **Yedek indir** proje ve sürümlerini ZIP'e alır; sırlar ve geçici cache dahil edilmez. Geri yüklemek için uygulama kapalıyken yedeği ilgili UUID dizinine aç.
 
-Gemini ve Pollinations anahtarları ayrı dosyalarda, yalnız Electron ana sürecinde `safeStorage` ile, Windows’ta mevcut kullanıcıya bağlı DPAPI kullanılarak şifreli saklanır. Kaydedilen anahtarı döndüren API yoktur. Gemini anahtarını değiştirmek Gemini model izinlerini sıfırlar; Pollinations anahtarını değiştirmek bunlara dokunmaz. Üretim istekleri ve model kataloğu backend’dedir. Masaüstü API’si yalnız loopback’te, rastgele oturum kanıtıyla çalışır. Renderer sandbox, context isolation ve CSP kullanır. Tarayıcı geliştirme önizlemesi **tek kullanıcılıdır**; anahtarı yalnız süreç belleğinde tutar. Genel internete servis olarak dağıtma.
+Gemini, Pollinations, Groq ve OpenRouter anahtarları ayrı dosyalarda, yalnız Electron ana sürecinde `safeStorage` ile, Windows’ta mevcut kullanıcıya bağlı DPAPI kullanılarak şifreli saklanır. Kaydedilen anahtarı döndüren API yoktur. Gemini anahtarını değiştirmek Gemini model izinlerini sıfırlar; Pollinations anahtarını değiştirmek bunlara dokunmaz. Üretim istekleri ve model kataloğu backend’dedir. Masaüstü API’si yalnız loopback’te, rastgele oturum kanıtıyla çalışır. Renderer sandbox, context isolation ve CSP kullanır. Tarayıcı geliştirme önizlemesi **tek kullanıcılıdır**; anahtarı yalnız süreç belleğinde tutar. Genel internete servis olarak dağıtma.
 
 ## Geliştirme
 
@@ -82,6 +112,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 | `shared/` | Proje/sahne sözleşmeleri, alan doğrulama ve altyazı gruplama |
 | `server/store.ts`, `invalidate.ts` | Onaylar, SQLite, sürümler, artımlı bağımlılıklar |
 | `server/gemini.ts`, `planner.ts` | Resmî Google Gen AI SDK (metin), REST (katalog/TTS), model keşfi, izinler, senaryo ve storyboard |
+| `shared/svg.ts`, `server/svg-planner.ts`, `composition/ScientificPlate.tsx` | Katı plan sözleşmesi, seçilen planlayıcı ve beş sabit kodlu diyagram |
 | `server/pollinations.ts` | Anahtar durumuna göre tek GET, kodlanmış sahne istemi, sınırlı ve doğrulanan görsel indirme |
 | `server/production.ts`, `media.ts`, `render-browser.ts` | Üretim denetleyicisi, render tarayıcısı seçimi, medya doğrulama, ses ve export |
 | `python/align.py` | CPU transkripsiyonu + onaylı metne gerçek zorlanmış hizalama |
@@ -93,7 +124,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 
 `npm test` bozuk dosyaları, onay sırasını, metin bütünlüğünü, eski revizyonları, sürüm geri almayı, kısmi başarıyı, kesintiden dönüşü, kota hatasını ve anahtar/izin yalıtımını kapsar. Sağlayıcı sözleşme testlerindeki taşıma katmanı test çiftidir; normal uygulamada sahte sağlayıcı yoktur.
 
-`npm run build && npm run test:render` (Edge/Chrome gerekir) iki farklı gerçek ses dosyası, harici referans sözcük zamanları ve iki kapakla **gerçek bir 1080 × 1920 H.264/AAC kontrol MP4’ü** üretir. Son dosya ve FFprobe raporu `out/render-control/` altındadır. `static-fade-report.json` her iki resmin özgün piksel değerleriyle eşleşmesini, hareket olmadığını ve görüntü geçişini denetler. İkinci render’da değişmeyen klibin yeniden kullanılmasını da kontrol eder. Ayrı `fallback-control.mp4` ise geçersiz zaman ve bulunamayan Whisper örnekleriyle üretilir; SRT/JSON ve `fallback-diagnostics.ndjson` aynı dizindedir. Bu test sesleri Gemini değildir ve bu kontroller başarılı Whisper hizalamasının kanıtı değildir. Uygulamanın normal üretim yolu referans test verisini kullanmaz.
+`npm run build && npm run test:render` (Edge/Chrome gerekir) iki farklı gerçek ses dosyası, harici referans sözcük zamanları ve iki kapakla **gerçek bir 1080 × 1920 H.264/AAC kontrol MP4’ü** üretir. Ayrıca beş SVG şablonunu ve bir manuel fotoğrafı sıfır sağlayıcı isteğiyle `svg-atlas-control.mp4` olarak render eder. `svg-atlas-report.json`, şemalardaki hareketi ve birleşim karelerini ölçer. Son dosya ve FFprobe raporu `out/render-control/` altındadır. `static-fade-report.json` her iki resmin özgün piksel değerleriyle eşleşmesini, hareket olmadığını ve görüntü geçişini denetler. İkinci render’da değişmeyen klibin yeniden kullanılmasını da kontrol eder. Ayrı `fallback-control.mp4` ise geçersiz zaman ve bulunamayan Whisper örnekleriyle üretilir; SRT/JSON ve `fallback-diagnostics.ndjson` aynı dizindedir. Bu test sesleri Gemini değildir ve bu kontroller başarılı Whisper hizalamasının kanıtı değildir. Uygulamanın normal üretim yolu referans test verisini kullanmaz.
 
 **“Karıncalar kışın neden ortadan kaybolur?” uçtan uca kabulü henüz tamamlanmış sayılmaz.** Bu geliştirme ortamına gerçek bir Gemini anahtarı sağlanmamıştır. Canlı senaryo, Pollinations görselleri, Gemini TTS kalitesi, gerçek sesle Whisper hizalaması ve 30 sn hedefli bitmiş belgesel ayrıca doğrulanmalıdır. Kullanıcı onaylarını atlayan bir kabul betiği veya sahte tamamlanma durumu yoktur. [Kabul kontrol listesi](docs/ACCEPTANCE.md).
 

@@ -287,7 +287,13 @@ export function WorkspaceBar() {
 }
 export function JobNote() {
   const { p, go } = useStudio();
-  if (!p || (p.job.state === 'waiting' && p.job.kind !== 'manual-images') || p.job.state === 'done')
+  if (
+    !p ||
+    (p.job.state === 'waiting' &&
+      p.job.kind !== 'manual-images' &&
+      p.job.kind !== 'svg-plan-fallback') ||
+    p.job.state === 'done'
+  )
     return null;
   return (
     <div className={'job-note ' + p.job.state}>
