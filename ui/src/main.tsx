@@ -30,10 +30,26 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { version } from '../../package.json';
-import type { Settings as Config, Project, ProjectSummary } from '../../shared/schema';
+import {
+  jobActive,
+  type Settings as Config,
+  type Project,
+  type ProjectSummary,
+} from '../../shared/schema';
 import { BoardEditor, Preview, ProductionView, ScriptEditor } from './Editors';
 import { Home, NewProject, Projects } from './Home';
-import { api, Button, Context, Empty, Modal, names, post, workspacePages, type Page } from './lib';
+import {
+  api,
+  Button,
+  Context,
+  Empty,
+  Modal,
+  names,
+  post,
+  OtherOperation,
+  workspacePages,
+  type Page,
+} from './lib';
 import { LocalTab, SettingsPage } from './Settings';
 import './studio.css';
 const items: { page: Page; icon: typeof House; label: string }[] = [
@@ -140,7 +156,7 @@ function App() {
         .then(setSettings)
         .catch((e) => notify(e.message, true));
   }, [r.page]);
-  const working = p?.job.state === 'working' || projects.some((x) => x.job.state === 'working');
+  const working = jobActive(p?.job) || projects.some((x) => jobActive(x.job));
   useEffect(() => {
     if (!working) return;
     let live = true;
@@ -318,6 +334,7 @@ function App() {
             </div>
           </header>
           <main key={r.page} className="content">
+            {!wizard && <OtherOperation />}
             {r.page === 'home' ? (
               <Home />
             ) : r.page === 'new' ? (
@@ -421,6 +438,7 @@ function App() {
             </>
           ) : (
             <>
+              <OtherOperation />
               <LocalTab s={settings} />
               <div className="actions end">
                 <Button variant="primary" onClick={() => void finishWizard(true)}>

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
-export { verifyPaintRuntime } from './vector-proof';
+export { parseIllustration } from './layered-svg';
+import { Operation, checkpoint } from './operation';
 import { readArtwork } from './atlas-art';
 import { readIllustration, verifiedFrame } from './vector-files';
 import archiver from 'archiver';
@@ -8,7 +9,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { validWords } from '../shared/captions';
-import { kinds, sceneSchema, wordSchema, type Task, type Project } from '../shared/schema';
+import {
+  STOPPED,
+  STOPPING,
+  kinds,
+  sceneSchema,
+  wordSchema,
+  type Task,
+  type Project,
+} from '../shared/schema';
 import { speakers } from '../shared/speakers';
 import { Gemini } from './gemini';
 import { memoryVault, type Vault } from './vault';
@@ -37,8 +46,8 @@ const short = z.string().trim().min(2).max(240),
 const sceneList = z
   .array(
     sceneSchema.refine(
-      (s) => !(s.vector && s.svgPlan) && (s.visualMode !== 'svg' || !!s.vector || !!s.svgPlan),
-      'Geçerli bir sahne çizimi gerekli.',
+      (s) => !(s.svgPlan && s.vector),
+      'Bir sahnede yalnız bir çizim kullanılabilir.',
     ),
   )
   .max(24)
@@ -83,7 +92,8 @@ export function createStudio(
       svgPlanner: planner.settings(),
     }),
     app = express();
-  let busy: string | null = null,
+  let busy: Operation | null = null,
+    activeProject: Project | null = null,
     setup = { working: false, message: '' };
   app.disable('x-powered-by');
   app.use('/api', (req, res, next) => {
@@ -121,7 +131,7 @@ export function createStudio(
     requireThat(!busy && !setup.working, 'Başka bir işlem sürüyor; tamamlanmasını bekleyin.');
   function writable(req: express.Request) {
     const p = store.get(String(req.params.id));
-    requireThat(busy !== p.id, 'Proje işleniyor.');
+    requireThat(busy?.owner !== p.id, 'Proje işleniyor.');
     const rev = req.get('If-Match');
     requireThat(
       rev !== undefined && Number(rev) === p.rev,
@@ -135,16 +145,62 @@ export function createStudio(
     requireThat(s, 'Sahne bulunamadı.', 404);
     return s;
   };
+  function stopActive() {
+    const op = busy;
+    if (!op) return;
+    if (!op.signal.aborted) {
+      try {
+        if (activeProject) {
+          activeProject.job = {
+            ...activeProject.job,
+            state: 'stopping',
+            label: STOPPING,
+            at: now(),
+          };
+          store.save(activeProject);
+        }
+        if (setup.working) setup.message = STOPPING;
+      } finally {
+        op.stop();
+      }
+    }
+    return op.drained;
+  }
+  app.get('/api/operation', (_q, r) =>
+    r.json(busy ? { ...busy.info(), projectJob: !!activeProject } : null),
+  );
+  app.post('/api/operations/:runId/stop', (q, r) => {
+    requireThat(busy && busy.id === q.params.runId, 'Bu işlem artık çalışmıyor.');
+    void stopActive();
+    r.status(202).json(busy.info());
+  });
+  // Synchronous HTTP jobs (imports and tools) use the same cancellable lease, but
+  // retain their existing response contracts. Only the owner releases it, in finally.
+  async function managed<T>(owner: string, label: string, fn: () => Promise<T>) {
+    idle();
+    const op = (busy = new Operation(owner, label));
+    try {
+      return await op.run(fn);
+    } catch (e) {
+      if (op.signal.aborted) throw new Issue(409, STOPPED);
+      throw e;
+    } finally {
+      busy = null;
+      op.finish();
+    }
+  }
   function run(p: Project, kind: string, fn: () => Promise<void | Task>) {
     idle();
-    busy = p.id;
+    const op = new Operation(p.id, 'İşlem başlatıldı');
     store.checkpoint(p);
-    p.job = { state: 'working', label: 'İşlem başlatıldı', kind, at: now() };
+    p.job = { state: 'working', runId: op.id, label: op.label, kind, at: now() };
     store.save(p);
     store.log(p);
+    busy = op;
+    activeProject = p;
     setImmediate(async () => {
       try {
-        const pending = await fn();
+        const pending = await op.run(fn);
         if (!pending && kind === 'all') requireThat(p.final, 'Tamamlanmış bir MP4 bulunamadı.');
         p.job = pending ?? {
           state: 'done',
@@ -153,16 +209,23 @@ export function createStudio(
           at: now(),
         };
       } catch (e) {
-        p.job = {
-          ...p.job,
-          state: e instanceof Issue && e.code === 'config' ? 'config' : 'failed',
-          label: message(e),
-          at: now(),
-        };
+        p.job = op.signal.aborted
+          ? { state: 'cancelled', label: STOPPED, kind, at: now() }
+          : {
+              ...p.job,
+              state: e instanceof Issue && e.code === 'config' ? 'config' : 'failed',
+              label: message(e),
+              at: now(),
+            };
       } finally {
-        store.save(p);
-        store.log(p);
-        busy = null;
+        try {
+          store.save(p);
+          store.log(p);
+        } finally {
+          activeProject = null;
+          busy = null;
+          op.finish();
+        }
       }
     });
     return p;
@@ -171,6 +234,7 @@ export function createStudio(
     const text = await script(g, p, action, index, (label) =>
       prod.tick(p, label, p.job.kind ?? 'script'),
     );
+    checkpoint();
     changeScript(p, text); // Only after a complete, validated response.
   }
   app.get('/api/projects', (_q, r) => r.json(store.list()));
@@ -227,7 +291,9 @@ export function createStudio(
       .parse(q.body);
     const old = structuredClone(p);
     const next = { ...p, scenes: b.scenes, styleGuide: b.styleGuide };
-    for (const s of b.scenes)
+    for (const s of b.scenes) {
+      if (s.visualMode === 'svg' && !s.vector && !s.svgPlan)
+        requireThat(!b.approve && p.vectorWork?.[s.id], 'Geçerli bir sahne çizimi gerekli.', 422);
       if (s.svgPlan) {
         requireThat(
           isDeepStrictEqual(p.scenes.find((v) => v.id === s.id)?.svgPlan, s.svgPlan),
@@ -243,6 +309,7 @@ export function createStudio(
         if (b.approve && s.visualMode === 'svg')
           verifiedFrame(store.dir(p.id), s.vector, s.narration);
       }
+    }
     if (b.approve) approveBoard(next);
     const changed =
       JSON.stringify([p.scenes, p.styleGuide]) !== JSON.stringify([b.scenes, b.styleGuide]);
@@ -252,6 +319,15 @@ export function createStudio(
         clearFinal(p);
         p.boardApproval = null;
       }
+      if (p.vectorWork)
+        for (const id of Object.keys(p.vectorWork)) {
+          const v = b.scenes.find((s) => s.id === id);
+          if (
+            !v ||
+            (v.visualMode === 'photo' && p.scenes.find((s) => s.id === id)?.visualMode === 'svg')
+          )
+            delete p.vectorWork[id];
+        }
       p.scenes = b.scenes;
       p.styleGuide = b.styleGuide;
       if (changed) invalidate(p, old);
@@ -278,6 +354,7 @@ export function createStudio(
           'board',
           'svg-board',
           'redraw-vector',
+          'retry-vector',
           'concept',
           'all',
           'image',
@@ -291,10 +368,14 @@ export function createStudio(
       })
       .parse(q.body);
     const s = b.scene ? find(p, b.scene) : undefined;
-    if (['board', 'svg-board', 'redraw-vector', 'concept'].includes(b.kind))
+    if (['board', 'svg-board', 'redraw-vector', 'retry-vector', 'concept'].includes(b.kind))
       requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
     if (['all', 'image', 'voice', 'align', 'clip'].includes(b.kind)) approved(p);
-    if (['image', 'voice', 'align', 'clip', 'concept', 'redraw-vector'].includes(b.kind))
+    if (
+      ['image', 'voice', 'align', 'clip', 'concept', 'redraw-vector', 'retry-vector'].includes(
+        b.kind,
+      )
+    )
       requireThat(s, 'Bir sahne seçin.');
     if (b.kind === 'image')
       requireThat(s?.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
@@ -304,32 +385,34 @@ export function createStudio(
         if (['script', 'shorten', 'lengthen', 'paragraph'].includes(b.kind)) {
           return generateScript(p, b.kind, b.paragraph);
         }
-        if (b.kind === 'svg-board' || b.kind === 'redraw-vector') {
-          const old = structuredClone(p);
-          if (b.kind === 'svg-board')
-            p.scenes = await planner.plan(p, (i, n) =>
-              prod.tick(
-                p,
-                `Özel vektör sahnesi çiziliyor · ${i + 1}/${n}`,
-                'svg-board',
-                undefined,
-                Math.round((i * 100) / n),
-              ),
-            );
-          else {
-            const vector = await planner.redraw(p, s!, b.instruction ?? '');
-            s!.visualMode = 'svg';
-            s!.vector = vector;
-            delete s!.svgPlan;
-          }
-          p.boardApproval = null;
-          clearFinal(p);
-          invalidate(p, old);
+        if (b.kind === 'svg-board') {
+          await planner.plan(p, (i, n) =>
+            prod.tick(
+              p,
+              `Özel vektör sahnesi çiziliyor · ${i + 1}/${n}`,
+              'svg-board',
+              p.scenes[i].id,
+              Math.round((i * 100) / n),
+            ),
+          );
+          return;
+        }
+        if (b.kind === 'redraw-vector' || b.kind === 'retry-vector') {
+          const item = p.vectorWork?.[s!.id];
+          if (b.kind === 'retry-vector') requireThat(item, 'Sahne zaten hazır.');
+          prod.tick(p, 'Vektör sahnesi çiziliyor', b.kind, s!.id);
+          await planner.redraw(
+            p,
+            s!,
+            b.kind === 'retry-vector' ? item?.direction : (b.instruction ?? ''),
+          );
           return;
         }
         if (b.kind === 'board' || b.kind === 'concept') {
           const result = await storyboard(g, p, s);
+          checkpoint();
           const old = structuredClone(p);
+          if (b.kind === 'board') delete p.vectorWork;
           clearFinal(p);
           Object.assign(p, result);
           invalidate(p, old);
@@ -390,8 +473,7 @@ export function createStudio(
       const s = kind === 'music' ? undefined : find(p, q.query.scene);
       requireThat(Buffer.isBuffer(q.body) && q.body.length > 0, 'Dosya boş.', 400);
       store.checkpoint(p);
-      busy = p.id;
-      try {
+      await managed(p.id, 'Dosya doğrulanıyor', async () => {
         await prod.import(p, kind, q.body, s);
         const pending =
           !images.autoFill() || p.job.kind === 'manual-images'
@@ -404,9 +486,7 @@ export function createStudio(
           at: now(),
         };
         r.json(store.save(p));
-      } finally {
-        busy = null;
-      }
+      });
     },
   );
   app.get('/api/projects/:id/media/:folder/:file', (q, r) => {
@@ -429,7 +509,7 @@ export function createStudio(
   });
   app.get('/api/projects/:id/backup', (q, r) => {
     const p = store.get(q.params.id);
-    requireThat(busy !== p.id, 'Yedekleme için işlemin bitmesini bekleyin.');
+    requireThat(busy?.owner !== p.id, 'Yedekleme için işlemin bitmesini bekleyin.');
     r.attachment(`Nedenmis-${p.id.slice(0, 8)}.zip`);
     const a = archiver('zip', { zlib: { level: 1 } });
     a.on('error', () => r.destroy());
@@ -484,14 +564,8 @@ export function createStudio(
     r.json(settings());
   });
   app.post('/api/settings/test', async (_q, r) => {
-    idle();
-    busy = 'settings';
-    try {
-      await g.test();
-      r.json(settings());
-    } finally {
-      busy = null;
-    }
+    await managed('settings', 'Gemini bağlantısı sınanıyor', () => g.test());
+    r.json(settings());
   });
   app.post('/api/settings/speaker', (q, r) => {
     idle();
@@ -511,13 +585,7 @@ export function createStudio(
     r.json(settings());
   });
   app.post('/api/settings/checks', async (_q, r) => {
-    idle();
-    busy = 'checks';
-    try {
-      r.json(await checks(paths));
-    } finally {
-      busy = null;
-    }
+    r.json(await managed('checks', 'Yerel servisler denetleniyor', () => checks(paths)));
   });
   app.get('/api/settings/python', (_q, r) => r.json(setup));
   app.post('/api/settings/python', (_q, r) => {
@@ -527,8 +595,14 @@ export function createStudio(
       'Python kurulumu masaüstü uygulamasından başlatılabilir.',
       412,
     );
-    setup = { working: true, message: 'Kurulum başlatıldı' };
-    void setupPython(paths, (s) => (setup.message = s))
+    void managed('python', 'Whisper kurulumu', async () => {
+      setup = { working: true, message: 'Kurulum başlatıldı' };
+      await setupPython(paths, (s) => {
+        checkpoint();
+        setup.message = s;
+        if (busy) busy.label = s;
+      });
+    })
       .then(() => (setup.message = 'Kurulum doğrulandı.'))
       .catch((e) => (setup.message = message(e)))
       .finally(() => (setup.working = false));
@@ -587,7 +661,7 @@ export function createStudio(
   app.use((e: any, _q: express.Request, r: express.Response, _n: express.NextFunction) =>
     r.status(e instanceof z.ZodError ? 400 : e.status || 500).json({ error: message(e) }),
   );
-  return { app, store, g, prod };
+  return { app, store, g, prod, stopActive };
 }
 function message(e: unknown) {
   if (e instanceof z.ZodError)

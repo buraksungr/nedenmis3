@@ -86,11 +86,11 @@ export function VectorEditor({
         </div>
       )}
       <div className="form-stack">
-        <strong>{art?.title ?? 'Kayıtlı atlası özel çizime dönüştür'}</strong>
+        <strong>{art?.title ?? 'Özel vektör çizimi'}</strong>
         <p className="help">
           {art
             ? `${art.provider === 'gemini' ? 'Gemini' : 'OpenRouter'} · ${art.model} · üç hareketli katman`
-            : 'Eski görüntü, yeni çizim doğrulanana kadar korunur.'}
+            : 'Yeni çizim doğrulanana kadar varsa önceki görüntü korunur.'}
         </p>
         <label>
           Çizim yönlendirmesi (isteğe bağlı)

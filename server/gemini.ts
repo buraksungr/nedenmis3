@@ -1,3 +1,4 @@
+import { checkpoint, operation, requestSignal } from './operation';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import {
@@ -99,7 +100,8 @@ export class Gemini {
     private store: Store,
     private vault: Vault,
     private transport: typeof fetch = fetch,
-    private wait: (ms: number) => Promise<void> = sleep,
+    private wait: (ms: number, signal?: AbortSignal) => Promise<void> = (ms, signal) =>
+      sleep(ms, undefined, { signal }),
   ) {}
   raw() {
     return this.store.setting('gemini', fresh());
@@ -166,16 +168,17 @@ export class Gemini {
     script?: { onRetry?: RetryNotice },
   ) {
     for (let retry = 0; ; retry++) {
+      checkpoint();
       if (kind) this.countRequest(kind);
       let r: Response;
       try {
-        const timeout = AbortSignal.timeout(init.method === 'POST' ? 180_000 : 20_000);
         r = await this.transport(url, {
           ...init,
           redirect: 'error',
-          signal: init.signal ? AbortSignal.any([timeout, init.signal]) : timeout,
+          signal: requestSignal(init.method === 'POST' ? 180_000 : 20_000, init.signal),
         });
       } catch {
+        checkpoint();
         this.record(
           'unavailable',
           'Gemini servisine ulaşılamadı. İnternet bağlantısını kontrol edin.',
@@ -185,6 +188,7 @@ export class Gemini {
       }
       if (r.ok) return r;
       const e = await r.json().catch(() => null);
+      checkpoint();
       const details = Array.isArray(e?.error?.details) ? e.error.details : [];
       const after = retryAfterMs(
         r.headers.get('retry-after'),
@@ -203,7 +207,7 @@ export class Gemini {
           script.onRetry?.(
             `Gemini HTTP 503 · ${Math.ceil(delay / 1000)} sn sonra aynı modelle yeniden denenecek (${retry + 1}/${maxScriptRetries}).`,
           );
-          await this.wait(delay);
+          await this.wait(delay, operation()?.signal);
           continue;
         }
         msg =
@@ -232,6 +236,7 @@ export class Gemini {
     try {
       return await r.json();
     } catch {
+      checkpoint();
       this.record('unavailable', 'Google geçerli JSON döndürmedi.', kind);
       throw new Issue(502, 'Google yanıtı doğrulanamadı.');
     }
@@ -359,10 +364,12 @@ export class Gemini {
           : {}),
       });
     } catch (e) {
+      checkpoint();
       if (e instanceof Issue) throw e;
       // Do not expose raw SDK exceptions (may contain provider payload or credentials).
       this.noOutput('text');
     }
+    checkpoint();
     const candidate = out?.candidates?.[0];
     const parts = candidate?.content?.parts;
     const block = out?.promptFeedback?.blockReason;
@@ -409,6 +416,7 @@ export class Gemini {
       },
       'tts',
     );
+    checkpoint();
     const p = (out?.steps ?? [])
       .filter((x: any) => x.type === 'model_output')
       .flatMap((x: any) => x.content ?? [])

@@ -1,3 +1,4 @@
+import { checkpoint, requestSignal } from './operation';
 import type { PollinationsSettings } from '../shared/schema';
 import { inputFormat } from './import-formats';
 import { Issue, Store, requireThat } from './store';
@@ -118,7 +119,7 @@ export class Pollinations {
         method: 'GET',
         credentials: 'omit',
         redirect: 'error',
-        signal: AbortSignal.timeout(90_000),
+        signal: requestSignal(90_000),
         headers: {
           Accept: 'image/jpeg, image/png, image/webp',
           ...(key ? { Authorization: `Bearer ${key}` } : {}),
@@ -126,6 +127,7 @@ export class Pollinations {
       });
       return await readImage(response);
     } catch (e) {
+      checkpoint();
       if (e instanceof ImageUnavailable) throw e;
       // Neither server error bodies nor fetch exceptions (which can contain the URL) belong in logs.
       throw new ImageUnavailable('Servise ulaşılamadı veya görsel zamanında indirilemedi.');

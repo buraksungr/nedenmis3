@@ -1,3 +1,6 @@
+import { Operation } from '../server/operation';
+import { createServer } from 'node:net';
+import { STOPPED } from '../shared/schema';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -156,3 +159,69 @@ test('process diagnostics distinguish missing executable, stderr/exit code and t
     /süre sınırı/,
   );
 });
+
+test(
+  'stop a running recognizer and its descendant; release the open file and listening port before returning, never publish estimated subtitles',
+  { timeout: 20000 },
+  async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-stop-align-')),
+      store = new Store(root, false);
+    t.after(() => {
+      store.db.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+    const s = { ...blankScene(randomUUID()), narration: 'Ormanda ilerler.', description: 'Yuva' },
+      p = makeProject('Hizalama', s.narration);
+    p.scenes = [s];
+    p.scriptApproval = scriptSig(p);
+    approveBoard(p);
+    store.create(p);
+    let ready!: (port: number) => void;
+    const entered = new Promise<number>((r) => {
+      ready = r;
+    });
+    const engine = new Production(
+      store,
+      new Gemini(store, memoryVault()),
+      { root, pythonDir: 'python', composition: 'build/composition' },
+      testImages(store),
+      async (_paths, _wav, _txt, out) => {
+        const child = `require('node:fs').openSync(process.argv[1],'w');const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));`;
+        await exec(
+          process.execPath,
+          [
+            '-e',
+            `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(child)},process.argv[1]],{stdio:'inherit'});`,
+            out,
+          ],
+          10000,
+          (line) => ready(Number(line)),
+        );
+        throw Error('unexpected recognition exit');
+      },
+    );
+    await engine.import(p, 'voice', fs.readFileSync('tests/fixtures/forest.wav'), s);
+    const before = structuredClone(p.assets[s.id]);
+    const op = new Operation(p.id, 'Whisper');
+    const finished = assert.rejects(
+      op.run(() => engine.align(p, s, true)),
+      new RegExp(STOPPED),
+    );
+    const port = await entered;
+    assert.ok(port > 0);
+    op.stop();
+    await finished;
+    const socket = createServer();
+    await new Promise<void>((resolve, reject) =>
+      socket.once('error', reject).listen(port, '127.0.0.1', resolve),
+    );
+    await new Promise<void>((r) => socket.close(() => r()));
+    assert.deepEqual(store.get(p.id).assets[s.id], before);
+    assert.deepEqual(fs.readdirSync(path.join(store.dir(p.id), 'cache')), []);
+    assert.deepEqual(fs.readdirSync(path.join(store.dir(p.id), 'subtitles')), []);
+    assert.doesNotMatch(
+      fs.readFileSync(path.join(store.dir(p.id), 'production.ndjson'), 'utf8'),
+      /align-fallback/,
+    );
+  },
+);

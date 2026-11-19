@@ -51,7 +51,7 @@ export async function whaleBoard(store: Store, p: Project) {
     planner.key('openrouter', 'offline-contract-fixture');
   }
   const scenes = await planner.plan(p);
-  assert.ok(textRequests >= scenes.length && textRequests <= 2 * scenes.length);
+  assert.ok(textRequests >= scenes.length && textRequests <= 3 * scenes.length);
   if (source.startsWith('QA'))
     assert.deepEqual(
       scenes.map((s) => s.vector?.title),

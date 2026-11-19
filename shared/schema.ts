@@ -58,8 +58,19 @@ export type Media = {
   edits?: TimedText[]; // Same granularity as the underlying alignment.
   recognized?: string;
 };
+export const STOPPED = 'İşlem kullanıcı tarafından durduruldu';
+export const STOPPING = 'Durduruluyor...';
+export type OperationInfo = {
+  id: string;
+  owner: string;
+  label: string;
+  stopping: boolean;
+  projectJob?: boolean;
+};
+export const jobActive = (job?: Task) => job?.state === 'working' || job?.state === 'stopping';
 export type Task = {
-  state: 'waiting' | 'working' | 'done' | 'failed' | 'config';
+  runId?: string;
+  state: 'waiting' | 'working' | 'stopping' | 'cancelled' | 'done' | 'failed' | 'config';
   label: string;
   kind?: string;
   scene?: string;
@@ -82,6 +93,8 @@ export type Project = {
   scriptApproval: string | null;
   boardApproval: string | null;
   scenes: Scene[];
+  // Work queue is not drawing content and must not affect a signed board.
+  vectorWork?: Record<string, { state: 'pending' | 'failed'; detail?: string; direction?: string }>;
   styleGuide: string;
   intensity?: 'Düşük' | 'Orta' | 'Yüksek'; // Legacy metadata only.
   voice: Speaker;
@@ -153,7 +166,7 @@ export const normalize = (s: string) => s.trim().replace(/\s+/gu, ' ');
 export const stageOf = (p: Project) =>
   p.final
     ? 'Tamamlandı'
-    : p.job.state === 'working'
+    : jobActive(p.job)
       ? 'İşleniyor'
       : p.job.state === 'waiting' && p.job.kind === 'manual-images'
         ? 'Görsel bekleniyor'

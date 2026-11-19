@@ -1,3 +1,6 @@
+import { checkpoint, operation } from './operation';
+import { terminateTree } from './process-tree';
+import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 function binary(pkg: string, fallback: string): string {
@@ -31,6 +34,8 @@ export function exec(
   onLine?: (line: string) => void,
   cwd?: string,
 ) {
+  checkpoint();
+  const signal = operation()?.signal;
   return new Promise<string>((resolve, reject) => {
     let stdout = '',
       stderr = '';
@@ -38,6 +43,7 @@ export function exec(
       cwd,
       shell: false,
       windowsHide: true,
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         PATH: path.dirname(ffmpeg) + path.delimiter + process.env.PATH,
@@ -46,10 +52,16 @@ export function exec(
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    let timedOut = false;
+    let timedOut = false,
+      termination: Promise<void> | undefined,
+      startError: NodeJS.ErrnoException | undefined;
+    const stop = () => {
+      termination ??= terminateTree(child);
+    };
+    signal?.addEventListener('abort', stop, { once: true });
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      stop();
     }, ms);
     child.stdout.on('data', (b) => {
       stdout = (stdout + b).slice(-524288);
@@ -59,17 +71,32 @@ export function exec(
       stderr = (stderr + b).slice(-2048);
     });
     child.once('error', (e: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
-      reject(new Issue(412, `${bin}: başlatılamadı (${e.code ?? e.name}).`, 'config'));
+      startError = e;
     });
-    child.once('close', (c, signal) => {
+    child.once('close', async (c, exitSignal) => {
       clearTimeout(timer);
-      if (c === 0) resolve(stdout);
+      signal?.removeEventListener('abort', stop);
+      try {
+        await termination;
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      if (signal?.aborted) return reject(signal.reason);
+      if (startError)
+        return reject(
+          new Issue(
+            412,
+            `${bin}: başlatılamadı (${startError.code ?? startError.name}).`,
+            'config',
+          ),
+        );
+      if (c === 0 && !timedOut) resolve(stdout);
       else
         reject(
           new Issue(
             422,
-            `${path.basename(bin)}: ${timedOut ? `${ms / 1000} sn süre sınırı aşıldı` : `çıkış=${c ?? 'yok'}${signal ? `, sinyal=${signal}` : ''}`}; ${errorDetail(stderr.trim().slice(-1200)) || 'stderr boş.'}`,
+            `${path.basename(bin)}: ${timedOut ? `${ms / 1000} sn süre sınırı aşıldı` : `çıkış=${c ?? 'yok'}${exitSignal ? `, sinyal=${exitSignal}` : ''}`}; ${errorDetail(stderr.trim().slice(-1200)) || 'stderr boş.'}`,
           ),
         );
     });
@@ -146,7 +173,7 @@ export async function checks(p: Paths, { whisper = true, render = true } = {}): 
       return { id, name, ok: false, detail: e instanceof Error ? e.message : 'Kullanılamıyor' };
     }
   };
-  return Promise.all([
+  const results = await Promise.all([
     check('ffmpeg', 'FFmpeg + FFprobe', async () => {
       const txt = await exec(ffmpeg, ['-version']);
       await exec(ffprobe, ['-version']);
@@ -181,6 +208,8 @@ export async function checks(p: Paths, { whisper = true, render = true } = {}): 
         ]
       : []),
   ]);
+  checkpoint();
+  return results;
 }
 export async function setupPython(p: Paths, stage: (s: string) => void) {
   const dir = path.join(p.root, 'venv');
@@ -229,7 +258,7 @@ export async function setupPython(p: Paths, stage: (s: string) => void) {
   );
 }
 // Original deterministic underscore + scene-specific Foley. No sampled or downloaded music.
-export function soundBed(duration: number, scene?: Scene) {
+export async function soundBed(duration: number, scene?: Scene) {
   const hz = 16000,
     len = Math.ceil(duration * hz),
     data = Buffer.alloc(len * 2);
@@ -237,7 +266,12 @@ export function soundBed(duration: number, scene?: Scene) {
     n = 0,
     lp = 0;
   const env = scene?.effect;
+  const cue = scene?.sound.toLocaleLowerCase('tr') ?? '';
   for (let i = 0; i < len; i++) {
+    if ((i & 65535) === 0) {
+      await yieldTurn();
+      checkpoint();
+    }
     const t = i / hz;
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     n = seed / 2147483648 - 1;
@@ -262,7 +296,6 @@ export function soundBed(duration: number, scene?: Scene) {
       s = env === 'stars' ? 0 : lp * 0.15;
     }
     if (scene) {
-      const cue = scene.sound.toLocaleLowerCase('tr');
       if (scene.object === 'trail' || /adım|ayak|hışırtı/.test(cue))
         s += n * 0.085 * Math.exp(-(t % 0.39) * 95);
       else if (env === 'bubbles' || /kabarcık/.test(cue))

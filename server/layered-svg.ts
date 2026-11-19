@@ -69,7 +69,10 @@ export const serialize = (n: Geometry): string =>
     .join('')}>${esc(n.text ?? '')}${n.children.map(serialize).join('')}</${n.tag}>`;
 /** Parse to a small, inert display list. A gradient paint server is the ONLY
  * reference type; it must resolve inside this illustration. Never render raw XML. */
-export function parseIllustration(xml: string): { drawing: Drawing; canonical: string } {
+export function parseIllustration(
+  xml: string,
+  editorial?: { title: string; narration: string },
+): { drawing: Drawing; canonical: string } {
   if (Buffer.byteLength(xml) > MAX_XML || /<!\s*(?:DOCTYPE|ENTITY)/i.test(xml))
     bad('SVG boyutu veya belge türü geçersiz.');
   const p = new SaxesParser({ xmlns: true }),
@@ -99,7 +102,7 @@ export function parseIllustration(xml: string): { drawing: Drawing; canonical: s
           : gradients.has(parent.tag)
             ? tag === 'stop'
             : parent.tag === 'g'
-              ? shapes.has(tag) || tag === 'g' || (tag === 'text' && layer === 'layer-fx')
+              ? shapes.has(tag) || tag === 'g' || tag === 'text'
               : false;
     if (!allowed) bad('Yalnız statik geometri, yerel gradyan ve üç sahne katmanı kullanılabilir.');
     for (const [k, { value: v }] of Object.entries(t.attributes)) {
@@ -128,9 +131,7 @@ export function parseIllustration(xml: string): { drawing: Drawing; canonical: s
         try {
           const cs = SVGPathData.parse(v);
           if (
-            cs.length < 2 ||
             cs.length > 5000 ||
-            !cs.some((c) => c.type !== SVGPathData.MOVE_TO && c.type !== SVGPathData.CLOSE_PATH) ||
             cs.some((c) =>
               Object.values(c).some(
                 (n) => typeof n === 'number' && (!Number.isFinite(n) || Math.abs(n) > 100000),
@@ -170,8 +171,12 @@ export function parseIllustration(xml: string): { drawing: Drawing; canonical: s
           'font-size',
         ].includes(k)
       ) {
-        const val = gradients.has(tag) && v.endsWith('%') ? v.slice(0, -1) : v;
-        num(val);
+        const val = num(v.endsWith('%') ? v.slice(0, -1) : v);
+        if (
+          ['r', 'rx', 'ry', 'width', 'height', 'stroke-width', 'font-size'].includes(k) &&
+          val < 0
+        )
+          bad('Negatif boyut kullanılamaz.');
       } else if (k === 'points' && ['polyline', 'polygon'].includes(tag)) {
         const n = nums(v);
         if (n.length < 4 || n.length % 2 || n.length > 3000) bad('Geçersiz nokta listesi.');
@@ -190,22 +195,7 @@ export function parseIllustration(xml: string): { drawing: Drawing; canonical: s
       if (!layers.includes(a.id as Layer)) bad('Kökte layer-bg, layer-main ve layer-fx gerekli.');
       layer = a.id as Layer;
     }
-    if (shapes.has(tag)) {
-      const valid =
-        tag === 'rect'
-          ? +a.width > 0 && +a.height > 0
-          : tag === 'circle'
-            ? +a.r > 0
-            : tag === 'ellipse'
-              ? +a.rx > 0 && +a.ry > 0
-              : tag === 'line'
-                ? +(a.x1 ?? 0) !== +(a.x2 ?? 0) || +(a.y1 ?? 0) !== +(a.y2 ?? 0)
-                : tag === 'path'
-                  ? !!a.d
-                  : !!a.points;
-      if (!valid) bad('Boş/geçersiz geometri.');
-      if (layer) counts[layer]++;
-    }
+    if (layer && shapes.has(tag)) counts[layer]++;
     stack.push(n);
   });
   p.on('text', (v) => {
@@ -217,12 +207,21 @@ export function parseIllustration(xml: string): { drawing: Drawing; canonical: s
     const n = stack.pop()!;
     if (n.tag === 'text') {
       const text = n.text?.trim() ?? '';
+      // Optional editorial text is not a reason to reject a safe drawing. Keep only
+      // short scientific labels, never crop a sentence or repeat the title.
       if (
-        ++labels > 2 ||
+        layer !== 'layer-fx' ||
+        labels >= 2 ||
         text.length > 28 ||
-        !/^\p{L}[\p{L}\p{M}\p{N}’'-]*(?: \p{L}[\p{L}\p{M}\p{N}’'-]*)?$/u.test(text)
-      )
-        bad('En fazla iki kısa bilimsel etiket kullan (1–2 sözcük).');
+        !/^\p{L}[\p{L}\p{M}\p{N}’'-]*(?: \p{L}[\p{L}\p{M}\p{N}’'-]*)?$/u.test(text) ||
+        [editorial?.title, editorial?.narration].some(
+          (t) => t?.trim().toLocaleLowerCase('tr') === text.toLocaleLowerCase('tr'),
+        )
+      ) {
+        stack.at(-1)!.children.pop();
+        return;
+      }
+      labels++;
       n.text = text;
     }
     if (stack.length === 1 && n.tag === 'g') layer = undefined;
@@ -230,42 +229,51 @@ export function parseIllustration(xml: string): { drawing: Drawing; canonical: s
   p.write(xml).close();
   if (!root) return bad('Boş SVG.');
   const defs = root.children.filter((n) => n.tag === 'defs').flatMap((n) => n.children);
-  if (
-    defs.length > 32 ||
-    defs.some(
-      (g) => !g.attrs.id || g.children.length < 2 || g.children.some((s) => !s.attrs['stop-color']),
-    )
-  )
-    bad('Gradyanın id ve en az iki renk durağı olmalı.');
+  if (defs.length > 32) bad('Gradyan sayısı sınır dışında.');
   for (const ref of refs)
     if (!defs.some((g) => g.attrs.id === ref)) bad('Kullanılan gradyan tanımsız.');
-  if (counts['layer-bg'] < 2)
-    bad('Ortam için düz zemine bir manzara, doku veya çevre ayrıntısı ekle.');
-  if (layers.some((l) => counts[l] < 1)) bad('Her katman kendi görünür geometrisini içermeli.');
+  if (layers.some((id) => !root!.children.some((n) => n.tag === 'g' && n.attrs.id === id)))
+    bad('layer-bg, layer-main ve layer-fx grupları gerekli.');
   const drawing: Drawing = {
     defs,
     layers: Object.fromEntries(
       layers.map((l) => [l, root!.children.find((n) => n.tag === 'g' && n.attrs.id === l)!]),
     ) as Record<Layer, Geometry>,
   };
-  const canonical = serialize({
+  const document: Geometry = {
     tag: 'svg',
     attrs: { xmlns: ns, viewBox: '0 0 1080 1350' },
     children: [
       ...(defs.length ? [{ tag: 'defs', attrs: {}, children: defs }] : []),
       ...layers.map((l) => drawing.layers[l]),
     ],
-  });
+  };
+  let canonical = serialize(document);
   if (Buffer.byteLength(canonical) > MAX_XML) bad('SVG çok büyük.');
-  return { canonical, drawing };
-}
-
-export function drawingLabels(d: Drawing) {
-  const texts: string[] = [];
-  function visit(n: Geometry) {
-    if (n.text) texts.push(n.text);
-    n.children.forEach(visit);
+  // Acquisition only; even at the parser limits decoration must never reject
+  // an otherwise valid scene. This fixed, id-free light pass needs no resource.
+  if (editorial && counts['layer-bg'] <= 1) {
+    const bg = drawing.layers['layer-bg'],
+      before = bg.children.length;
+    if (!counts['layer-bg'])
+      bg.children.push({
+        tag: 'rect',
+        attrs: { width: '1080', height: '1350', fill: '#192738' },
+        children: [],
+      });
+    bg.children.push({
+      tag: 'path',
+      attrs: {
+        d: 'M0 260 Q320 140 620 240 T1080 198 V230 Q859 296 604 270 T0 294Z M0 1050 Q356 921 637 1012 T1080 970 V985 Q884 1085 624 1027 T0 1070Z',
+        fill: '#fff2d6',
+        opacity: '.12',
+      },
+      children: [],
+    });
+    const enriched = serialize(document);
+    if (nodes + bg.children.length - before <= 1200 && Buffer.byteLength(enriched) <= MAX_XML)
+      canonical = enriched;
+    else bg.children.length = before;
   }
-  visit(d.layers['layer-fx']);
-  return texts;
+  return { canonical, drawing };
 }

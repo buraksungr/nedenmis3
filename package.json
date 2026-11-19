@@ -1,7 +1,7 @@
 {
   "name": "nedenmis-studio",
   "productName": "Nedenmiş Studio",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "Yerel, onay tabanlı belgesel üretim stüdyosu",
   "author": "Nedenmiş Studio",
@@ -18,6 +18,7 @@
     "dist:win": "npm run build && electron-builder --win nsis --x64",
     "test:render": "tsx tests/render-smoke.ts",
     "format": "prettier --write server shared ui/src desktop composition scripts tests",
+    "test:stop": "tsx tests/cancel-render-control.ts",
     "test:ui": "node scripts/browser-check.mjs",
     "test:thirst": "tsx tests/narrated-atlas-control.ts",
     "test:flight": "tsx tests/narrated-atlas-control.ts --flight",
@@ -28,7 +29,6 @@
     "@ffprobe-installer/ffprobe": "2.1.2",
     "@google/genai": "3.6.0",
     "@remotion/renderer": "4.0.544",
-    "@resvg/resvg-wasm": "2.6.2",
     "archiver": "7.0.1",
     "express": "5.1.0",
     "react": "19.2.4",
@@ -69,7 +69,6 @@
     "files": [
       "desktop/main.cjs",
       "build/server.cjs",
-      "build/vector-paint.cjs",
       "build/ui/**/*",
       "package.json"
     ],

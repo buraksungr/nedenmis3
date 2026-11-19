@@ -25,7 +25,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
-import type { Project, ProjectSummary } from '../../shared/schema';
+import { jobActive, type Project, type ProjectSummary } from '../../shared/schema';
 import {
   Badge,
   Button,
@@ -174,7 +174,7 @@ export function ProjectCard({ item: p }: { item: ProjectSummary }) {
 }
 export function Home() {
   const { projects, go } = useStudio();
-  const running = projects.filter((x) => x.job.state === 'working'),
+  const running = projects.filter((x) => jobActive(x.job)),
     exports = projects.filter((x) => x.exported);
   const metrics = [
     { label: 'Toplam proje', val: projects.length, icon: Folder, tone: 'sage', page: 'projects' },

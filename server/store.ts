@@ -6,6 +6,8 @@ import { defaultSpeaker, type Speaker } from '../shared/speakers';
 import { legacySvgPlanSchema, svgPlanSchema } from '../shared/svg';
 import { vectorSchema } from '../shared/vector';
 import {
+  STOPPED,
+  jobActive,
   blankScene,
   normalize,
   stageOf,
@@ -77,6 +79,7 @@ export function approveBoard(p: Project) {
 }
 export function changeScript(p: Project, text: string) {
   if (normalize(text) !== normalize(p.script)) {
+    delete p.vectorWork;
     p.scriptApproval = null;
     p.boardApproval = null;
     clearFinal(p);
@@ -188,11 +191,15 @@ export class Store {
             at: now(),
           };
           this.save(p);
-        } else if (p.job.state === 'working') {
+        } else if (jobActive(p.job)) {
           p.job = {
             ...p.job,
-            state: 'failed',
-            label: 'Üretim kesildi. Kaydedilmiş varlıklarla devam edebilirsiniz.',
+            state: p.job.state === 'stopping' ? 'cancelled' : 'failed',
+            runId: undefined,
+            label:
+              p.job.state === 'stopping'
+                ? STOPPED
+                : 'Üretim kesildi. Kaydedilmiş varlıklarla devam edebilirsiniz.',
             at: now(),
           };
           this.save(p);

@@ -4,7 +4,10 @@ const fs = require('node:fs'),
   path = require('node:path'),
   os = require('node:os');
 const { randomBytes } = require('node:crypto');
-let win, server;
+let win,
+  server,
+  stopActive,
+  draining = false;
 const verify = process.argv.includes('--verify-install');
 const scratch = verify ? fs.mkdtempSync(path.join(os.tmpdir(), 'Nedenmis-verify-')) : null;
 if (scratch) app.setPath('userData', scratch);
@@ -19,7 +22,7 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
-      const { createStudio, verifyPaintRuntime } = require('../build/server.cjs');
+      const { createStudio, parseIllustration } = require('../build/server.cjs');
       const state = app.getPath('userData');
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
       // Local OS association lookup; does not open the URL or contact the network.
@@ -64,6 +67,7 @@ if (!app.requestSingleInstanceLock()) {
           },
           { vault, pollinationsVault, plannerVaults, desktopToken: token },
         );
+      stopActive = studio.stopActive;
       studio.app.use((_q, r, n) => {
         r.set(
           'Content-Security-Policy',
@@ -138,8 +142,12 @@ if (!app.requestSingleInstanceLock()) {
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,
         );
-        if (!(await verifyPaintRuntime()))
-          throw new Error('Packaged vector paint validation unavailable');
+        const flat = parseIllustration(
+          '<svg viewBox="0 0 1080 1350"><g id="layer-bg"><rect width="1080" height="1350" fill="#456789"/></g><g id="layer-main"/><g id="layer-fx"/></svg>',
+          { title: 'Yerel Denetim', narration: '' },
+        );
+        if (flat.drawing.layers['layer-bg'].children.length < 2)
+          throw new Error('Packaged background completion unavailable');
         if (!loaded) throw new Error('Installed renderer or SQLite unavailable');
         const r = await fetch(origin + '/api/settings/checks', {
           method: 'POST',
@@ -159,7 +167,7 @@ if (!app.requestSingleInstanceLock()) {
               installed: app.isPackaged,
               renderer: true,
               sqlite: true,
-              vectorPaintWorker: true,
+              flatVectorCompletion: true,
               secureStorage: true,
               pollinationsSecureStorage: true,
               checks,
@@ -187,5 +195,17 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => server?.close());
+  app.on('before-quit', (e) => {
+    const pending = stopActive?.();
+    if (!pending) {
+      server?.close();
+      return;
+    }
+    e.preventDefault();
+    if (!draining) {
+      draining = true;
+      server?.close();
+      void pending.then(() => app.quit());
+    }
+  });
 }

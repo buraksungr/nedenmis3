@@ -7,10 +7,20 @@ import {
   FolderOpen,
   LoaderCircle,
   TriangleAlert,
+  Square,
   X,
 } from 'lucide-react';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import type { Project, ProjectSummary, Settings } from '../../shared/schema';
+import {
+  STOPPED,
+  STOPPING,
+  jobActive,
+  type OperationInfo,
+  type Task,
+  type Project,
+  type ProjectSummary,
+  type Settings,
+} from '../../shared/schema';
 export type Page =
   | 'home'
   | 'new'
@@ -285,6 +295,85 @@ export function WorkspaceBar() {
     </div>
   ) : null;
 }
+function StopButton({ id, stopping }: { id: string; stopping: boolean }) {
+  const { notify } = useStudio(),
+    [requested, setRequested] = useState(false);
+  const stop = async () => {
+    setRequested(true);
+    try {
+      await post(`/operations/${id}/stop`);
+    } catch (e) {
+      setRequested(false);
+      notify((e as Error).message, true);
+    }
+  };
+  return (
+    <button
+      type="button"
+      className="stop-operation"
+      disabled={requested || stopping}
+      onClick={() => void stop()}
+    >
+      <Square size={13} />
+      {requested || stopping ? STOPPING : 'Durdur'}
+    </button>
+  );
+}
+function ProgressNote({ job }: { job: Task }) {
+  return (
+    <div className={'job-note ' + job.state} role="status">
+      <LoaderCircle className="spin" size={16} />
+      <span>
+        {job.label}
+        {job.state === 'working' && job.progress !== undefined ? ` · %${job.progress}` : ''}
+      </span>
+      {job.runId && (
+        <StopButton key={job.runId} id={job.runId} stopping={job.state === 'stopping'} />
+      )}
+    </div>
+  );
+}
+// Keep the control available after navigation and during non-project tools/imports.
+export function OtherOperation() {
+  const { p, page, notify } = useStudio(),
+    [active, setActive] = useState<OperationInfo | null>(null),
+    stopping = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true,
+      t: ReturnType<typeof setTimeout>;
+    async function read() {
+      let delay = 1200;
+      try {
+        const a = await api<OperationInfo | null>('/operation');
+        if (!live) return;
+        if (stopping.current && a?.id !== stopping.current) notify(STOPPED);
+        stopping.current = a?.stopping ? a.id : undefined;
+        setActive(a);
+        if (a) delay = 650;
+      } catch {
+        /* normal main-view errors are handled separately */
+      }
+      if (live) t = setTimeout(read, delay);
+    }
+    void read();
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, []);
+  if (!active || (workspacePages.includes(page) && active.projectJob && p?.id === active.owner))
+    return null;
+  return (
+    <ProgressNote
+      job={{
+        runId: active.id,
+        state: active.stopping ? 'stopping' : 'working',
+        label: active.stopping ? STOPPING : active.label,
+        at: '',
+      }}
+    />
+  );
+}
 export function JobNote() {
   const { p, go } = useStudio();
   if (
@@ -295,19 +384,15 @@ export function JobNote() {
     p.job.state === 'done'
   )
     return null;
+  if (jobActive(p.job)) return <ProgressNote job={p.job} />;
   return (
-    <div className={'job-note ' + p.job.state}>
-      {p.job.state === 'working' ? (
-        <LoaderCircle className="spin" size={16} />
-      ) : p.job.state === 'waiting' ? (
+    <div className={'job-note ' + p.job.state} role="status">
+      {p.job.state === 'waiting' || p.job.state === 'cancelled' ? (
         <Clock3 size={16} />
       ) : (
         <TriangleAlert size={16} />
       )}
-      <span>
-        {p.job.label}
-        {p.job.progress !== undefined && p.job.state === 'working' ? ` · %${p.job.progress}` : ''}
-      </span>
+      <span>{p.job.label}</span>
       {p.job.state === 'config' && (
         <button onClick={() => go('settings')}>
           Ayarları aç <ArrowRight size={13} />

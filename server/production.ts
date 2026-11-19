@@ -1,3 +1,4 @@
+import { checkpoint, operation } from './operation';
 import { readArtwork } from './atlas-art';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -73,7 +74,10 @@ export class Production {
     );
   }
   tick(p: Project, label: string, kind: string, scene?: string, progress?: number) {
-    p.job = { state: 'working', label, kind, scene, progress, at: now() };
+    const op = operation();
+    if (op?.signal.aborted) return;
+    if (op) op.label = label;
+    p.job = { runId: p.job.runId, state: 'working', label, kind, scene, progress, at: now() };
     this.store.save(p);
     if (progress === undefined) this.store.log(p);
   }
@@ -88,6 +92,7 @@ export class Production {
     key: string,
     duration?: number,
   ): Asset {
+    checkpoint();
     const dest = `${folder}/${randomUUID()}.${ext}`;
     const file = this.file(p, dest);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -103,6 +108,7 @@ export class Production {
       source: 'import',
     },
   ) {
+    checkpoint();
     approved(p);
     if (kind === 'image')
       requireThat(s?.visualMode !== 'svg', 'Fotoğraf yüklemek için sahne türünü değiştirin.');
@@ -213,6 +219,7 @@ export class Production {
     );
   }
   async asset(p: Project, s: Scene, kind: 'image' | 'voice', force: boolean) {
+    checkpoint();
     approved(p);
     if (kind === 'image') requireThat(s.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
     const m = (p.assets[s.id] ??= {}),
@@ -260,6 +267,7 @@ export class Production {
     );
   }
   async align(p: Project, s: Scene, force = false, whisperUnavailable?: string) {
+    checkpoint();
     approved(p);
     const m = p.assets[s.id],
       voice = m?.voice;
@@ -281,6 +289,7 @@ export class Production {
         if (whisperUnavailable) throw new Error(`Whisper ön kontrolü: ${whisperUnavailable}`);
         result = verifiedAlignment(await this.runWhisper(this.paths, audio, txt, out), duration);
       } catch (e) {
+        checkpoint();
         const reason = errorDetail(e),
           retain = this.cachedAlignment(p, s);
         const label = `${retain ? 'Kayıtlı altyazı korundu' : 'Tahmini cümle altyazısı kullanılıyor'}: ${reason}`;
@@ -311,6 +320,7 @@ export class Production {
         };
       }
       // Disk/publication failures are real failures, not a reason to fabricate another output.
+      checkpoint();
       fs.writeFileSync(out, JSON.stringify({ ...result, duration }));
       const a = this.publish(
         p,
@@ -339,6 +349,7 @@ export class Production {
     }
   }
   async clip(p: Project, s: Scene, next: Scene | undefined, frames: number, force = false) {
+    checkpoint();
     approved(p);
     const m = (p.assets[s.id] ??= {}),
       silent = unvoicedSvg(s, m);
@@ -414,6 +425,8 @@ export class Production {
     };
     const output = this.temp(p, 'mp4');
     let last = 0;
+    const lease = operation();
+    let renderOpen = true;
     const { renderMedia } = await import('@remotion/renderer');
     try {
       await withDocumentaryScene(this.paths, props, (options) =>
@@ -426,7 +439,7 @@ export class Production {
           x264Preset: 'veryfast',
           outputLocation: output,
           onProgress: ({ progress }) => {
-            if (Date.now() - last > 1000) {
+            if (renderOpen && !lease?.signal.aborted && Date.now() - last > 1000) {
               last = Date.now();
               this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, Math.round(progress * 100));
             }
@@ -437,7 +450,8 @@ export class Production {
       m.clip = this.publish(p, output, 'scenes', 'mp4', key, frames / 30);
       this.store.save(p);
     } finally {
-      fs.rmSync(output, { force: true });
+      renderOpen = false;
+      fs.rmSync(output, { force: true, maxRetries: 5, retryDelay: 80 });
     }
   }
   // A placeholder is a UI state, never an image asset or a renderable frame.
@@ -463,6 +477,7 @@ export class Production {
     }
   }
   async render(p: Project, kind: Step, target?: string) {
+    checkpoint();
     approved(p);
     const scenes = target ? p.scenes.filter((s) => s.id === target) : p.scenes;
     requireThat(scenes.length, 'Sahne bulunamadı.');
@@ -540,6 +555,7 @@ export class Production {
     }
   }
   async finish(p: Project) {
+    checkpoint();
     approved(p);
     const mixKey = hash(
       'mix-v3',
@@ -611,7 +627,7 @@ export class Production {
         }
         list.push(`file '${clipName}'`);
         const foley = work(`bed-${i}.wav`);
-        atomic(foley, soundBed(duration, s));
+        atomic(foley, await soundBed(duration, s));
         const aout = work(`mix-${i}.wav`);
         const inputs = [
           ...(scripted
@@ -641,7 +657,7 @@ export class Production {
       atomic(work('audio.txt'), alist.join('\n'));
       const duration = frames / 30;
       const music = p.music ? this.file(p, p.music.file) : work('score.wav');
-      if (!p.music) atomic(music, soundBed(duration));
+      if (!p.music) atomic(music, await soundBed(duration));
       const out = work('documentary.mp4');
       await ff(
         [
@@ -687,6 +703,7 @@ export class Production {
         working,
       );
       await verifyVideo(out, frames, true);
+      checkpoint();
       const id = randomUUID(),
         json = `subtitles/${id}.json`,
         sub = `subtitles/${id}.srt`;
@@ -708,7 +725,7 @@ export class Production {
       p.subtitleFiles = { json, srt: sub };
       this.store.save(p);
     } finally {
-      fs.rmSync(working, { recursive: true, force: true });
+      fs.rmSync(working, { recursive: true, force: true, maxRetries: 5, retryDelay: 80 });
     }
   }
 }

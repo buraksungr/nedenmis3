@@ -6,7 +6,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.4.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.4.1-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
 2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Kesin sözcük zamanları için isteğe bağlı:** **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
 4. **Özel vektör çizimi için OpenRouter veya Gemini metin modeli gerekir.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
@@ -14,12 +14,14 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Videoyu üret** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
 
-### Tam ekran vektör belgesel · 1.4.0
+### Tam ekran vektör belgesel · 1.4.1
 
 1. **Ayarlar → SVG planlayıcı**: OpenRouter anahtarını kaydet veya izin verdiğin Gemini metin modelini seç. Otomatik seçim, kayıtlı OpenRouter anahtarına öncelik verir. Başka sağlayıcıya hata sonrası geçiş yapılmaz.
 2. Senaryoyu onayla. **Storyboard → SVG planı oluştur** (yeni projede **Storyboard biçimi → Tam ekran özel vektör**). Model her sahnenin anlatımına özel, tam genişlikte bir illüstrasyon ve tek bir **2–3 sözcüklük Türkçe başlık** yazar. Iconify araması, yerel başlık kesme ve sunum şablonları yeni üretimde kullanılmaz. Arka plan, ana özne ve efektler ayrı hareket eder.
-3. Önizlemeyi oynat. Tek çekimi değiştirmek için **Çizim ayrıntıları → Bu sahneyi yeniden çiz**. İstersen “Balinayı yandan çiz, kırmızı kuvvet oklarını büyüt” gibi bir yön ver. Bu iş seslendirmeyi veya Whisper zamanlarını silmez. Eski projeler yalnız açıldıkları için değiştirilmez. Model veya çizim doğrulaması başarısızsa önceki storyboard yerinde kalır.
+3. Önizlemeyi oynat. Tek çekimi değiştirmek için **Çizim ayrıntıları → Bu sahneyi yeniden çiz**. İstersen “Balinayı yandan çiz, kırmızı kuvvet oklarını büyüt” gibi bir yön ver. Bu iş seslendirmeyi veya Whisper zamanlarını silmez. Eski projeler yalnız açıldıkları için değiştirilmez. Düz veya gradyan zemine yerel, hafif bir ışık dokusu eklenir. Her geçerli çizim hemen storyboard’a kaydedilir. Hatalı yanıta en fazla iki onarım verilir. Başarısız çekimde **Tekrar dene**, kalan sahneler için **SVG planına devam et** kullanılabilir.
 4. **Onayla ve üret**: eksik ses → Whisper → klipler → MP4 tek iştir; ses düğmeleri zorunlu değildir. Seçili konuşmacı, ton ve tempo korunur. Alt kısımda tek bir zamanlanmış altyazı vardır; gerçek sözcük zamanlarında etkin sözcük `#FACC15` olur. Fotoğraflar sabit kalır; geçiş yalnız opaklıktır. Daha önce kaydedilmiş çizimler, sesler ve zamanlar çevrimdışı tekrar kullanılabilir.
+
+5. SVG, seslendirme, Whisper veya MP4 ilerlemesi yanındaki **Durdur** ile etkin işi kes. **Durduruluyor...** temizliğin sürdüğünü gösterir. **İşlem kullanıcı tarafından durduruldu** mesajından sonra kaldığın yerden devam edebilirsin.
 
 [Çizim sözleşmesi, güvenlik, depolama ve geri alma](docs/ATLAS.md). TTS izni eksikken sesli üretim sessiz bir başarıya dönmez. İstersen kendi anlatımını yükleyebilir veya bir SVG sahnesinde **Eksik anlatımı otomatik seslendir** seçimini bilinçli olarak kapatabilirsin. Tahmini cümle zamanları sözcük hizalaması olarak gösterilmez.
 

@@ -17,7 +17,6 @@ await esbuild({
   outfile: 'build/server.cjs',
   packages: 'external',
 });
-fs.copyFileSync('server/vector-paint.cjs', 'build/vector-paint.cjs');
 fs.mkdirSync('build/composition', { recursive: true });
 await bundle({
   entryPoint: path.resolve('composition/Film.tsx'),

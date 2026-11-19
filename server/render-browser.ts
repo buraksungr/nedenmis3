@@ -1,3 +1,5 @@
+import { operation, checkpoint } from './operation';
+import { withRenderLease } from './render-lease';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ChromeMode, HeadlessBrowser } from '@remotion/renderer';
@@ -74,10 +76,12 @@ export async function openFirstBrowser<T>(
 ) {
   const failures: string[] = [];
   for (const options of candidates) {
+    checkpoint();
     if (!(await stat(options.browserExecutable).catch(() => undefined))?.isFile()) continue;
     try {
       return { ...options, puppeteerInstance: await launch(options) };
     } catch (e) {
+      checkpoint();
       // A browser may exist but exit before the DevTools connection is ready.
       const detail =
         e instanceof Error
@@ -101,6 +105,7 @@ type SceneOptions = Candidate & {
   serveUrl: string;
   inputProps: Record<string, unknown>;
   logLevel: 'error';
+  cancelSignal?: ReturnType<typeof import('@remotion/renderer').makeCancelSignal>['cancelSignal'];
   composition: VideoConfig;
 };
 
@@ -118,21 +123,29 @@ export async function withDocumentaryScene<T>(
       'config',
     );
   }
-  const { openBrowser, selectComposition } = await import('@remotion/renderer');
-  const session = await openFirstBrowser(
-    browserCandidates({ defaultBrowser: paths.defaultBrowser }),
-    (options) => openBrowser('chrome', { ...options, logLevel: 'error' }),
-  );
-  try {
-    const options = {
-      ...session,
-      serveUrl: paths.composition,
-      inputProps,
-      logLevel: 'error' as const,
-    };
-    const composition = await selectComposition({ ...options, id: 'DocumentaryScene' });
-    return await use({ ...options, composition });
-  } finally {
-    await session.puppeteerInstance.close({ silent: true });
-  }
+  return withRenderLease(async () => {
+    const { openBrowser, selectComposition, makeCancelSignal } = await import('@remotion/renderer');
+    const session = await openFirstBrowser(
+      browserCandidates({ defaultBrowser: paths.defaultBrowser }),
+      (options) => openBrowser('chrome', { ...options, logLevel: 'error' }),
+    );
+    const signal = operation()?.signal,
+      { cancelSignal, cancel } = makeCancelSignal();
+    signal?.addEventListener('abort', cancel, { once: true });
+    try {
+      checkpoint();
+      const options = {
+        ...session,
+        serveUrl: paths.composition,
+        inputProps,
+        logLevel: 'error' as const,
+      };
+      const composition = await selectComposition({ ...options, id: 'DocumentaryScene' });
+      checkpoint();
+      return await use({ ...options, composition, cancelSignal });
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+      await session.puppeteerInstance.close({ silent: true });
+    }
+  });
 }

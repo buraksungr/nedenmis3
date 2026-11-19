@@ -25,6 +25,8 @@ jobs:
       - run: npm run build
       - name: Verify legacy atlas playback, mixed storyboard, static photo fades and single-layer captions
         run: npm run test:render
+      - name: Stop a real in-flight render, release child processes and finish from the saved scene
+        run: npm run test:stop
       - name: Test storyboard editing, voice preflight and one-click production in Edge
         run: npm run test:ui
       - name: Package Windows installer
@@ -49,6 +51,7 @@ jobs:
             out/render-control/caption-plate-report.json
             out/render-control/static-fade-report.json
             out/render-control/install-report.json
+            out/render-control/cancellation.json
             out/render-control/fallback-control.*
             out/render-control/fallback-diagnostics.ndjson
 

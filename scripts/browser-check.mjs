@@ -15,6 +15,8 @@ const voiceCalls = [],
   plannerCalls = [],
   imageCalls = [],
   imageCredential = 'sk_isolated-ui-fixture';
+let stopDrawing = false,
+  abortedDraws = 0;
 let enableTextFixture = false,
   scriptAttempts = 0;
 const ctx = studio.createStudio(
@@ -26,6 +28,11 @@ const ctx = studio.createStudio(
         const data = JSON.parse(JSON.parse(opts.body).messages[1].content);
         plannerCalls.push(data);
         if (plannerCalls.length === 1) return new Response(null, { status: 503 });
+        if (stopDrawing) {
+          await once(opts.signal, 'abort');
+          abortedDraws++;
+          throw Error('Stopped test fetch');
+        }
         const svg = fs.readFileSync('tests/fixtures/vector-ant.svg', 'utf8');
         return Response.json({
           model: 'qa-illustrator-replay',
@@ -315,8 +322,20 @@ try {
   await page.getByLabel('Storyboard biçimi').selectOption('svg');
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
   await page.locator('.job-note.failed').filter({ hasText: 'OpenRouter HTTP 503' }).waitFor();
-  assert.equal(await page.locator('.scene-card').count(), 0);
-  await page.getByRole('button', { name: 'SVG planı oluştur' }).click();
+  assert.equal(await page.locator('.scene-card').count(), 1);
+  stopDrawing = true;
+  await page.getByRole('button', { name: 'Tekrar dene', exact: true }).click();
+  await page
+    .locator('.job-note.working')
+    .getByRole('button', { name: 'Durdur', exact: true })
+    .click();
+  await page
+    .locator('.job-note.cancelled')
+    .filter({ hasText: 'İşlem kullanıcı tarafından durduruldu' })
+    .waitFor();
+  assert.equal(abortedDraws, 1);
+  stopDrawing = false;
+  await page.getByRole('button', { name: 'Bu sahneyi tamamla', exact: true }).click();
   const card = page.locator('.scene-card').first(),
     mode = card.getByLabel('Sahne türü');
   await card.locator('[data-vector-scene]').waitFor();
@@ -353,7 +372,7 @@ try {
   assert.equal(svgResult.scenes[0].vector.title, 'Feromon İzi');
   assert.equal(svgResult.scenes[0].svgPlan, undefined);
   assert.ok(!shot.image);
-  assert.equal(plannerCalls.length, 3);
+  assert.equal(plannerCalls.length, 4);
   assert.equal(imageCalls.length, 2);
   // Play an already FFprobe-validated control, never a fabricated render in the dashboard.
   const previous = path.resolve('out/render-control/Projects');
@@ -402,7 +421,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → full-stage SVG → directed redraw → one-click TTS, alignment attempt and MP4.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → single-scene retry → actual request abortion → full-stage SVG → directed redraw → one-click TTS, alignment attempt and MP4.',
   );
 } finally {
   await browser.close();

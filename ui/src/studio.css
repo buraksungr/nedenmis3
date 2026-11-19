@@ -2554,3 +2554,31 @@ audio {
     max-width: 230px;
   }
 }
+
+.job-note button.stop-operation {
+  align-self: center;
+  flex-shrink: 0;
+  border: 1px solid #b28672;
+  border-radius: 5px;
+  background: #382b26;
+  color: #ffe0cd;
+  padding: 5px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.job-note button.stop-operation:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+.scene-work {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  color: #ddc6a0;
+  font-size: 12px;
+  margin: 8px 0 12px;
+}
+.scene-work .btn {
+  flex-shrink: 0;
+}

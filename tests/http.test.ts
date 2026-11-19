@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { createStudio } from '../server/app';
 import { voiceKey } from '../server/production';
 import { noNetwork } from './offline';
-import { blankScene, type Project } from '../shared/schema';
+import { STOPPED, STOPPING, jobActive, blankScene, type Project } from '../shared/schema';
 async function app(t: any, token?: string, transport: typeof fetch = noNetwork) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nedenmis-http-'));
   const ctx = createStudio(
@@ -39,7 +39,7 @@ async function app(t: any, token?: string, transport: typeof fetch = noNetwork) 
     const deadline = Date.now() + 25000;
     while (Date.now() < deadline) {
       const p: Project = await (await req(route)).json();
-      if (p.job.state !== 'working') return p;
+      if (!jobActive(p.job)) return p;
       await new Promise((r) => setTimeout(r, 30));
     }
     throw new Error('Background production did not settle');
@@ -630,7 +630,21 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   p = await settle(route);
   assert.equal(p.job.state, 'failed');
   assert.match(p.job.label, /503/);
-  assert.deepEqual(p.scenes, []);
+  assert.equal(p.scenes.length, 3);
+  assert.deepEqual(
+    p.scenes.map((s) => p.vectorWork?.[s.id].state),
+    ['failed', 'pending', 'pending'],
+  );
+  assert.equal(
+    (
+      await req(
+        route + '/board',
+        { scenes: p.scenes, styleGuide: p.styleGuide, approve: true },
+        p.rev,
+      )
+    ).status,
+    422,
+  );
   mode = 'draw';
   await gen({ kind: 'svg-board' });
   p = await settle(route);
@@ -669,7 +683,7 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   p = await settle(route);
   assert.equal(p.job.state, 'done', p.job.label);
   assert.equal(prompts.at(-1)?.yönlendirme, b.instruction);
-  assert.equal(prompts.length, 7);
+  assert.equal(prompts.length, 8);
   assert.equal(p.boardApproval, null);
   assert.deepEqual(p.scenes[0], old[0]);
   assert.deepEqual(p.scenes[2], old[2]);
@@ -699,3 +713,178 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   assert.deepEqual(p.scenes, old);
   assert.ok(p.boardApproval);
 });
+
+// Pause a real transport call until cancellation has reached it. Deliberately
+// delay its cleanup so the test can inspect the *stopping*, still-locked state.
+function gate() {
+  let open!: () => void;
+  const promise = new Promise<void>((r) => {
+    open = r;
+  });
+  return { promise, open };
+}
+test(
+  'stop during scene 2 is durable, aborts the request, holds its lease through cleanup; stale stop cannot cancel a resumed board',
+  { timeout: 20000 },
+  async (t) => {
+    const entered = gate(),
+      observed = gate(),
+      cleanup = gate(),
+      again = gate(),
+      finish = gate(),
+      calls: number[] = [];
+    const { req, settle, store } = await app(t, undefined, async (_url, opts) => {
+      const i = JSON.parse(JSON.parse(String(opts?.body)).messages[1].content).sahne;
+      calls.push(i);
+      if (calls.length === 2) {
+        entered.open();
+        await once(opts!.signal!, 'abort');
+        observed.open();
+        await cleanup.promise;
+      } // even a late response may not be committed
+      if (calls.length === 3) {
+        again.open();
+        await finish.promise;
+      }
+      return completion(sample(i - 1));
+    });
+    await req('/settings/svg-planner/key/openrouter', { key: 'isolated-cancel-test' });
+    let p: Project = await (
+      await req('/projects', {
+        topic: 'Yerel çizim',
+        script: 'Balinalar yüzer. Yüzgeçler hareket eder. Ağırlık dağılır.',
+      })
+    ).json();
+    const route = '/projects/' + p.id;
+    p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+    const script = p.scriptApproval;
+    const start = async () =>
+      (await (await req(route + '/generate', { kind: 'svg-board' }, p.rev)).json()) as Project;
+    let accepted = await start();
+    await entered.promise;
+    const disk = store.get(p.id),
+      first = disk.scenes[0];
+    assert.ok(first.vector);
+    assert.equal(disk.scenes[1].vector, undefined);
+    const stop = '/operations/' + accepted.job.runId + '/stop';
+    assert.equal((await req(stop, {})).status, 202);
+    await observed.promise;
+    p = store.get(p.id);
+    assert.equal(p.job.state, 'stopping');
+    assert.equal(p.job.label, STOPPING);
+    assert.equal((await req(route + '/generate', { kind: 'svg-board' }, p.rev)).status, 409);
+    assert.equal((await req(stop, {})).status, 202);
+    cleanup.open();
+    p = await settle(route);
+    assert.equal(p.job.state, 'cancelled');
+    assert.equal(p.job.label, STOPPED);
+    assert.deepEqual(calls, [1, 2]);
+    assert.deepEqual(p.scenes[0], first);
+    assert.equal(p.scriptApproval, script);
+    assert.equal(p.scenes[1].vector, undefined);
+    accepted = await start();
+    await again.promise;
+    assert.notEqual('/operations/' + accepted.job.runId + '/stop', stop);
+    assert.equal((await req(stop, {})).status, 409);
+    finish.open();
+    p = await settle(route);
+    assert.equal(p.job.state, 'done', p.job.label);
+    assert.deepEqual(calls, [1, 2, 2, 3]);
+    assert.deepEqual(p.scenes[0], first);
+    assert.equal(p.vectorWork, undefined);
+  },
+);
+
+test(
+  'stopping Gemini redraw or TTS aborts the active fetch with no repair, no replaced approved drawing/recording and no provider fault',
+  { timeout: 20000 },
+  async (t) => {
+    let holding = false,
+      entered = gate(),
+      aborts = 0,
+      posts = 0;
+    const { req, settle, store, g } = await app(t, undefined, async (url, opts) => {
+      if (opts?.method === 'GET')
+        return Response.json({
+          models: ['gemini-2.5-flash', 'gemini-test-tts'].map((id) => ({
+            name: 'models/' + id,
+            supportedGenerationMethods: ['generateContent'],
+          })),
+        });
+      posts++;
+      if (holding) {
+        entered.open();
+        await once(opts!.signal!, 'abort');
+        aborts++;
+        throw Error('transport aborted');
+      }
+      if (String(url).endsWith('/interactions'))
+        return Response.json({
+          status: 'completed',
+          steps: [
+            {
+              type: 'model_output',
+              content: [
+                {
+                  type: 'audio',
+                  data: fs.readFileSync('tests/fixtures/forest.wav').toString('base64'),
+                },
+              ],
+            },
+          ],
+        });
+      return Response.json({
+        candidates: [
+          { finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(sample()) }] } },
+        ],
+      });
+    });
+    g.key('isolated-cancel-key');
+    await g.test();
+    g.configure('text', { model: 'gemini-2.5-flash', consent: 'free' });
+    g.configure('tts', { model: 'gemini-test-tts', consent: 'free' });
+    await req('/settings/svg-planner', { provider: 'gemini' });
+    let p: Project = await (
+      await req('/projects', { topic: 'Bir çizim', script: 'Ormanda yürür.' })
+    ).json();
+    const route = '/projects/' + p.id;
+    p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+    const gen = async (kind: string) =>
+      (await (
+        await req(route + '/generate', { kind, scene: p.scenes[0]?.id }, p.rev)
+      ).json()) as Project;
+    await gen('svg-board');
+    p = await settle(route);
+    p = await (
+      await req(
+        route + '/board',
+        { scenes: p.scenes, styleGuide: p.styleGuide, approve: true },
+        p.rev,
+      )
+    ).json();
+    await gen('voice');
+    p = await settle(route);
+    assert.equal(p.job.state, 'done');
+    const before = structuredClone(p);
+    holding = true;
+    for (const kind of ['redraw-vector', 'voice']) {
+      entered = gate();
+      const job = await gen(kind);
+      await entered.promise;
+      assert.equal((await req(`/operations/${job.job.runId}/stop`, {})).status, 202);
+      p = await settle(route);
+      assert.equal(p.job.label, STOPPED);
+      assert.deepEqual(p.scenes, before.scenes);
+      assert.equal(p.boardApproval, before.boardApproval);
+      assert.deepEqual(p.assets, before.assets);
+    }
+    assert.equal(posts, 4);
+    assert.equal(aborts, 2);
+    assert.equal(g.raw().services.tts?.status, 'connected');
+    assert.equal(g.raw().services.text?.status, 'connected');
+    assert.deepEqual(
+      fs.readdirSync(path.join(store.dir(p.id), 'cache')).filter((n) => n !== 'vector'),
+      [],
+    );
+  },
+);

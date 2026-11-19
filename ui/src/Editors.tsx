@@ -29,7 +29,14 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { blankScene, normalize, type Project, type Scene, type Word } from '../../shared/schema';
+import {
+  jobActive,
+  blankScene,
+  normalize,
+  type Project,
+  type Scene,
+  type Word,
+} from '../../shared/schema';
 import {
   Badge,
   Button,
@@ -167,7 +174,7 @@ export function ScriptEditor({ p }: { p: Project }) {
   const draft = useDraft(p, 'script', p.script, (text) => ({ text }));
   const [para, setPara] = useState(0),
     [boardType, setBoardType] = useState('photo');
-  const locked = busy || p.job.state === 'working';
+  const locked = busy || jobActive(p.job);
   async function generate(kind: string) {
     await draft.flush();
     const result = await post<Project>(
@@ -340,7 +347,7 @@ export function BoardEditor({ p }: { p: Project }) {
   const invalidPlan = d.v.scenes.some((s) => s.visualMode === 'svg' && !s.svgPlan && !s.vector);
   const [open, setOpen] = useState<string | null>(null),
     [confirmSvg, setConfirmSvg] = useState(false);
-  const locked = busy || p.job.state === 'working';
+  const locked = busy || jobActive(p.job);
   const edit = (id: string, x: Partial<Scene>) =>
     d.edit({ ...d.v, scenes: d.v.scenes.map((s) => (s.id === id ? { ...s, ...x } : s)) });
   const move = (i: number, dir: number) => {
@@ -437,11 +444,15 @@ export function BoardEditor({ p }: { p: Project }) {
               <Button
                 disabled={locked}
                 onClick={() =>
-                  d.v.scenes.length ? setConfirmSvg(true) : void run(() => gen('svg-board'))
+                  d.v.scenes.length && !Object.keys(p.vectorWork ?? {}).length
+                    ? setConfirmSvg(true)
+                    : void run(() => gen('svg-board'))
                 }
               >
                 <Sparkles size={14} />
-                SVG planı oluştur
+                {Object.keys(p.vectorWork ?? {}).length
+                  ? 'SVG planına devam et'
+                  : 'SVG planı oluştur'}
               </Button>
               <small>Planlayıcı: {providerNames[settings?.svgPlanner.provider ?? 'auto']}</small>
             </div>
@@ -449,9 +460,9 @@ export function BoardEditor({ p }: { p: Project }) {
           {confirmSvg && (
             <Modal title="Sahneler SVG olarak planlansın mı?" close={() => setConfirmSvg(false)}>
               <p>
-                Plan tüm sahnelere uygulanır ve yeniden onay gerekir. Anlatımlar senaryoyla
-                eşleşiyorsa sahne kimlikleri ve kayıtlı medya korunur; eşleşmiyorsa senaryodan yeni
-                bir sahne sırası çıkarılır.
+                Hazır vektör çizimleri korunur. Yalnız eksik sahneler çizilir; değişen plan yeniden
+                onay ister. Anlatımlar senaryoyla eşleşiyorsa sahne kimlikleri ve kayıtlı medya
+                korunur; eşleşmiyorsa senaryodan yeni bir sahne sırası çıkarılır.
               </p>
               <div className="actions end">
                 <Button onClick={() => setConfirmSvg(false)}>Vazgeç</Button>
@@ -516,6 +527,24 @@ export function BoardEditor({ p }: { p: Project }) {
                   {open === s.id ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
                 </button>
               </div>
+              {p.vectorWork?.[s.id] && (
+                <div className="scene-work">
+                  <span>
+                    {p.vectorWork[s.id].state === 'failed'
+                      ? p.vectorWork[s.id].detail || 'Çizim tamamlanamadı.'
+                      : p.job.scene === s.id && jobActive(p.job)
+                        ? 'Çizim sürüyor…'
+                        : 'Çizim bekliyor'}
+                  </span>
+                  <Button
+                    disabled={locked}
+                    onClick={() => void run(() => gen('retry-vector', s.id))}
+                  >
+                    <RefreshCw size={14} />
+                    {p.vectorWork[s.id].state === 'failed' ? 'Tekrar dene' : 'Bu sahneyi tamamla'}
+                  </Button>
+                </div>
+              )}
               {s.visualMode !== 'svg' && (
                 <p className="scene-description">{s.description || 'Betimleme ekle.'}</p>
               )}
@@ -540,9 +569,15 @@ export function BoardEditor({ p }: { p: Project }) {
                 <div className="manual-image-slot">
                   <SceneThumbnail p={p} s={s} />
                   <div className="grow">
-                    <b>{s.vector?.title ?? 'Eski atlas sahnesi'}</b>
+                    <b>
+                      {s.vector?.title ?? (s.svgPlan ? 'Eski atlas sahnesi' : 'Vektör sahnesi')}
+                    </b>
                     <p className="help">
-                      {s.vector ? 'Tam ekran illüstrasyon' : 'Kayıtlı çizim · isteğe bağlı dönüşüm'}
+                      {s.vector
+                        ? 'Tam ekran illüstrasyon'
+                        : s.svgPlan
+                          ? 'Kayıtlı çizim · isteğe bağlı dönüşüm'
+                          : 'Çizim henüz hazır değil'}
                     </p>
                   </div>
                   <Button disabled={locked} onClick={() => setOpen(open === s.id ? null : s.id)}>
@@ -720,7 +755,7 @@ export function BoardEditor({ p }: { p: Project }) {
             )}
           {invalidPlan && (
             <Notice>
-              Şema başlığı 2–4 sözcük olmalı; her etikete farklı, kısa bir konu adı gir.
+              Onaylamadan önce bekleyen vektör sahnelerini tamamla veya fotoğrafa dönüştür.
             </Notice>
           )}
           <div className="approval-footer">
@@ -926,7 +961,7 @@ export function ProductionView({ p }: { p: Project }) {
   const [editCaps, setEditCaps] = useState<Scene | null>(null),
     [prefs, setPrefs] = useState(false),
     [active, setActive] = useState<string | null>(null);
-  const locked = busy || p.job.state === 'working';
+  const locked = busy || jobActive(p.job);
   return (
     <>
       <Head
@@ -1339,7 +1374,7 @@ export function Preview({ p }: { p: Project }) {
             />
             <div className="actions">
               <Button
-                disabled={busy || !revision.trim() || p.job.state === 'working'}
+                disabled={busy || !revision.trim() || jobActive(p.job)}
                 onClick={() =>
                   void run(async () => {
                     const v = await mutate('revision', { text: revision, scene });
@@ -1353,7 +1388,7 @@ export function Preview({ p }: { p: Project }) {
                 Revizyonu uygula
               </Button>
               <Button
-                disabled={busy || p.job.state === 'working' || !scene}
+                disabled={busy || jobActive(p.job) || !scene}
                 onClick={() =>
                   void run(async () => {
                     if (targetSvg) {
@@ -1378,7 +1413,7 @@ export function Preview({ p }: { p: Project }) {
           Proje yedeği
         </a>
         <Button
-          disabled={busy || !p.history || p.job.state === 'working'}
+          disabled={busy || !p.history || jobActive(p.job)}
           onClick={() =>
             void run(async () => {
               await mutate('undo');

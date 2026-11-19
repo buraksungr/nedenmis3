@@ -85,7 +85,7 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
         <p className="help">
           Otomatik seçim kayıtlı OpenRouter anahtarına öncelik verir (openrouter/free); yoksa izin
           verdiğin Gemini metin modelini kullanır. Hata olursa başka sağlayıcıya geçilmez. Bozuk bir
-          çizim için aynı modele en fazla bir onarım isteği gider. Gemini’nin seçtiğin kota ve ücret
+          çizim için aynı modele en fazla iki onarım isteği gider. Gemini’nin seçtiğin kota ve ücret
           izni geçerlidir.
         </p>
         {(provider === 'openrouter' || provider === 'auto') && (
