@@ -1,8 +1,9 @@
-"""Windows QA ONLY: synthesize the six matching Turkish recordings for the offline TTS transport.
+"""Windows QA ONLY: synthesize the matching Turkish recordings for the offline TTS transport.
 No weights or runtime from this script are packaged in Studio. See tests/fixtures/README.md.
 """
 import hashlib
 import json
+import sys
 import tarfile
 import urllib.request
 import wave
@@ -11,19 +12,23 @@ from pathlib import Path
 
 import sherpa_onnx
 
-root = Path('out/thirst-speech')
+story = 'flight' if '--flight' in sys.argv else 'thirst'
+root = Path(f'out/{story}-speech')
 root.mkdir(parents=True, exist_ok=True)
 name = 'vits-piper-tr_TR-dfki-medium'
 url = f'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/{name}.tar.bz2'
-archive = root / f'{name}.tar.bz2'
+cache = Path('out/qa-voice')
+cache.mkdir(parents=True, exist_ok=True)
+archive = cache / f'{name}.tar.bz2'
 if not archive.is_file():
     urllib.request.urlretrieve(url, archive)
 with archive.open('rb') as f:
     if hashlib.file_digest(f, 'sha256').hexdigest() != 'b63babaefcdd63202c7079aba25b72a2013825ad5895e2aeff03d1ae5a5b3bbf':
         raise ValueError('Turkish QA voice checksum mismatch')
-with tarfile.open(archive) as f:
-    f.extractall(root, filter='data')
-voice = root / name
+voice = cache / name
+if not voice.exists():
+    with tarfile.open(archive) as f:
+        f.extractall(cache, filter='data')
 config = sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(
     vits=sherpa_onnx.OfflineTtsVitsModelConfig(model=str(next(voice.glob('*.onnx'))),
         tokens=str(voice / 'tokens.txt'), data_dir=str(voice / 'espeak-ng-data'),
@@ -31,7 +36,7 @@ config = sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(
     num_threads=2, provider='cpu'))
 assert config.validate()
 tts = sherpa_onnx.OfflineTts(config)
-for i, line in enumerate(json.loads(Path('tests/fixtures/thirst.json').read_text(encoding='utf-8'))):
+for i, line in enumerate(json.loads(Path(f'tests/fixtures/{story}.json').read_text(encoding='utf-8'))):
     audio = tts.generate(line, sid=0, speed=0.92)
     assert len(audio.samples) > audio.sample_rate // 2
     with wave.open(str(root / f'{i}.wav'), 'wb') as f:

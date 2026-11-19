@@ -1,96 +1,32 @@
+import {
+  ink,
+  dark,
+  muted,
+  rule,
+  ease,
+  seq,
+  num,
+  TextBlock,
+  Mark,
+  Specimen,
+  type DiagramProps,
+} from './plate-kit';
+import {
+  TitleHookScene,
+  CycleLoopScene,
+  RatioGaugeScene,
+  LayerStackScene,
+  WavePulseScene,
+  SplitCauseEffectScene,
+  TimelineScaleScene,
+} from './AtlasDiagrams';
 import React from 'react';
 import { ScienceGlyph } from './ScienceGlyph';
-import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
+import { interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { templateNames, templates, type SvgPlan, type Template } from '../shared/svg';
 
 // All geometry is authored here. Diagrams use a 540 × 960 viewBox (2× at export).
 // Frame and plan are the only inputs: no CSS clocks, random seeds, network, or injected SVG.
-type DiagramProps = { plan: SvgPlan; frame: number; progress: number };
-const ink = '#EDF5EE',
-  muted = '#A7BAB2',
-  rule = '#3A534C',
-  dark = '#112721';
-const ease = (x: number, l = 0, r = 1) =>
-  interpolate(x, [l, r], [0, 1], {
-    easing: Easing.inOut(Easing.sin),
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
-const seq = (n: number) => Array.from({ length: n }, (_, i) => i);
-const num = (v: number) =>
-  new Intl.NumberFormat('tr-TR', {
-    maximumFractionDigits: 1,
-    notation: Math.abs(v) >= 10000 ? 'compact' : 'standard',
-  }).format(Math.abs(v) < 0.05 ? 0 : v);
-// Lay out whole words. Long words shrink to fit their own line; neither a glyph nor
-// the last word of a heading is dropped. No dependency on browser font metrics.
-function TextBlock({
-  text,
-  x,
-  y,
-  maxWidth = 468,
-  size = 18,
-  weight = 400,
-}: {
-  text: string;
-  x: number;
-  y: number;
-  maxWidth?: number;
-  size?: number;
-  weight?: number;
-}) {
-  const measure = (line: string) =>
-    Array.from(line).reduce(
-      (em, ch) =>
-        em +
-        ('ilıİ.,: '.includes(ch)
-          ? 0.31
-          : 'WMmwÖÜĞ'.includes(ch)
-            ? 0.89
-            : ch === ch.toLocaleUpperCase('tr')
-              ? 0.71
-              : 0.57),
-      0,
-    ) * size;
-  const rows: string[] = [];
-  for (const word of text.trim().split(/\s+/u).filter(Boolean)) {
-    const last = rows.at(-1);
-    if (last && measure(last + ' ' + word) <= maxWidth) rows[rows.length - 1] = last + ' ' + word;
-    else rows.push(word);
-  }
-  return (
-    <text x={x} y={y} fill={ink} fontSize={size} fontWeight={weight}>
-      {rows.map((line, i) => (
-        <tspan
-          x={x}
-          dy={i ? 1.18 * size : 0}
-          key={i}
-          textLength={Math.min(maxWidth, measure(line))}
-          lengthAdjust="spacingAndGlyphs"
-        >
-          {line}
-        </tspan>
-      ))}
-    </text>
-  );
-}
-function Mark({
-  x,
-  y,
-  children,
-  color = muted,
-}: {
-  x: number;
-  y: number;
-  children: React.ReactNode;
-  color?: string;
-}) {
-  return (
-    <text x={x} y={y} fill={color} fontSize="12" fontFamily="monospace" letterSpacing="1.2">
-      {children}
-    </text>
-  );
-}
 // A membrane (or vessel wall) rather than soil for biological sections. Particles
 // travel in both directions, not to a fabricated numerical concentration scale.
 function TissueSection({ plan, frame }: DiagramProps) {
@@ -133,6 +69,37 @@ function TissueSection({ plan, frame }: DiagramProps) {
 export function CrossSectionScene({ plan, frame, progress }: DiagramProps) {
   if (plan.icon === 'cell' || plan.icon === 'blood')
     return <TissueSection plan={plan} frame={frame} progress={progress} />;
+  if (plan.icon === 'airplane')
+    return (
+      <g>
+        <rect x="36" y="303" width="468" height="347" rx="8" fill="#1C3731" stroke={rule} />
+        {seq(7).map((i) => (
+          <path
+            key={i}
+            d={`M55 ${379 + i * 27}Q185 ${345 + i * 28} 300 ${372 + i * 27}T485 ${378 + i * 27}`}
+            fill="none"
+            stroke={plan.accentColor}
+            opacity=".48"
+            strokeDasharray="24 16"
+            strokeDashoffset={-frame * 1.2}
+          />
+        ))}
+        <path
+          d="M89 493C114 419 283 440 459 493c-136-13-267 29-359 10q-15-1-11-10Z"
+          fill="#435F56"
+          stroke={ink}
+          strokeWidth="2"
+        />
+        <path
+          d="M161 391v30l43 30m115 109v-36l-32-24"
+          fill="none"
+          stroke={plan.accentColor}
+          strokeWidth="2"
+        />
+        <TextBlock x={56} y={359} text={plan.labels[0]} maxWidth={400} />
+        <TextBlock x={197} y={600} text={plan.labels[1]} maxWidth={285} />
+      </g>
+    );
   const a = plan.accentColor,
     grow = ease(progress, 0, 0.78);
   return (
@@ -233,9 +200,7 @@ export function ThermometerGaugeScene({ plan, progress }: DiagramProps) {
           strokeWidth={i % 3 === 0 ? 2 : 1}
         />
       ))}
-      <Mark x={220} y={407}>
-        ANLIK SICAKLIK
-      </Mark>
+      <TextBlock x={220} y={397} text={plan.labels[0]} size={18} maxWidth={265} />
       <text
         x="217"
         y="473"
@@ -246,10 +211,8 @@ export function ThermometerGaugeScene({ plan, progress }: DiagramProps) {
         {num(v)}°C
       </text>
       <line x1="220" x2="465" y1="498" y2="498" stroke={rule} />
-      <Mark x={220} y={532}>
-        BAŞLANGIÇ → BİTİŞ
-      </Mark>
-      <text x="220" y="566" fontSize="25" fill={ink}>
+      <TextBlock x={220} y={526} text={plan.labels[1]} size={16} maxWidth={265} />
+      <text x="220" y="602" fontSize="25" fill={ink}>
         {num(from)}° → {num(to)}°
       </text>
     </g>
@@ -398,6 +361,13 @@ const drawings: Record<Template, React.ComponentType<DiagramProps>> = {
   FocusCalloutScene,
   ComparisonScene,
   ProcessFlowScene,
+  TitleHookScene,
+  CycleLoopScene,
+  RatioGaugeScene,
+  LayerStackScene,
+  WavePulseScene,
+  SplitCauseEffectScene,
+  TimelineScaleScene,
 };
 export function ScientificPlate({
   plan,
@@ -430,13 +400,16 @@ export function ScientificPlate({
       <Mark x={55} y={42}>
         NEDENMİŞ / BİLİM ATLASI
       </Mark>
+      <Specimen plan={plan} x={385} y={38} size={35} />
       <Mark x={416} y={42}>
-        LEVHA 0{id}
+        LEVHA {String(id).padStart(2, '0')}
       </Mark>
       <Mark x={36} y={110} color={plan.accentColor}>
         {templateNames[plan.template].toLocaleUpperCase('tr')}
       </Mark>
-      <TextBlock x={34} y={163} text={plan.title} maxWidth={470} size={34} weight={650} />
+      {plan.template !== 'TitleHookScene' && (
+        <TextBlock x={34} y={163} text={plan.title} maxWidth={470} size={34} weight={650} />
+      )}
       <Drawing plan={plan} frame={frame} progress={progress} />
       {/* The lower safe area belongs exclusively to Film's timed caption track. */}
     </svg>

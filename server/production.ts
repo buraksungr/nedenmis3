@@ -363,10 +363,10 @@ export class Production {
     const adjacent = next && !nextSvg ? p.assets[next.id]?.image : undefined;
     const key = hash(
       'film-5-static-crossfade',
-      svg ? ['atlas-svg-v2', svg] : m.image!.file,
+      svg ? ['atlas-svg-v3', svg] : m.image!.file,
       words,
       frames,
-      nextSvg ? ['atlas-svg-v2', nextSvg] : adjacent?.file,
+      nextSvg ? ['atlas-svg-v3', nextSvg] : adjacent?.file,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : p.highlight ? ['active-word-amber-v1'] : []),

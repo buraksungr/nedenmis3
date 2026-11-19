@@ -1,7 +1,7 @@
 {
   "name": "nedenmis-studio",
   "productName": "Nedenmiş Studio",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "description": "Yerel, onay tabanlı belgesel üretim stüdyosu",
   "author": "Nedenmiş Studio",
@@ -19,7 +19,8 @@
     "test:render": "tsx tests/render-smoke.ts",
     "format": "prettier --write server shared ui/src desktop composition scripts tests",
     "test:ui": "node scripts/browser-check.mjs",
-    "test:thirst": "tsx tests/thirst-control.ts"
+    "test:thirst": "tsx tests/narrated-atlas-control.ts",
+    "test:flight": "tsx tests/narrated-atlas-control.ts --flight"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "1.1.0",

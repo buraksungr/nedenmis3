@@ -6,7 +6,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.1.1-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.2.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
 2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Kesin sözcük zamanları için isteğe bağlı:** **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
 4. **Anahtarsız SVG kullanacaksan 6. adıma geç.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
@@ -14,7 +14,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Videoyu üret** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
 
-### Kod Tabanlı SVG Animasyon ve tek tıkla sesli üretim · 1.1.1
+### Bilim atlası ve tek tıkla sesli üretim · 1.2.0
 
 **Anahtarsız başlamak için:** Yeni Video → **Kendi senaryomu kullanacağım**. Senaryo ekranında **Storyboard biçimi → Kod Tabanlı SVG Animasyon** seç ve onayla. Varsayılan **Yerel şablonlar** internet kullanmaz. Var olan bir storyboard’da **SVG planı oluştur** tüm sahneleri planlar; yalnız tek bir sahneyi değiştirmek için karttaki **Sahne türü → SVG Animasyon** seçilir. **Fotoğraf** seçeneğine döndüğünde değişmemiş yerel fotoğraf yeniden kullanılır.
 
@@ -22,7 +22,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 **Anahtarsız dışa aktarım:** **Yalnızca onayla** ile önce kendi ses dosyanı yükleyebilirsin. Ya da bir SVG sahnesinin ayrıntılarında **Eksik anlatımı otomatik seslendir** seçimini kaldır: kayıt yoksa o sahnede seçilen süre, tek katman ekran metni ve ambiyans kullanılır. Ses verisi olmayan bu cümlelerin JSON kaydı `timing: "scene-duration"` taşır. Whisper kurulu değilse sesli sahnelerde mevcut, uyarılı **tahmini cümle** yolu korunur; tahminlere sözcük vurgusu uygulanmaz.
 
-**Şablon planı:** `title` 2–4 tam sözcüktür; ekranda bir cümlenin başı kesilerek başlık yapılmaz. `icon` yalnız `cell | water | brain | molecule | blood | leaf | earth | flame` olabilir. `labels` şemanın içindeki kısa etiketlerdir; ikinci bir altyazı değildir. Alt alan zamanlanmış anlatım altyazısına ayrılmıştır. Etkin sözcük `#FACC15`, diğerleri beyazdır. Örnek `svgPlan`:
+**Şablon planı:** `title` 2–4 tam sözcüktür; ekranda bir cümlenin başı kesilerek başlık yapılmaz. `icon` yalnız `cell | water | brain | molecule | blood | leaf | earth | flame | airplane | sun | snowflake | ant | eye | heart | atom | soundwave | shield | clock | globe | lightning` olabilir. `labels` şemanın içindeki kısa etiketlerdir; ikinci bir altyazı değildir. Alt alan zamanlanmış anlatım altyazısına ayrılmıştır. Etkin sözcük `#FACC15`, diğerleri beyazdır. Örnek `svgPlan`:
 
 ```json
 {"template":"FocusCalloutScene","title":"Beynin Susama Sinyali","icon":"brain","labels":["Sıvı dengesi","Susama merkezi"],"fromValue":0,"toValue":0,"weather":"none","accentColor":"#9ADBC1"}
@@ -31,14 +31,21 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 | Şablon | Şemanın içinde |
 |---|---|
 | `CrossSectionScene` | Üst/alt bölgenin iki etiketi. Hücre ve kan için doku kesiti; toprak için kökler ve seçilmiş hava durumu. |
-| `ThermometerGaugeScene` | İki sıcaklık (°C); `labels` boş liste. |
+| `ThermometerGaugeScene` | İki sıcaklık (°C); ölçülen ortam ve aralık için iki etiket. |
 | `FocusCalloutScene` | Seçilen bilim ikonu, odak halkası, iki açıklama oku ve etiketi. |
 | `ComparisonScene` | İki etiket; ölçüm varsa ortak sıfırlı çubuklar, nitel kıyasta iki değer de `null` (uydurma ölçek yok). |
 | `ProcessFlowScene` | `labels` içindeki üç konuya özel adım ve bağlantı okları. |
+| `TitleHookScene` | Parçacıklarla hareket eden açılış, büyük başlık ve bir konu etiketi. |
+| `CycleLoopScene` | Üç veya dört adlı evre; çevrimi izleyen işaretçi. |
+| `RatioGaugeScene` | Anlatımdaki yüzde veya kat sayısı (örn. `%70` veya `50×`), bir konu etiketi. |
+| `LayerStackScene` | Üstten alta üç veya dört adlı kesit tabakası. |
+| `WavePulseScene` | Kaynak ve alıcı arasında yayılan hareketli sinyal. |
+| `SplitCauseEffectScene` | Nedeni ve etkisini gösteren iki etiketli panel. |
+| `TimelineScaleScene` | Üç etiketli nokta, ortak zaman/mesafe/yükseklik birimi veya ölçümsüz evre sırası. |
 
-Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelden React kodu veya SVG işaretlemesi alınmaz.
+Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Beş veya daha fazla sahnede en az beş farklı şablon kullanılır. Eksik, yinelenen veya yer tutucu etiketler yalnız ilgili alanda, sahnenin anlatımından tamamlanır. Birimi ve miktarı anlatımda olmayan bir yüzde/kat göstergesi otomatik seçilmez. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelden React kodu veya SVG işaretlemesi alınmaz.
 
-**1.1.0’daki videonu güncellemek için:** **Videoyu üret** ile yeni klipleri oluştur. Eski onaylı plan diskte kendiliğinden değiştirilmez; eski `subtitle` videoya basılmaz. `A | B` biçimindeki geçerli eski etiketler şemada kalır. Eski plandaki tekrarlı şablonları da değiştirmek istersen **Storyboard → SVG planı oluştur**, incele ve yeniden onayla. Anlatım ve ses ayarları aynıysa mevcut ses ve hizalama korunur. Önceden dışa aktardığın MP4 değişmez.
+**1.1.x videonu güncellemek için:** **Videoyu üret** ile yeni klipleri oluştur. Eski onaylı plan diskte kendiliğinden değiştirilmez; eski `subtitle` videoya basılmaz. `A | B` biçimindeki geçerli eski etiketler şemada kalır. Eski plandaki tekrarlı şablonları da değiştirmek istersen **Storyboard → SVG planı oluştur**, incele ve yeniden onayla. Anlatım ve ses ayarları aynıysa mevcut ses ve hizalama korunur. Önceden dışa aktardığın MP4 değişmez.
 
 **Ayarlar → SVG planlayıcı** sadece bu JSON planının kaynağını değiştirir:
 - **Yerel şablonlar:** API ve model olmadan, onaylı anlatımdan düzenlenebilir plan. Sayısal değerleri onaydan önce kontrol et.
@@ -116,7 +123,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 | `shared/` | Proje/sahne sözleşmeleri, alan doğrulama ve altyazı gruplama |
 | `server/store.ts`, `invalidate.ts` | Onaylar, SQLite, sürümler, artımlı bağımlılıklar |
 | `server/gemini.ts`, `planner.ts` | Resmî Google Gen AI SDK (metin), REST (katalog/TTS), model keşfi, izinler, senaryo ve storyboard |
-| `shared/svg.ts`, `server/svg-planner.ts`, `composition/ScientificPlate.tsx` | Katı plan sözleşmesi, seçilen planlayıcı ve beş sabit kodlu diyagram |
+| `shared/svg.ts`, `server/svg-planner.ts`, `composition/ScientificPlate.tsx` | Katı plan sözleşmesi, seçilen planlayıcı ve on iki yerel diyagram |
 | `server/pollinations.ts` | Anahtar durumuna göre tek GET, kodlanmış sahne istemi, sınırlı ve doğrulanan görsel indirme |
 | `server/production.ts`, `media.ts`, `render-browser.ts` | Üretim denetleyicisi, render tarayıcısı seçimi, medya doğrulama, ses ve export |
 | `python/align.py` | CPU transkripsiyonu + onaylı metne gerçek zorlanmış hizalama |
@@ -128,7 +135,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 
 `npm test` bozuk dosyaları, onay sırasını, metin bütünlüğünü, eski revizyonları, sürüm geri almayı, kısmi başarıyı, kesintiden dönüşü, kota hatasını ve anahtar/izin yalıtımını kapsar. Sağlayıcı sözleşme testlerindeki taşıma katmanı test çiftidir; normal uygulamada sahte sağlayıcı yoktur.
 
-`npm run build && npm run test:render` (Edge/Chrome gerekir) iki farklı gerçek ses dosyası, harici referans sözcük zamanları ve iki kapakla **gerçek bir 1080 × 1920 H.264/AAC kontrol MP4’ü** üretir. Ayrıca beş SVG şablonunu ve bir manuel fotoğrafı sıfır sağlayıcı isteğiyle `svg-atlas-control.mp4` olarak render eder. `svg-atlas-report.json`, şemalardaki hareketi ve birleşim karelerini ölçer. Son dosya ve FFprobe raporu `out/render-control/` altındadır. `static-fade-report.json` her iki resmin özgün piksel değerleriyle eşleşmesini, hareket olmadığını ve görüntü geçişini denetler. İkinci render’da değişmeyen klibin yeniden kullanılmasını da kontrol eder. Ayrı `fallback-control.mp4` ise geçersiz zaman ve bulunamayan Whisper örnekleriyle üretilir; SRT/JSON ve `fallback-diagnostics.ndjson` aynı dizindedir. Bu test sesleri Gemini değildir ve bu kontroller başarılı Whisper hizalamasının kanıtı değildir. Uygulamanın normal üretim yolu referans test verisini kullanmaz.
+`npm run build && npm run test:render` (Edge/Chrome gerekir) iki farklı gerçek ses dosyası, harici referans sözcük zamanları ve iki kapakla **gerçek bir 1080 × 1920 H.264/AAC kontrol MP4’ü** üretir. Ayrıca uçuş senaryosundan otomatik seçilen on iki SVG şablonunu ve bir manuel fotoğrafı sıfır sağlayıcı isteğiyle `svg-atlas-control.mp4` olarak render eder. `svg-atlas-report.json`, şemalardaki hareketi ve birleşim karelerini ölçer. Son dosya ve FFprobe raporu `out/render-control/` altındadır. `static-fade-report.json` her iki resmin özgün piksel değerleriyle eşleşmesini, hareket olmadığını ve görüntü geçişini denetler. İkinci render’da değişmeyen klibin yeniden kullanılmasını da kontrol eder. Ayrı `fallback-control.mp4` ise geçersiz zaman ve bulunamayan Whisper örnekleriyle üretilir; SRT/JSON ve `fallback-diagnostics.ndjson` aynı dizindedir. Bu test sesleri Gemini değildir ve bu kontroller başarılı Whisper hizalamasının kanıtı değildir. Uygulamanın normal üretim yolu referans test verisini kullanmaz.
 
 **“Karıncalar kışın neden ortadan kaybolur?” uçtan uca kabulü henüz tamamlanmış sayılmaz.** Bu geliştirme ortamına gerçek bir Gemini anahtarı sağlanmamıştır. Canlı senaryo, Pollinations görselleri, Gemini TTS kalitesi, gerçek sesle Whisper hizalaması ve 30 sn hedefli bitmiş belgesel ayrıca doğrulanmalıdır. Kullanıcı onaylarını atlayan bir kabul betiği veya sahte tamamlanma durumu yoktur. [Kabul kontrol listesi](docs/ACCEPTANCE.md).
 
@@ -137,3 +144,5 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 [Modelleri listeleme](https://ai.google.dev/api/models) · [Google Gen AI SDK 3.6.0 ve kararlı API seçimi](https://github.com/googleapis/js-genai/tree/v3.6.0#api-selection) · [Google’ın v1 generateContent REST tanımı](https://github.com/googleapis/googleapis/blob/6f8ddc394a90ea2c6a355afd2e9d21f56622df14/google/ai/generativelanguage/v1/generative_service.proto#L36-L52) · [Gemini TTS: Interactions API](https://ai.google.dev/api/interactions) · [Yapılandırılmış JSON](https://ai.google.dev/gemini-api/docs/structured-output) · [Pollinations görsel API sözleşmesi](https://github.com/pollinations/pollinations/blob/main/APIDOCS.md) · [TTS ve WAV/PCM biçimleri](https://ai.google.dev/gemini-api/docs/speech-generation) · [Fiyatlar ve ücretsiz erişim](https://ai.google.dev/gemini-api/docs/pricing) · [stable-ts hizalama](https://github.com/jianfch/stable-ts) · [Remotion lisansı](https://www.remotion.dev/docs/license). Model adları katalogdan seçilir; fiyat ve kota uygulama içine sabitlenmez. Üçüncü taraf bildirimleri `resources/NOTICE.txt` içindedir.
 
 Ek çevrimdışı denetim: `npm run test:ui` derlenmiş arayüzü, izole SQLite deposunu ve gerçek Chromium’u kullanır. Proje oluşturma, otomatik kayıt/yeniden açma, iki onay, çevrimdışı Pollinations hatasından manuel yüklemeye geçiş, anahtarlı üretimden dönen yerel resim ve anahtar yönetimi, yerel denetimler, mobil gezinme ve mevcut kontrol MP4’ünün oynatılmasını sınar. Önce `npm run build` ve `npm run test:render` çalıştırın. `npm run test:render -- --whisper --setup-python` **ayrı ve açıkça indirme gerektiren** akustik testtir: referans altyazıları üretime vermeden gerçek Whisper/stable-ts çalıştırır ve 800 ms sessizlik eklenmiş aynı kayıttaki sözcük zamanlarının akustik kaymayı izlediğini denetler. Yalnız bu test için SHA-256 doğrulamalı, sabitlenmiş Türkçe Piper/DFKI konuşma örneği indirilir (kaynak ve atıf `tests/fixtures/README.md`). Sonuçlar ayrı `out/acoustic-control/` dizinindedir.
+
+`npm run test:flight`, Windows CPU kabulünde aynı 12 sahneyi **tek üretim işiyle** Türkçe ses, gerçek Whisper zamanları, SRT/JSON ve MP4 olarak doğrular. Girdi senaryosu, test sesinin kaynağı ve yeniden çalıştırma adımları: [test kayıtları](tests/fixtures/README.md).

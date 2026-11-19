@@ -46,7 +46,7 @@ import {
   useStudio,
 } from './lib';
 import { defaultSvg, displayPlan } from '../../shared/svg-story';
-import { svgPlanSchema, templateNames, plannerLabels } from '../../shared/svg';
+import { svgPlanSchema, templates, icons, templateNames, plannerLabels } from '../../shared/svg';
 import { sceneCaptions, unvoicedSvg, captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
 // Photo-only projects do not need to load the diagram renderer.
@@ -328,13 +328,10 @@ export function BoardEditor({ p }: { p: Project }) {
     p,
     'board',
     { scenes: editableBoard(p.scenes, p.topic), styleGuide: p.styleGuide },
-    (v) => ({ ...v, scenes: editableBoard(v.scenes, p.topic) }),
+    (v) => v,
   );
   const invalidPlan = d.v.scenes.some(
-    (s) =>
-      s.visualMode === 'svg' &&
-      (!s.svgPlan ||
-        !svgPlanSchema.safeParse(displayPlan(s.svgPlan, s.narration, p.topic)).success),
+    (s) => s.visualMode === 'svg' && (!s.svgPlan || !svgPlanSchema.safeParse(s.svgPlan).success),
   );
   const [open, setOpen] = useState<string | null>(null),
     [confirmSvg, setConfirmSvg] = useState(false);
@@ -427,9 +424,10 @@ export function BoardEditor({ p }: { p: Project }) {
               <h2>Kod Tabanlı SVG Animasyon</h2>
             </div>
             <p>
-              Beş bilim şablonu yerel olarak çizilir. Videoyu üretirken eksik seslendirme ve
-              hizalama otomatik hazırlanır. Anahtarsız çalışmak için kendi sesini yükleyebilir veya
-              sahnede otomatik sesi kapatabilirsin.
+              {templates.length} bilim şablonu ve {icons.length} ikon arasından anlatıma göre bir
+              plan hazırlanır. Her sahneyi ayrıca düzenleyebilirsin. Videoyu üretirken eksik
+              seslendirme ve hizalama otomatik hazırlanır. Anahtarsız çalışmak için kendi sesini
+              yükleyebilir veya sahnede otomatik sesi kapatabilirsin.
             </p>
             <div className="actions">
               <Button
@@ -588,7 +586,11 @@ export function BoardEditor({ p }: { p: Project }) {
                       <SvgEditor
                         narration={s.narration}
                         topic={p.topic}
-                        plan={displayPlan(s.svgPlan, s.narration, p.topic)}
+                        plan={
+                          'icon' in s.svgPlan
+                            ? s.svgPlan
+                            : displayPlan(s.svgPlan, s.narration, p.topic)
+                        }
                         seconds={s.seconds}
                         onChange={(svgPlan) => edit(s.id, { svgPlan })}
                       />

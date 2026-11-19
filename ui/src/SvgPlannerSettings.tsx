@@ -80,8 +80,8 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
         <Badge tone="green">{plannerLabels[saved.provider]}</Badge>
       </div>
       <p className="muted">
-        Beş çizim şablonu bilgisayarında çalışır. Planlayıcı yalnızca alanları doldurur; kod
-        üretemez. İnternetsiz çalışmak için yerel şablonları seç.
+        On iki çizim şablonu ve yirmi bilim ikonu bilgisayarında çalışır. Planlayıcı yalnızca
+        alanları doldurur; kod üretemez. İnternetsiz çalışmak için yerel şablonları seç.
       </p>
       <div className="form-stack spaced">
         <label>

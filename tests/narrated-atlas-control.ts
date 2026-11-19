@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import lines from './fixtures/thirst.json';
+import thirst from './fixtures/thirst.json';
+import flight from './fixtures/flight.json';
 import { validWords } from '../shared/captions';
-import { svgPlanSchema } from '../shared/svg';
+import { svgPlanSchema, templates } from '../shared/svg';
 import { SvgPlanner } from '../server/svg-planner';
 import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
@@ -14,9 +15,16 @@ import { exec, python, probe, verifyVideo } from '../server/media';
 import { testImages } from './offline';
 
 async function main() {
+  const isFlight = process.argv.includes('--flight');
+  const lines = isFlight ? flight : thirst,
+    story = isFlight ? 'flight' : 'thirst',
+    filename = isFlight ? 'ucuslar-ve-irtifa' : 'tatli-ve-susama',
+    topic = isFlight
+      ? 'Uçaklar neden yüksekten uçar?'
+      : 'Tatlı yediğimizde neden hemen su içmek isteriz?';
   const root = path.resolve('out/acoustic-control'),
-    out = path.resolve('out/thirst-control'),
-    audio = path.resolve('out/thirst-speech'),
+    out = path.resolve(`out/${story}-control`),
+    audio = path.resolve(`out/${story}-speech`),
     strict = !process.argv.includes('--allow-estimate');
   const paths = {
       root,
@@ -56,9 +64,7 @@ async function main() {
         throw Error('SVG may not request images');
       }),
       engine = new Production(store, g, paths, images);
-    const p = store.create(
-      makeProject('Tatlı yediğimizde neden hemen su içmek isteriz?', lines.join(' ')),
-    );
+    const p = store.create(makeProject(topic, lines.join(' ')));
     p.scriptApproval = scriptSig(p);
     const planner = new SvgPlanner(
       store,
@@ -77,15 +83,16 @@ async function main() {
     approveBoard(p);
     store.save(p);
     const plans = plan.scenes.map((s) => svgPlanSchema.parse(s.svgPlan));
-    assert.ok(new Set(plans.map((s) => s.template)).size >= 3);
-    assert.ok(
-      plans.every(
-        (s, i) =>
-          s.icon !== 'leaf' &&
-          s.template !== 'ThermometerGaugeScene' &&
-          (i === 0 || s.template !== plans[i - 1].template),
-      ),
-    );
+    const distinct = new Set(plans.map((s) => s.template));
+    assert.ok(distinct.size >= 5);
+    assert.ok(plans.every((s, i) => i === 0 || s.template !== plans[i - 1].template));
+    if (isFlight)
+      assert.deepEqual(
+        distinct,
+        new Set(templates),
+        'The unmodified automatic flight plan must cover the whole atlas',
+      );
+    else assert.ok(plans.every((s) => s.icon !== 'leaf' && s.template !== 'ThermometerGaugeScene'));
     // No key cannot quietly turn an intended documentary into an unvoiced MP4.
     await assert.rejects(engine.render(p, 'all'), /Seslendirme/);
     assert.equal(store.get(p.id).final, undefined);
@@ -158,15 +165,17 @@ async function main() {
       p.scenes.map((s) => p.assets[s.id]),
       before,
     );
-    fs.copyFileSync(final, path.join(out, 'tatli-ve-susama.mp4'));
-    fs.copyFileSync(engine.file(p, p.subtitleFiles.srt), path.join(out, 'tatli-ve-susama.srt'));
-    fs.copyFileSync(engine.file(p, p.subtitleFiles.json), path.join(out, 'tatli-ve-susama.json'));
+    fs.copyFileSync(final, path.join(out, filename + '.mp4'));
+    fs.copyFileSync(engine.file(p, p.subtitleFiles.srt), path.join(out, filename + '.srt'));
+    fs.copyFileSync(engine.file(p, p.subtitleFiles.json), path.join(out, filename + '.json'));
     const source = JSON.parse(fs.readFileSync(path.join(audio, 'source.json'), 'utf8'));
     fs.writeFileSync(
       path.join(out, 'report.json'),
       JSON.stringify(
         {
           source,
+          topic,
+          templates: [...distinct],
           provider: 'Offline Gemini TTS response fixture, no external generation or paid requests',
           ttsRequests: calls.length,
           imageCalls,
@@ -180,10 +189,10 @@ async function main() {
     );
     if (strict && process.env.GITHUB_ACTIONS)
       console.log(
-        `::notice title=Verified narrated SVG film::${scenes.length} scenes; ${frames} frames at 30 FPS; ${subtitles.words.length} Whisper word times; ${calls.length} fixture TTS calls; ${imageCalls} image calls; cached second export.`,
+        `::notice title=Verified ${story} film::${scenes.length} scenes; ${distinct.size} different automatically selected templates; ${frames} frames at 30 FPS; ${subtitles.words.length} Whisper word times; ${calls.length} fixture TTS calls; ${imageCalls} image calls; cached second export.`,
       );
     console.log(
-      `Validated ${scenes.length} narrated thirst scenes, ${frames} frames at 30 FPS (${(frames / 30).toFixed(2)}s). TTS fixture calls: ${calls.length}, image calls: ${imageCalls}. Alignment: ${scenes.map((s) => s.method).join(', ')}. MP4: ${path.join(out, 'tatli-ve-susama.mp4')}`,
+      `Validated ${scenes.length} narrated ${story} scenes, ${frames} frames at 30 FPS (${(frames / 30).toFixed(2)}s). TTS fixture calls: ${calls.length}, image calls: ${imageCalls}. Alignment: ${scenes.map((s) => s.method).join(', ')}. MP4: ${path.join(out, filename + '.mp4')}`,
     );
   } finally {
     store.db.close();
@@ -193,7 +202,7 @@ main().catch((e) => {
   console.error(e);
   if (process.env.GITHUB_ACTIONS)
     console.error(
-      '::error title=Thirst film::' +
+      '::error title=Narrated atlas film::' +
         String(e.message)
           .replace(/[\n\r]+/g, ' ')
           .slice(0, 1500),

@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { ScientificPlate } from '../../composition/ScientificPlate';
-import { defaultSvg } from '../../shared/svg-story';
+import { defaultSvg, diagramLabels } from '../../shared/svg-story';
 import {
+  catalogue,
+  ratioUnits,
+  scaleUnits,
   icons,
   iconNames,
   titleSchema,
   labelSchema,
+  svgPlanSchema,
   templates,
   templateNames,
   type SvgPlan,
@@ -78,6 +82,7 @@ export function SvgEditor({
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
   }, [playing, frames]);
+  const checked = svgPlanSchema.safeParse(plan);
   const edit = (patch: Partial<SvgPlan>) => onChange({ ...plan, ...patch });
   return (
     <div className="svg-editor">
@@ -116,11 +121,12 @@ export function SvgEditor({
             onChange={(e) => {
               const template = e.target.value as SvgPlan['template'];
               const seed = defaultSvg(narration, 0, topic, template);
-              edit({
-                template,
-                labels: seed.labels,
-                fromValue: seed.fromValue,
-                toValue: seed.toValue,
+              onChange({
+                ...seed,
+                title: plan.title,
+                icon: plan.icon,
+                weather: plan.weather,
+                accentColor: plan.accentColor,
               });
             }}
           >
@@ -163,12 +169,41 @@ export function SvgEditor({
           />
           <small className="help">Anlatım cümlesi yerine 2–4 sözcük kullan.</small>
         </label>
+        {catalogue[plan.template].slots[0] < catalogue[plan.template].slots[1] && (
+          <label>
+            Aşama sayısı
+            <select
+              value={plan.labels.length}
+              onChange={(e) => {
+                const n = Number(e.target.value),
+                  labels = plan.labels.slice(0, n);
+                const suggestions = diagramLabels(plan.template, narration, topic, n);
+                for (const l of suggestions)
+                  if (
+                    labels.length < n &&
+                    !labels.some((v) => v.toLocaleLowerCase('tr') === l.toLocaleLowerCase('tr'))
+                  )
+                    labels.push(l);
+                edit({ labels });
+              }}
+            >
+              <option value={3}>3 aşama</option>
+              <option value={4}>4 aşama</option>
+            </select>
+          </label>
+        )}
         {plan.labels.map((label, i) => (
           <label key={i}>
-            {plan.template === 'ProcessFlowScene' ? 'Adım' : 'Şema etiketi'} {i + 1}
+            {plan.template === 'ProcessFlowScene' || plan.template === 'CycleLoopScene'
+              ? 'Adım'
+              : plan.template === 'LayerStackScene'
+                ? 'Katman'
+                : 'Şema etiketi'}{' '}
+            {i + 1}
             <input
               value={label}
               maxLength={36}
+              required
               aria-invalid={!labelSchema.safeParse(label).success}
               onChange={(e) =>
                 edit({ labels: plan.labels.map((v, j) => (i === j ? e.target.value : v)) })
@@ -194,7 +229,31 @@ export function SvgEditor({
             </select>
           </label>
         )}
-        {(plan.template === 'ComparisonScene' || plan.template === 'ThermometerGaugeScene') &&
+        {(plan.template === 'RatioGaugeScene' || plan.template === 'TimelineScaleScene') && (
+          <label>
+            Gösterge birimi
+            <select
+              value={plan.unit}
+              onChange={(e) => edit({ unit: e.target.value as SvgPlan['unit'] })}
+            >
+              {(plan.template === 'RatioGaugeScene' ? ratioUnits : scaleUnits).map((u) => (
+                <option key={u} value={u}>
+                  {u === 'sıra' ? 'Evre sırası (ölçüm yok)' : u}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {plan.template === 'RatioGaugeScene' && (
+          <Numeric
+            label={plan.unit === '%' ? 'Yüzde' : 'Kat sayısı'}
+            value={plan.toValue ?? 0}
+            change={(toValue) => edit({ toValue })}
+          />
+        )}
+        {(plan.template === 'ComparisonScene' ||
+          plan.template === 'ThermometerGaugeScene' ||
+          (plan.template === 'TimelineScaleScene' && plan.unit !== 'sıra')) &&
           plan.fromValue !== null &&
           plan.toValue !== null && (
             <>
@@ -203,6 +262,13 @@ export function SvgEditor({
                 value={plan.fromValue}
                 change={(fromValue) => edit({ fromValue })}
               />
+              {plan.template === 'TimelineScaleScene' && (
+                <Numeric
+                  label="Orta değer"
+                  value={plan.midValue ?? 0}
+                  change={(midValue) => edit({ midValue })}
+                />
+              )}
               <Numeric
                 label="Bitiş değeri"
                 value={plan.toValue}
@@ -210,20 +276,27 @@ export function SvgEditor({
               />
             </>
           )}
-        <label>
-          Hava durumu
-          <select
-            value={plan.weather}
-            onChange={(e) => edit({ weather: e.target.value as SvgPlan['weather'] })}
-          >
-            <option value="none">Yok</option>
-            <option value="snow">Kar</option>
-            <option value="rain">Yağmur</option>
-          </select>
-        </label>
+        {plan.template === 'CrossSectionScene' && (
+          <label>
+            Hava durumu
+            <select
+              value={plan.weather}
+              onChange={(e) => edit({ weather: e.target.value as SvgPlan['weather'] })}
+            >
+              <option value="none">Yok</option>
+              <option value="snow">Kar</option>
+              <option value="rain">Yağmur</option>
+            </select>
+          </label>
+        )}
+        {!checked.success && (
+          <p role="status" className="help">
+            Onay için başlık, birbirinden farklı etiketler ve gösterge aralığı geçerli olmalı.
+          </p>
+        )}
         <p className="help">
-          Sayılar termometre ve karşılaştırmada, hava durumu kesitte kullanılır. Onaydan önce
-          bilimsel değerleri kontrol et.
+          {catalogue[plan.template].use}. Onaydan önce etiketleri ve varsa ölçülerin birimlerini
+          kontrol et.
         </p>
       </div>
     </div>

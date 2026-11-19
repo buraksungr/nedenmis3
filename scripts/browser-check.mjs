@@ -304,6 +304,27 @@ try {
   await mode.selectOption('photo');
   await card.getByText('Sabit kadraj · Yumuşak geçiş').waitFor();
   await mode.selectOption('svg');
+  const templateSelect = card.getByLabel('SVG şablonu');
+  await templateSelect.waitFor(); // SVG editor is lazy-loaded.
+  assert.equal(await templateSelect.locator('option').count(), 12);
+  assert.equal(await card.getByLabel('Bilim ikonu').locator('option').count(), 20);
+  await templateSelect.selectOption('CycleLoopScene');
+  await card.getByLabel('Aşama sayısı').selectOption('4');
+  await card.getByLabel('Adım 4').fill('Yuvaya dönüş');
+  await templateSelect.selectOption('LayerStackScene');
+  await card.getByLabel('Katman 2').fill('');
+  assert.ok(await page.getByRole('button', { name: 'Onayla ve üret' }).isDisabled());
+  await templateSelect.selectOption('RatioGaugeScene');
+  await card.getByLabel('Gösterge birimi').selectOption('×');
+  await card.getByLabel('Kat sayısı').fill('50');
+  await card.getByLabel('Şema etiketi 1').click();
+  assert.match(await card.locator('.svg-paper').textContent(), /50×/);
+  await templateSelect.selectOption('TimelineScaleScene');
+  await card.getByLabel('Gösterge birimi').selectOption('km');
+  await card.getByLabel('Bitiş değeri').fill('10');
+  await card.getByLabel('Orta değer').fill('4');
+  await card.getByLabel('Şema etiketi 1').click();
+  assert.match(await card.locator('.svg-paper').textContent(), /4 km/);
   await card.getByLabel('SVG şablonu').selectOption('FocusCalloutScene');
   await card.getByLabel('Bilim ikonu').selectOption('cell');
   await card.locator('[data-science-icon="cell"]').first().waitFor();

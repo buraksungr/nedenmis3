@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { blankScene, type Scene } from '../shared/schema';
-import { type SvgPlan } from '../shared/svg';
+import { type SvgPlan, templates } from '../shared/svg';
+import { storyboardPlans } from '../shared/svg-story';
+import flight from './fixtures/flight.json';
 import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
 import { framesForVoice, Production } from '../server/production';
 import { Gemini } from '../server/gemini';
@@ -27,61 +29,11 @@ export async function svgRenderControl(out: string) {
   };
   const images = testImages(store, offline),
     prod = new Production(store, new Gemini(store, memoryVault(), offline), paths, images);
-  const plans: SvgPlan[] = [
-    {
-      template: 'CrossSectionScene',
-      title: 'Yüzeyin altında',
-      icon: 'earth',
-      labels: ['Toprak yüzeyi', 'Kök bölgesi'],
-      weather: 'rain',
-      accentColor: '#9ADBC1',
-      fromValue: 0,
-      toValue: 0,
-    },
-    {
-      template: 'ThermometerGaugeScene',
-      title: 'Bir sıcaklık ölçümü',
-      icon: 'flame',
-      labels: [],
-      weather: 'none',
-      accentColor: '#F1BB79',
-      fromValue: -5,
-      toValue: 4,
-    },
-    {
-      template: 'FocusCalloutScene',
-      title: 'Yaprağın yapısı',
-      icon: 'leaf',
-      labels: ['Yaprak ayası', 'Ana damar'],
-      weather: 'none',
-      accentColor: '#B6D88D',
-      fromValue: 0,
-      toValue: 0,
-    },
-    {
-      template: 'ComparisonScene',
-      title: 'İki örneği karşılaştır',
-      icon: 'water',
-      labels: ['Örnek A', 'Örnek B'],
-      weather: 'none',
-      accentColor: '#8FCDE5',
-      fromValue: 24,
-      toValue: 58,
-    },
-    {
-      template: 'ProcessFlowScene',
-      title: 'Su döngüsü',
-      icon: 'water',
-      labels: ['Buharlaşma', 'Yoğuşma', 'Yağış'],
-      weather: 'none',
-      accentColor: '#C5B8EB',
-      fromValue: 0,
-      toValue: 0,
-    },
-  ];
-  const scenes: Scene[] = plans.map((plan) => ({
+  const plans: SvgPlan[] = storyboardPlans(flight, 'Uçaklar neden yüksekten uçar?');
+  assert.deepEqual(new Set(plans.map((s) => s.template)), new Set(templates));
+  const scenes: Scene[] = plans.map((plan, i) => ({
     ...blankScene(randomUUID()),
-    narration: plan.title + '.',
+    narration: flight[i],
     description: plan.title,
     seconds: 1.6,
     visualMode: 'svg',
@@ -127,7 +79,10 @@ export async function svgRenderControl(out: string) {
     const final = prod.file(p, p.final.file);
     await verifyVideo(final, total, true);
     const subs = JSON.parse(fs.readFileSync(prod.file(p, p.subtitleFiles.json), 'utf8'));
-    assert.equal(subs.sentences.filter((s: any) => s.timing === 'scene-duration').length, 5);
+    assert.equal(
+      subs.sentences.filter((s: any) => s.timing === 'scene-duration').length,
+      plans.length,
+    );
     const file = path.join(out, 'svg-atlas-control.mp4');
     fs.copyFileSync(final, file);
     const rawFile = path.join(root, 'pixels.rgb'),

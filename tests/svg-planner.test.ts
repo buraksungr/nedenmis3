@@ -1,4 +1,5 @@
 import thirst from './fixtures/thirst.json';
+import flight from './fixtures/flight.json';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { z } from 'zod';
 import { defaultSvg, diagramLabels, displayPlan, storyboardPlans } from '../shared/svg-story';
-import { icons, svgPlanSchema, templates, type LegacySvgPlan } from '../shared/svg';
+import { catalogue, icons, svgPlanSchema, templates, type LegacySvgPlan } from '../shared/svg';
 import { blankScene, normalize } from '../shared/schema';
 import { Store, makeProject, scriptSig, approveBoard, approved } from '../server/store';
 import { SvgPlanner } from '../server/svg-planner';
@@ -31,16 +32,32 @@ function setup(t: TestContext, transport: typeof fetch) {
   return { store, planner, p, keys };
 }
 const valid = defaultSvg('Toprakta kök gelişimi.');
-test('diagram contract accepts only the typed artwork fields for five templates', () => {
-  assert.equal(z.toJSONSchema(svgPlanSchema).additionalProperties, false);
-  for (const template of templates)
-    assert.ok(
-      svgPlanSchema.safeParse({
-        ...valid,
-        template,
-        labels: diagramLabels(template, 'Toprakta kök gelişimi'),
-      }).success,
+test('strict JSON Schema branches require meaningful headings and every template-specific slot', () => {
+  const json = z.toJSONSchema(svgPlanSchema);
+  assert.equal(templates.length, 12);
+  assert.equal(icons.length, 20);
+  assert.equal(json.oneOf?.length, templates.length);
+  assert.ok(json.oneOf?.every((b) => typeof b === 'object' && b.additionalProperties === false));
+  for (const t of templates) {
+    const p = defaultSvg('Toprakta kök gelişimi.', 0, '', t),
+      [min, max] = catalogue[t].slots;
+    assert.ok(svgPlanSchema.safeParse(p).success, t);
+    assert.equal(
+      svgPlanSchema.safeParse({ ...p, labels: p.labels.slice(0, min - 1) }).success,
+      false,
     );
+    assert.equal(
+      svgPlanSchema.safeParse({
+        ...p,
+        labels: Array.from({ length: max + 1 }, (_, i) => 'Toprak ' + i),
+      }).success,
+      false,
+    );
+    assert.equal(
+      svgPlanSchema.safeParse({ ...p, labels: p.labels.map((v, i) => (i ? v : '   ')) }).success,
+      false,
+    );
+  }
   for (const invalid of [
     { ...valid, other: 'markup' },
     { ...valid, toValue: '4' },
@@ -99,8 +116,8 @@ test('OpenAI-compatible planners target only their selected host and validate th
           message: {
             content: JSON.stringify({
               scenes: [
-                { ...valid, title: 'Test 1' },
-                { ...valid, title: 'Test 2' },
+                { ...valid, title: 'Karlı Toprak' },
+                { ...valid, title: 'Toprağın Sıcaklığı' },
               ],
             }),
           },
@@ -115,7 +132,7 @@ test('OpenAI-compatible planners target only their selected host and validate th
     assert.equal(r.warning, '');
     assert.deepEqual(
       r.scenes.map((s) => s.svgPlan.title),
-      ['Test 1', 'Test 2'],
+      ['Karlı Toprak', 'Toprağın Sıcaklığı'],
     );
   }
   assert.deepEqual(
@@ -253,7 +270,7 @@ test('content and sequence guide both offline and repetitive remote plans, witho
       ),
     );
     assert.ok(plans.every((p, i) => i === 0 || p.template !== plans[i - 1].template));
-    assert.ok(new Set(plans.map((p) => p.template)).size >= 3);
+    assert.ok(new Set(plans.map((p) => p.template)).size >= 5);
     for (const p of plans.filter((p) => p.template === 'ComparisonScene'))
       assert.deepEqual([p.fromValue, p.toValue], [null, null]);
   }
@@ -266,6 +283,18 @@ test('content and sequence guide both offline and repetitive remote plans, witho
     'Bir yaprak',
     'Dünya dönüyor',
     'Alev ısı yayar.',
+    'Yolcu uçağı',
+    'Güneş ışınları',
+    'Kar kristali',
+    'Karıncaların yuvası',
+    'Göz merceği',
+    'Kalp ritmi',
+    'Atom çekirdeği',
+    'Ses dalgaları',
+    'Koruyucu tabaka',
+    'Bir saat',
+    'Yerkürenin enlemleri',
+    'Şimşek çaktı.',
   ].map((t) => defaultSvg(t).icon);
   assert.deepEqual(inferred, icons);
 });
@@ -292,4 +321,161 @@ test('1.1.0 plans retain original signed data; old prose never becomes a second 
   );
   assert.deepEqual(custom.labels, ['Hipotalamus', 'Sinir hücresi']);
   assert.equal(custom.title, 'Susama Sinyali');
+});
+
+test('a fresh flight script plans the entire atlas in order without authored scene/template hints', async (t) => {
+  const { planner, p } = setup(t, async () => {
+    throw Error('No network');
+  });
+  p.topic = 'Uçaklar neden yüksekten uçar?';
+  p.script = flight.join(' ');
+  p.scriptApproval = scriptSig(p);
+  const { scenes } = await planner.plan(p);
+  assert.deepEqual(
+    scenes.map((s) => s.narration),
+    flight,
+  );
+  const plans = scenes.map((s) => svgPlanSchema.parse(s.svgPlan));
+  assert.deepEqual(new Set(plans.map((s) => s.template)), new Set(templates));
+  assert.deepEqual(plans.filter((s) => s.template === 'LayerStackScene')[0].labels, [
+    'Mezosfer',
+    'Stratosfer',
+    'Troposfer',
+  ]);
+  assert.deepEqual(plans.at(-1)?.labels, ['Kalkış', 'Tırmanış', 'Seyir', 'İniş']);
+  assert.equal(plans[0].icon, 'airplane');
+  const scale = plans.find((p) => p.template === 'TimelineScaleScene')!;
+  assert.deepEqual([scale.fromValue, scale.midValue, scale.toValue, scale.unit], [0, 5, 10, 'km']);
+  const ring = plans.find((p) => p.template === 'RatioGaugeScene')!;
+  assert.deepEqual([ring.toValue, ring.unit], [21, '%']);
+});
+test('model holes are repaired per field, not by discarding the scene or the other boards', async (t) => {
+  const drafts = [
+    {
+      template: 'TitleHookScene',
+      title: '  ',
+      icon: 'airplane',
+      labels: ['Uçuş rotası'],
+      accentColor: '#123456',
+    },
+    {
+      template: 'CycleLoopScene',
+      icon: null,
+      title: 'Uçuşun Dört Evresi',
+      labels: [null, 'Yükselme', 'Etiket 3', 'İniş'],
+    },
+    { template: 'RatioGaugeScene', title: null, labels: null, unit: '×', toValue: 999 },
+    {
+      template: 'LayerStackScene',
+      title: 'Atmosfer ve',
+      labels: ['Üst atmosfer', '  ', 'Üst atmosfer'],
+    },
+  ];
+  const { planner, p } = setup(t, async () =>
+    Response.json({
+      choices: [
+        { finish_reason: 'stop', message: { content: JSON.stringify({ scenes: drafts }) } },
+      ],
+    }),
+  );
+  planner.key('openrouter', 'isolated-only');
+  planner.configure({ provider: 'openrouter', groqFreeConfirmed: false, ollamaModel: 'local' });
+  p.topic = 'Uçuş';
+  p.script = [flight[0], flight[11], flight[6], flight[2]].join(' ');
+  p.scriptApproval = scriptSig(p);
+  const { scenes, warning } = await planner.plan(p);
+  assert.equal(warning, '');
+  const [hook, cycle, ratio, stack] = scenes.map((s) => svgPlanSchema.parse(s.svgPlan));
+  assert.equal(hook.accentColor, '#123456');
+  assert.deepEqual(hook.labels, ['Uçuş rotası']);
+  assert.equal(hook.title, 'Uçakların Seyir Yüksekliği');
+  assert.equal(cycle.title, drafts[1].title);
+  assert.equal(cycle.icon, 'airplane');
+  assert.deepEqual(cycle.labels, ['Kalkış', 'Yükselme', 'Seyir', 'İniş']);
+  assert.deepEqual([ratio.toValue, ratio.unit, ...ratio.labels], [21, '%', 'Oksijen']);
+  assert.equal(stack.title, 'Atmosferin Katmanları');
+  assert.deepEqual(stack.labels, ['Üst atmosfer', 'Stratosfer', 'Troposfer']);
+});
+test('short and homogeneous boards honor adjacency and the distinct-template budget, even with repetitive model hints', () => {
+  for (const len of [1, 2, 4, 5, 6, 12, 24])
+    for (const hints of [false, true]) {
+      const rows = Array<string>(len).fill('Bir mercek ışığı toplar.');
+      const plans = storyboardPlans(
+        rows,
+        'Mercek',
+        hints
+          ? rows.map(() => ({
+              template: 'FocusCalloutScene',
+              icon: 'leaf',
+              title: 'Yaprağın Yapısı',
+            }))
+          : [],
+      );
+      assert.ok(
+        plans.every(
+          (s, i) =>
+            svgPlanSchema.safeParse(s).success && (!i || s.template !== plans[i - 1].template),
+        ),
+      );
+      assert.ok(new Set(plans.map((s) => s.template)).size >= Math.min(5, len));
+      assert.ok(
+        plans.every(
+          (s) =>
+            !['ThermometerGaugeScene', 'RatioGaugeScene'].includes(s.template) && s.icon !== 'leaf',
+        ),
+      );
+    }
+});
+test('ratio and scale keep actual units; no fictitious measurements from hints or unrelated numerals', () => {
+  for (const [line, amt, unit] of [
+    ['Karınca ağırlığının 50 katını taşır.', 50, '×'],
+    ['Kütlesi 50x artar.', 50, '×'],
+    ['Bir karışımın %70,5 kadarı sudur.', 70.5, '%'],
+    ['Havanın yüzde yirmi biri oksijendir.', 21, '%'],
+  ] as const) {
+    const [p] = storyboardPlans([line], '');
+    assert.deepEqual([p.template, p.toValue, p.unit], ['RatioGaugeScene', amt, unit]);
+  }
+  for (const line of [
+    'Uçak 10 km yukarıdadır.',
+    '20 Fahrenheit ve 35 Fahrenheit ölçüldü.',
+    'Açı 30 dereceden 60 dereceye çıkar.',
+    '2 sensör sıcaklığı 20 derece ölçtü.',
+  ]) {
+    const [p] = storyboardPlans([line], '', [
+      { template: 'ThermometerGaugeScene', fromValue: 2, toValue: 60 },
+    ]);
+    assert.notEqual(p.template, 'ThermometerGaugeScene');
+  }
+  const [p] = storyboardPlans(['Yol 0 ile 10 km arasında uzanır.'], '');
+  assert.deepEqual([p.unit, p.midValue], ['km', 5]);
+  assert.equal(svgPlanSchema.safeParse({ ...p, midValue: 11 }).success, false);
+  const ring = defaultSvg('%70 su', 0, '', 'RatioGaugeScene');
+  assert.equal(svgPlanSchema.safeParse({ ...ring, toValue: 101 }).success, false);
+  assert.equal(svgPlanSchema.safeParse({ ...ring, unit: undefined }).success, false);
+  assert.deepEqual(
+    diagramLabels('CycleLoopScene', 'Buharlaşma, yoğuşma ve yağış sürekli bir döngü oluşturur.'),
+    ['Buharlaşma', 'Yoğuşma', 'Yağış'],
+  );
+  assert.deepEqual(
+    diagramLabels('LayerStackScene', 'Yer kabuğu, manto, dış çekirdek ve iç çekirdek farklıdır.'),
+    ['Yer kabuğu', 'Manto', 'Dış çekirdek', 'İç çekirdek'],
+  );
+});
+test('an approved 1.1.1 thermometer is projected without rewriting its signed content or measurements', () => {
+  const old = {
+    ...defaultSvg('Toprak sıcaklığı', 0, '', 'ThermometerGaugeScene'),
+    labels: [],
+    fromValue: -5,
+    toValue: 4,
+  };
+  const before = JSON.stringify(old);
+  assert.equal(svgPlanSchema.safeParse(old).success, false);
+  const p = displayPlan(old, 'Toprakta iki sıcaklık ölçüldü.');
+  assert.ok(svgPlanSchema.safeParse(p).success);
+  assert.deepEqual(
+    [p.fromValue, p.toValue, ...p.labels],
+    [-5, 4, 'Toprak sıcaklığı', 'Sıcaklık aralığı'],
+  );
+  assert.equal(JSON.stringify(old), before);
 });
