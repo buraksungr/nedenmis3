@@ -518,7 +518,10 @@ export function copyFor(template: Template, text: string, topic: string, request
       if (pair.length === 2) labels = pair;
       if (c.icon === 'cell' && /yoğun|çözünmüş/.test(s))
         labels = ['Yoğunluk farkı', 'Hücreden su çıkışı'];
-      if (/sürükleme|yakıt tasarruf/.test(s)) labels = ['Havanın seyrelmesi', 'Azalan sürükleme'];
+      if (/sürükleme|hava direnci/.test(s)) {
+        if (/seyrel|seyrek/.test(s)) labels = ['Havanın seyrelmesi', 'Azalan sürükleme'];
+        else if (/yakıt/.test(s)) labels = ['Azalan hava direnci', 'Yakıt tasarrufu'];
+      }
       break;
     }
     case 'TimelineScaleScene':
