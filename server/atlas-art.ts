@@ -105,25 +105,40 @@ export class AtlasArt {
       kw = keywordSchema.safeParse(plan.iconKeyword).data,
       custom = plan.artMode === 'custom';
     if (plan.artMode === 'local') return { reason: 'Yerel ikon seçildi.', cached: false };
-    const sources: ('llm' | 'iconify')[] = custom ? ['llm', 'iconify'] : ['iconify', 'llm'];
+    type Source = ArtRef['source'];
+    const previous = plan.artwork,
+      model = artist?.name ?? (previous?.source === 'llm' ? previous.name : undefined);
+    const sources: Source[] = custom ? ['llm', 'iconify'] : ['iconify', 'llm'];
+    const keyFor = (source: Source, by = model) =>
+      hash('atlas-art-1', source, kw, source === 'llm' ? [text, plan.template, by] : null);
+    // Attribution doubles as the lookup index; both it and the geometry survive
+    // the project's cache/** backup exclusion. No API permission is needed to read.
+    const creditFile = (key: string) => path.join(root, 'media', 'atlas', 'credits', key + '.json');
+    const cached = (key: string, source: Source): ArtResult | undefined => {
+      try {
+        const ref = artRefSchema.parse(JSON.parse(fs.readFileSync(creditFile(key), 'utf8')).ref);
+        if (ref.source === source && readArtwork(root, ref.digest))
+          return { ref, reason: 'Proje önbelleği', cached: true };
+      } catch {
+        /* Missing or damaged asset */
+      }
+    };
+    if (
+      previous &&
+      !(policy === 'iconify' && previous.source === 'llm') &&
+      !(custom && previous.source !== 'llm')
+    ) {
+      const hit = cached(keyFor(previous.source, previous.name), previous.source);
+      if (hit?.ref?.digest === previous.digest) return hit;
+    }
     let reason = 'Uygun çizim bulunamadı.';
     for (const source of sources) {
-      if ((source === 'iconify' && !kw) || (source === 'llm' && (!artist || policy !== 'hybrid')))
+      if ((source === 'iconify' && !kw) || (source === 'llm' && (!model || policy === 'iconify')))
         continue;
-      const key = hash(
-          'atlas-art-1',
-          source,
-          kw,
-          source === 'llm' ? [text, plan.template, artist!.name] : null,
-        ),
-        index = path.join(root, 'cache', 'atlas', key + '.json');
-      try {
-        const ref = artRefSchema.parse(JSON.parse(fs.readFileSync(index, 'utf8')));
-        if (readArtwork(root, ref.digest)) return { ref, reason: 'Proje önbelleği', cached: true };
-      } catch {
-        /* first lookup */
-      }
-      if (policy === 'offline') continue;
+      const key = keyFor(source),
+        hit = cached(key, source);
+      if (hit) return hit;
+      if (policy === 'offline' || (source === 'llm' && !artist)) continue;
       const run = async (): Promise<ArtResult> => {
         const get = (url: string, kind: 'json' | 'svg') =>
           this.transport(url, {
@@ -175,11 +190,7 @@ export class AtlasArt {
         }
         const ref = artRefSchema.parse({ source, name, digest: digest(svg) });
         atomic(assetPath(root, ref.digest), svg);
-        atomic(
-          path.join(root, 'media', 'atlas', 'credits', key + '.json'),
-          JSON.stringify({ keyword: kw, ref, ...credit }, null, 2),
-        );
-        atomic(index, JSON.stringify(ref));
+        atomic(creditFile(key), JSON.stringify({ keyword: kw, ref, ...credit }, null, 2));
         return { ref, reason: source === 'llm' ? 'Özel çizim' : 'Iconify', cached: false };
       };
       try {

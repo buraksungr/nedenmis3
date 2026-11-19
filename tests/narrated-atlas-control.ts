@@ -1,3 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { SaxesParser } from 'saxes';
+import { ScientificPlate } from '../composition/ScientificPlate';
 /** Single production job; intercept only the provider transport. The aligner, renderer and mixer are not mocked. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -147,6 +151,7 @@ async function main() {
         'The unmodified automatic flight plan must cover the whole atlas',
       );
     else assert.ok(plans.every((s) => s.icon !== 'leaf' && s.template !== 'ThermometerGaugeScene'));
+    const visibleText: string[][] = [];
     if (isWhale) {
       const diagnostic = JSON.stringify({
         trace: trace.map((r) => [r.url, r.status, r.ids?.slice(0, 6)]),
@@ -186,10 +191,42 @@ async function main() {
           [v.title, ...v.labels].every((l) => grounded(l, lines[i])),
           JSON.stringify(v),
         );
+        // Inspect text emitted by the actual diagram, not just fields in the plan.
+        const output: string[] = [];
+        let within = false,
+          run: string[] = [];
+        const parser = new SaxesParser();
+        parser.on('opentag', (tag) => {
+          if (tag.name === 'text') {
+            within = true;
+            run = [];
+          }
+        });
+        parser.on('text', (t) => {
+          if (within && t.trim()) run.push(t.trim());
+        });
+        parser.on('closetag', (tag) => {
+          if (tag.name === 'text') {
+            within = false;
+            output.push(run.join(' '));
+          }
+        });
+        parser
+          .write(
+            renderToStaticMarkup(
+              createElement(ScientificPlate, { plan: v, frame: 30, frames: 96 }),
+            ),
+          )
+          .close();
+        assert.ok(
+          [v.title, ...v.labels].every((line) => output.includes(line)),
+          JSON.stringify(output),
+        );
         assert.doesNotMatch(
-          [v.title, ...v.labels].join(' '),
+          output.join(' '),
           /suyun hareketi|su birikimi|yüzeyde akış|mercek altında/iu,
         );
+        visibleText.push(output);
       }
       const n = trace.length;
       for (const [i, v] of plans.entries())
@@ -199,7 +236,7 @@ async function main() {
         }
       assert.equal(trace.length, n, 'Cached art triggered a live search');
       console.log(
-        `Verified live Iconify search, SVG response and cache hashes: ${plans.flatMap((p) => p.artwork?.name ?? []).join(', ')}`,
+        `${process.env.GITHUB_ACTIONS ? '::notice title=Verified live scene artwork::' : ''}Verified live Iconify search, SVG response and cache hashes: ${plans.flatMap((p) => p.artwork?.name ?? []).join(', ')}`,
       );
     }
     // No key cannot quietly turn an intended documentary into an unvoiced MP4.
@@ -265,7 +302,7 @@ async function main() {
       });
       fs.writeFileSync(
         path.join(out, 'iconify.json'),
-        JSON.stringify({ trace, errors, pixels }, null, 2),
+        JSON.stringify({ trace, errors, pixels, visibleText }, null, 2),
       );
     }
     const subtitles = JSON.parse(fs.readFileSync(engine.file(p, p.subtitleFiles.json), 'utf8'));

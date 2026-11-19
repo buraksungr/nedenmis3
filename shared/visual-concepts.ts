@@ -78,6 +78,13 @@ export function concepts(text: string) {
     }
   return candidates.sort((a, b) => b.score - a.score);
 }
-export const needsCustom = (s: string) =>
-  /yer\s?çekim|kütle\s?çekim/u.test(lower(s)) &&
-  /bastır|çeker|baskı|kuvvet|aşağı|balina|gövde/u.test(lower(s));
+// Single-object lookups cannot express a directed physical relationship or a
+// requested cutaway. The fallback model can draw those relationships when allowed.
+export function needsCustom(text: string) {
+  const s = lower(text);
+  return (
+    /diyagram|şematik|iç yapısının kesit|kuvvet vektör/u.test(s) ||
+    (/yer\s?çekim|kütle\s?çekim|manyetik alan|kuvvet|elektrik alan/u.test(s) &&
+      /bastır|çeker|iter|baskı|aşağı|yukarı|döndür|yönünü/u.test(s))
+  );
+}

@@ -276,7 +276,7 @@ export class SvgPlanner {
       const worker = async () => {
         while (index < plans.length) {
           const i = index++;
-          if (warning && saved[i] && plans[i].artwork) continue;
+
           let plan = (await this.illustrate(p, plans[i], rows[i], !!warning)).plan;
           if (!plan.artwork && plan.artMode !== 'local') {
             // If a relation has no icon (e.g. buoyancy), the shot's concrete subject

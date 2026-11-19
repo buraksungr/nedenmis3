@@ -168,7 +168,12 @@ test('503, timeout, missing key, truncated/invalid/extra JSON and cloud Ollama a
     calls++;
     return reply();
   });
-  const manual = { ...valid, title: 'Benim şemam' };
+  const manual = {
+    ...defaultSvg(p.script, 0, '', 'CrossSectionScene'),
+    title: 'Toprak Yüzeyi',
+    labels: ['Toprak yüzeyi', 'Sıcaklık'],
+    accentColor: '#ABCD99',
+  };
   p.scenes = [
     {
       ...blankScene(randomUUID()),

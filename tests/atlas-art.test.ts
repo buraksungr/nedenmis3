@@ -6,12 +6,15 @@ import { test, type TestContext } from 'node:test';
 import { AtlasArt, candidates, readArtwork } from '../server/atlas-art';
 import { SVG_LIMIT, safeSvg } from '../server/safe-svg';
 import { Store, makeProject, scriptSig } from '../server/store';
-import { storyboardPlans, defaultSvg } from '../shared/svg-story';
+import { storyboardPlans, defaultSvg, displayPlan } from '../shared/svg-story';
 import { grounded } from '../shared/svg-copy';
 import { SvgPlanner } from '../server/svg-planner';
 import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
 import whale from './fixtures/whale.json';
+import { blankScene } from '../shared/schema';
+import { randomUUID } from 'node:crypto';
+import { svgPlanSchema } from '../shared/svg';
 const xml =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor"><path d="M2 8Q5 4 10 8L20 12Z"/></g></svg>';
 const svgResponse = (s: string) =>
@@ -145,6 +148,14 @@ test('no hit → model; specialized diagrams use model first; rejected or oversi
   );
   assert.equal(n, 1);
   assert.equal(draws, 1);
+  const restored = { ...plan, artwork: r.ref };
+  assert.deepEqual((await art.resolve(p.id, restored, whale[3], 'offline')).ref, r.ref);
+  assert.deepEqual((await art.resolve(p.id, restored, whale[3], 'hybrid')).ref, r.ref);
+  assert.equal(n, 1);
+  assert.equal(draws, 1);
+  assert.ok(
+    !(await art.resolve(p.id, { ...restored, iconKeyword: 'heart' }, whale[3], 'offline')).ref,
+  );
   const custom = { ...plan, artMode: 'custom' as const, iconKeyword: 'gravity' };
   assert.equal((await art.resolve(p.id, custom, whale[3], 'hybrid', artist)).ref?.source, 'llm');
   assert.equal(n, 1);
@@ -239,4 +250,56 @@ test('custom generation uses the selected text consent (never the TTS key or an 
   planner.configure({ ...planner.config(), artworkPolicy: 'iconify' });
   assert.ok(!(await planner.illustrate(p, plan, p.script)).plan.artwork);
   assert.equal(calls.length, 1);
+});
+
+test('reopening signed 1.2.0 copy is lossless; explicitly replanning it offline or after a planner outage replaces stock text', async (t) => {
+  const { p, store } = setup(t),
+    plan = defaultSvg(whale[3], 0, '', 'FocusCalloutScene');
+  delete plan.iconKeyword;
+  delete plan.artMode;
+  const old = {
+    ...plan,
+    title: 'Suyun Hareketi',
+    labels: ['Yüzeyde akış', 'Su birikimi'],
+    icon: 'water' as const,
+    accentColor: '#FFBB22',
+  };
+  p.script = whale[3];
+  p.scriptApproval = scriptSig(p);
+  p.scenes = [
+    {
+      ...blankScene(randomUUID()),
+      description: p.script,
+      narration: p.script,
+      visualMode: 'svg',
+      svgPlan: old,
+    },
+  ];
+  const before = JSON.stringify(p.scenes);
+  assert.deepEqual(displayPlan(old, p.script), old);
+  let calls = 0;
+  const down: typeof fetch = async () => {
+    calls++;
+    return new Response(null, { status: 503 });
+  };
+  const planner = new SvgPlanner(
+    store,
+    { groq: memoryVault(), openrouter: memoryVault() },
+    down,
+    new AtlasArt(store, down),
+  );
+  for (const provider of ['local', 'openrouter']) {
+    planner.configure({ ...planner.config(), provider, artworkPolicy: 'offline' });
+    if (provider === 'openrouter') planner.key('openrouter', 'isolated-only');
+    const result = await planner.plan(p),
+      s = result.scenes[0],
+      v = svgPlanSchema.parse(s.svgPlan);
+    assert.equal(s.id, p.scenes[0].id);
+    assert.equal(v.iconKeyword, 'lungs');
+    assert.equal(v.title, 'Akciğerlere Binen Basınç');
+    assert.ok(v.labels.every((l) => grounded(l, p.script)));
+    assert.equal(v.accentColor, old.accentColor);
+    assert.equal(JSON.stringify(p.scenes), before);
+  }
+  assert.equal(calls, 1);
 });

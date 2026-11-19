@@ -12,7 +12,7 @@ import {
   type Template,
 } from './svg';
 import { copyFor, grounded, lower, namedSequence } from './svg-copy';
-import { concepts, needsCustom } from './visual-concepts';
+import { concepts, needsCustom, words } from './visual-concepts';
 import { keywordSchema } from './artwork';
 import { measurements, type Measures } from './svg-measures';
 
@@ -221,7 +221,8 @@ export function storyboardPlans(
   const scores = rows.map((text, i) => {
     const p = preferences[i],
       r = suitability(measurements(text), i, concepts(text)[0]?.icon ?? 'globe', p);
-    if (retainSaved && p && svgPlanSchema.safeParse(p).success) r[p.template as Template] = 90; // Previously reviewed by the user.
+    const saved = retainSaved && p ? svgPlanSchema.safeParse(p).data : undefined;
+    if (saved && Number.isFinite(r[saved.template])) r[saved.template] = 90; // An eligible user-reviewed layout.
     return r;
   });
   return allocate(scores).map((t, i) => {
@@ -238,21 +239,34 @@ export function storyboardPlans(
     };
     if (!p) return finish(seed);
     const saved = retainSaved && p.template === t ? svgPlanSchema.safeParse(p).data : undefined;
-    if (saved) return saved; // User-authored, not fresh model output. Never rewrite it after a provider error.
+    // On explicit regeneration, schema-valid 1.2.0 boilerplate is still wrong
+    // copy. Keep attested fields and styles independently, including after a 503.
     const evidence = concepts(text),
-      icon = icons.find((k) => k === p.icon);
-    const remote = keywordSchema.safeParse(p.iconKeyword).data;
+      icon = icons.find((k) => k === p.icon),
+      remote = keywordSchema.safeParse(p.iconKeyword).data;
+    const quoted = words(lower(p.keywordEvidence ?? '')).join(' '),
+      sourceWords = ' ' + words(lower(text)).join(' ') + ' ';
+    const concrete = evidence[0],
+      consistency = (c: string) => remote === c || remote?.split(/[ -]/u).includes(c);
     const attested =
       remote &&
-      ((p.keywordEvidence?.trim() && lower(text).includes(lower(p.keywordEvidence.trim()))) ||
-        evidence.some((c) => c.keyword === remote));
+      (evidence.some((c) => c.keyword === remote) ||
+        (!!quoted && sourceWords.includes(' ' + quoted + ' ')));
     const keyword =
       attested &&
-      (!evidence[0] ||
-        evidence[0].score < 9 ||
-        evidence.some((c) => c.keyword === remote && c.score >= evidence[0].score))
+      (!concrete ||
+        concrete.score < 9 ||
+        evidence.some((c) => c.score >= concrete.score && consistency(c.keyword)))
         ? remote
         : seed.iconKeyword;
+    const mode =
+      saved?.artMode === 'local'
+        ? 'local'
+        : p.artMode === 'custom' || seed.artMode === 'custom'
+          ? 'custom'
+          : 'auto';
+    const keepRef =
+      saved?.artwork && keyword === saved.iconKeyword && mode === saved.artMode && mode !== 'local';
     const copy = repairCopy(
       seed,
       { title: p.title, labels: !p.template || p.template === t ? p.labels : undefined },
@@ -263,7 +277,8 @@ export function storyboardPlans(
       ...copy,
       icon: icon && (!evidence.length || evidence.some((c) => c.icon === icon)) ? icon : seed.icon,
       iconKeyword: keyword,
-      artMode: p.artMode ?? seed.artMode,
+      artMode: mode,
+      ...(keepRef ? { artwork: saved.artwork } : {}),
       accentColor: p.accentColor?.trim() || seed.accentColor,
       weather: (p.weather?.trim() || seed.weather) as SvgPlan['weather'],
     });
