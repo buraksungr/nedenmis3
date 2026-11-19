@@ -10,7 +10,7 @@ import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
 import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
 import { Production, framesForVoice } from '../server/production';
-import { probe, verifyVideo } from '../server/media';
+import { exec, python, probe, verifyVideo } from '../server/media';
 import { testImages } from './offline';
 
 async function main() {
@@ -97,6 +97,23 @@ async function main() {
     assert.ok(p.final && p.subtitleFiles);
     assert.deepEqual(calls, lines);
     assert.equal(imageCalls, 0);
+    // On failure diagnose only this public QA fixture (never a user's production log).
+    // The independently decoded transcript is diagnostic, NOT supplied to the aligner.
+    if (strict && process.env.GITHUB_ACTIONS) {
+      for (const [i, s] of p.scenes.entries()) {
+        const m = p.assets[s.id];
+        if (m.align?.method !== 'estimated' || !m.voice) continue;
+        const heard = await exec(python(paths), [
+          '-c',
+          "import sys,torch,stable_whisper; torch.set_num_threads(2); m=stable_whisper.load_model('base',device='cpu',download_root=sys.argv[1]); print(m.transcribe(sys.argv[2],language='tr',fp16=False,verbose=None).text)",
+          path.join(root, 'models'),
+          engine.file(p, m.voice.file),
+        ]);
+        console.error(
+          `::error title=QA speech ${i + 1}::${m.align.reason}; expected: ${s.narration}; recognized: ${heard.trim().split('\n').at(-1)}`,
+        );
+      }
+    }
     const scenes = p.scenes.map((s) => {
       const m = p.assets[s.id];
       assert.ok(m.voice && m.align && m.clip);
