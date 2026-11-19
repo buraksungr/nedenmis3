@@ -7,6 +7,7 @@ import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
 import { testImages } from './offline';
 import { svgRenderControl } from './svg-render-control';
+import { captionPlateControl } from './caption-plate-control';
 import { staticFadeControl } from './static-fade-control';
 import { fallbackControl } from './fallback-control';
 import { acousticControl } from './acoustic-control';
@@ -113,6 +114,7 @@ async function main() {
   await fallbackControl(root);
   await staticFadeControl(root, framesForVoice(p.assets[p.scenes[0].id].voice!.duration!));
   await svgRenderControl(root);
+  await captionPlateControl(root);
 }
 main().catch((e) => {
   console.error(e);

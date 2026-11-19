@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { ScientificPlate } from '../../composition/ScientificPlate';
-import { templates, templateNames, type SvgPlan } from '../../shared/svg';
+import { defaultSvg } from '../../shared/svg-story';
+import {
+  icons,
+  iconNames,
+  titleSchema,
+  labelSchema,
+  templates,
+  templateNames,
+  type SvgPlan,
+} from '../../shared/svg';
 import { Button } from './lib';
 function Numeric({
   label,
@@ -38,10 +47,14 @@ function Numeric({
 export function SvgEditor({
   plan,
   seconds,
+  narration,
+  topic,
   onChange,
 }: {
   plan: SvgPlan;
   seconds: number;
+  narration: string;
+  topic: string;
   onChange: (v: SvgPlan) => void;
 }) {
   const [frame, setFrame] = useState(0),
@@ -66,12 +79,6 @@ export function SvgEditor({
     return () => cancelAnimationFrame(id);
   }, [playing, frames]);
   const edit = (patch: Partial<SvgPlan>) => onChange({ ...plan, ...patch });
-  const labels =
-    plan.template === 'ProcessFlowScene'
-      ? 'Üç adım adı gir; aralarına | koy.'
-      : plan.template === 'ComparisonScene' || plan.template === 'FocusCalloutScene'
-        ? 'İki kısa etiket gir; aralarına | koy.'
-        : 'Şemanın altında görünen kısa açıklama.';
   return (
     <div className="svg-editor">
       <div className="svg-monitor">
@@ -106,11 +113,33 @@ export function SvgEditor({
           SVG şablonu
           <select
             value={plan.template}
-            onChange={(e) => edit({ template: e.target.value as SvgPlan['template'] })}
+            onChange={(e) => {
+              const template = e.target.value as SvgPlan['template'];
+              const seed = defaultSvg(narration, 0, topic, template);
+              edit({
+                template,
+                labels: seed.labels,
+                fromValue: seed.fromValue,
+                toValue: seed.toValue,
+              });
+            }}
           >
             {templates.map((t) => (
               <option key={t} value={t}>
                 {templateNames[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Bilim ikonu
+          <select
+            value={plan.icon}
+            onChange={(e) => edit({ icon: e.target.value as SvgPlan['icon'] })}
+          >
+            {icons.map((i) => (
+              <option key={i} value={i}>
+                {iconNames[i]}
               </option>
             ))}
           </select>
@@ -127,30 +156,60 @@ export function SvgEditor({
           Şema başlığı
           <input
             value={plan.title}
-            maxLength={72}
+            maxLength={60}
+            aria-invalid={!titleSchema.safeParse(plan.title).success}
             onChange={(e) => edit({ title: e.target.value })}
             required
           />
+          <small className="help">Anlatım cümlesi yerine 2–4 sözcük kullan.</small>
         </label>
-        <label>
-          Alt başlık / etiketler
-          <input
-            value={plan.subtitle}
-            maxLength={160}
-            onChange={(e) => edit({ subtitle: e.target.value })}
-          />
-          <small className="help">{labels}</small>
-        </label>
-        <Numeric
-          label="Başlangıç değeri"
-          value={plan.fromValue}
-          change={(fromValue) => edit({ fromValue })}
-        />
-        <Numeric
-          label="Bitiş değeri"
-          value={plan.toValue}
-          change={(toValue) => edit({ toValue })}
-        />
+        {plan.labels.map((label, i) => (
+          <label key={i}>
+            {plan.template === 'ProcessFlowScene' ? 'Adım' : 'Şema etiketi'} {i + 1}
+            <input
+              value={label}
+              maxLength={36}
+              aria-invalid={!labelSchema.safeParse(label).success}
+              onChange={(e) =>
+                edit({ labels: plan.labels.map((v, j) => (i === j ? e.target.value : v)) })
+              }
+            />
+          </label>
+        ))}
+        {plan.template === 'ComparisonScene' && (
+          <label>
+            Karşılaştırma türü
+            <select
+              value={plan.fromValue === null ? 'qualitative' : 'measured'}
+              onChange={(e) =>
+                edit(
+                  e.target.value === 'measured'
+                    ? { fromValue: 0, toValue: 0 }
+                    : { fromValue: null, toValue: null },
+                )
+              }
+            >
+              <option value="qualitative">Nitel · ölçüm yok</option>
+              <option value="measured">Sayısal · ölçülen değerler</option>
+            </select>
+          </label>
+        )}
+        {(plan.template === 'ComparisonScene' || plan.template === 'ThermometerGaugeScene') &&
+          plan.fromValue !== null &&
+          plan.toValue !== null && (
+            <>
+              <Numeric
+                label="Başlangıç değeri"
+                value={plan.fromValue}
+                change={(fromValue) => edit({ fromValue })}
+              />
+              <Numeric
+                label="Bitiş değeri"
+                value={plan.toValue}
+                change={(toValue) => edit({ toValue })}
+              />
+            </>
+          )}
         <label>
           Hava durumu
           <select

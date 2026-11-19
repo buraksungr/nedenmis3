@@ -11,7 +11,8 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
-const plannerCalls = [],
+const voiceCalls = [],
+  plannerCalls = [],
   imageCalls = [],
   imageCredential = 'sk_isolated-ui-fixture';
 let enableTextFixture = false,
@@ -39,7 +40,33 @@ const ctx = studio.createStudio(
         opts.method === 'GET' &&
         url === 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000'
       )
-        return Response.json({ models: [] });
+        return Response.json({
+          models: [
+            { name: 'models/gemini-test-tts', supportedGenerationMethods: ['generateContent'] },
+          ],
+        });
+      if (
+        opts.method === 'POST' &&
+        url === 'https://generativelanguage.googleapis.com/v1beta/interactions'
+      ) {
+        const b = JSON.parse(opts.body);
+        voiceCalls.push(b.input[0].content[0].text);
+        return Response.json({
+          status: 'completed',
+          steps: [
+            {
+              type: 'model_output',
+              content: [
+                {
+                  type: 'audio',
+                  mime_type: 'audio/wav',
+                  data: fs.readFileSync('tests/fixtures/forest.wav').toString('base64'),
+                },
+              ],
+            },
+          ],
+        });
+      }
       if (opts.method === 'GET' && url === `${base}?pageSize=1000`)
         return Response.json({
           models: [
@@ -88,6 +115,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 try {
   await page.goto(origin);
   await page.getByRole('heading', { name: 'Son projeler' }).waitFor();
+  await page.locator('.project-card').nth(2).waitFor(); // heading can mount before the project list arrives
   assert.equal(await page.locator('.project-card').count(), 3);
   await page.keyboard.press('Control+k');
   await page.getByRole('textbox', { name: 'Stüdyoda ara' }).fill('satürn');
@@ -265,7 +293,7 @@ try {
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Kök kesiti');
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
-  await page.getByLabel('Mevcut senaryo').fill('Toprakta kökler gelişir.');
+  await page.getByLabel('Mevcut senaryo').fill('Karıncalar ormanda ilerler.');
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
   await page.getByLabel('Storyboard biçimi').selectOption('svg');
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
@@ -276,6 +304,15 @@ try {
   await mode.selectOption('photo');
   await card.getByText('Sabit kadraj · Yumuşak geçiş').waitFor();
   await mode.selectOption('svg');
+  await card.getByLabel('SVG şablonu').selectOption('FocusCalloutScene');
+  await card.getByLabel('Bilim ikonu').selectOption('cell');
+  await card.locator('[data-science-icon="cell"]').first().waitFor();
+  await card.getByLabel('Şema etiketi 1').fill('Hücre zarı');
+  await card.getByLabel('Şema etiketi 2').fill('Su geçişi');
+  await card
+    .getByLabel('Şema başlığı')
+    .fill('Bu cümle başlık olarak kullanılamayacak kadar uzundur');
+  assert.ok(await page.getByRole('button', { name: 'Onayla ve üret' }).isDisabled());
   await card.getByLabel('SVG şablonu').selectOption('ThermometerGaugeScene');
   await card.getByLabel('Şema başlığı').fill('Toprak sıcaklığı');
   await card.getByLabel('Başlangıç değeri').fill('-5');
@@ -286,16 +323,25 @@ try {
     () => +document.querySelector('input[aria-label="Şema önizleme karesi"]').value > 0,
   );
   await page.getByRole('button', { name: 'Onayla ve üret' }).click();
+  await page.locator('.job-note.config').filter({ hasText: 'Seslendirme' }).waitFor();
+  assert.deepEqual(voiceCalls, []);
+  // Test an already authorised model; pressing the production button is the only job action.
+  ctx.g.key('isolated-browser-fixture');
+  await ctx.g.test();
+  ctx.g.configure('tts', { model: 'gemini-test-tts', consent: 'free' });
+  await page.getByRole('button', { name: 'Videoyu üret', exact: true }).click();
   await page.getByRole('button', { name: 'Videoyu izle' }).waitFor({ timeout: 120000 });
   const svgResult = ctx.store.get(page.url().split('/').at(-1));
-  assert.equal(svgResult.final.duration, 1.2);
+  assert.deepEqual(voiceCalls, ['Karıncalar ormanda ilerler.']);
+  const shot = svgResult.assets[svgResult.scenes[0].id];
+  assert.ok(shot.voice && shot.align && shot.clip);
+  assert.equal(shot.align.method, 'estimated');
+  assert.equal(svgResult.final.duration, Math.ceil(shot.voice.duration * 30) / 30);
+  assert.equal(svgResult.scenes[0].svgPlan.icon, 'cell');
   assert.equal(svgResult.scenes[0].svgPlan.title, 'Toprak sıcaklığı');
   assert.equal(svgResult.scenes[0].svgPlan.fromValue, -5);
   assert.equal(svgResult.scenes[0].svgPlan.toValue, 4);
-  assert.ok(
-    !svgResult.assets[svgResult.scenes[0].id].voice &&
-      !svgResult.assets[svgResult.scenes[0].id].image,
-  );
+  assert.ok(!shot.image);
   assert.deepEqual(plannerCalls, ['openrouter.ai']);
   assert.equal(imageCalls.length, 2);
   // Play an already FFprobe-validated control, never a fabricated render in the dashboard.
@@ -345,7 +391,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → editable SVG JSON → all-SVG export without images or TTS.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → editable SVG icon/labels/title → one-click TTS, alignment attempt and MP4.',
   );
 } finally {
   await browser.close();

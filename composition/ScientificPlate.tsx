@@ -1,4 +1,5 @@
 import React from 'react';
+import { ScienceGlyph } from './ScienceGlyph';
 import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { templateNames, templates, type SvgPlan, type Template } from '../shared/svg';
 
@@ -21,54 +22,53 @@ const num = (v: number) =>
     maximumFractionDigits: 1,
     notation: Math.abs(v) >= 10000 ? 'compact' : 'standard',
   }).format(Math.abs(v) < 0.05 ? 0 : v);
-function lines(value: string, width: number, count: number) {
-  const result: string[] = [];
-  let row = '';
-  for (const word of value.trim().split(/\s+/u)) {
-    if (!word) continue;
-    if (row && (row + ' ' + word).length > width) {
-      result.push(row);
-      row = '';
-    }
-    if (word.length > width) {
-      if (row) {
-        result.push(row);
-        row = '';
-      }
-      for (let i = 0; i < word.length; i += width) {
-        if (i + width < word.length) result.push(word.slice(i, i + width));
-        else row = word.slice(i);
-      }
-    } else row = row ? row + ' ' + word : word;
-  }
-  if (row) result.push(row);
-  if (result.length > count) result[count - 1] = result[count - 1].slice(0, width - 1) + '…';
-  return result.slice(0, count);
-}
+// Lay out whole words. Long words shrink to fit their own line; neither a glyph nor
+// the last word of a heading is dropped. No dependency on browser font metrics.
 function TextBlock({
   text,
   x,
   y,
-  width = 35,
-  rows = 2,
+  maxWidth = 468,
   size = 18,
-  color = ink,
   weight = 400,
 }: {
   text: string;
   x: number;
   y: number;
-  width?: number;
-  rows?: number;
+  maxWidth?: number;
   size?: number;
-  color?: string;
   weight?: number;
 }) {
+  const measure = (line: string) =>
+    Array.from(line).reduce(
+      (em, ch) =>
+        em +
+        ('ilıİ.,: '.includes(ch)
+          ? 0.31
+          : 'WMmwÖÜĞ'.includes(ch)
+            ? 0.89
+            : ch === ch.toLocaleUpperCase('tr')
+              ? 0.71
+              : 0.57),
+      0,
+    ) * size;
+  const rows: string[] = [];
+  for (const word of text.trim().split(/\s+/u).filter(Boolean)) {
+    const last = rows.at(-1);
+    if (last && measure(last + ' ' + word) <= maxWidth) rows[rows.length - 1] = last + ' ' + word;
+    else rows.push(word);
+  }
   return (
-    <text x={x} y={y} fill={color} fontSize={size} fontWeight={weight}>
-      {lines(text, width, rows).map((l, i) => (
-        <tspan key={i} x={x} dy={i ? size * 1.22 : 0}>
-          {l}
+    <text x={x} y={y} fill={ink} fontSize={size} fontWeight={weight}>
+      {rows.map((line, i) => (
+        <tspan
+          x={x}
+          dy={i ? 1.18 * size : 0}
+          key={i}
+          textLength={Math.min(maxWidth, measure(line))}
+          lengthAdjust="spacingAndGlyphs"
+        >
+          {line}
         </tspan>
       ))}
     </text>
@@ -91,12 +91,48 @@ function Mark({
     </text>
   );
 }
-const parts = (plan: SvgPlan, defaults: string[]) => {
-  const labels = plan.subtitle.split('|').map((s) => s.trim());
-  return labels.length === defaults.length && labels.every(Boolean) ? labels : defaults;
-};
-
+// A membrane (or vessel wall) rather than soil for biological sections. Particles
+// travel in both directions, not to a fabricated numerical concentration scale.
+function TissueSection({ plan, frame }: DiagramProps) {
+  const blood = plan.icon === 'blood',
+    a = plan.accentColor;
+  return (
+    <g>
+      <rect x="36" y="307" width="468" height="342" rx="8" fill="#203B37" />
+      <path
+        d="M36 467Q146 436 270 472T504 469V642Q504 649 496 649H44Q36 649 36 641Z"
+        fill={blood ? '#523B3C' : '#294D45'}
+      />
+      {seq(42).map((i) => {
+        const x = 43 + i * 11,
+          y = 469 + 10 * Math.sin(i / 6);
+        return (
+          <g key={i} stroke={a}>
+            <path d={`M${x} ${y}v16m3-16v16`} strokeWidth="1.5" />
+            <circle cx={x + 1} cy={y} r="3.7" fill={a} />
+            <circle cx={x + 1} cy={y + 18} r="3.7" fill={a} />
+          </g>
+        );
+      })}
+      {seq(26).map((i) => {
+        const x = 54 + ((i * 69 + frame * (blood ? 1.1 : 0.28)) % 424),
+          y = blood
+            ? 379 + ((i * 17) % 63)
+            : 395 + ((((i * 31 + frame * (i % 2 ? 1.2 : -1.2)) % 213) + 213) % 213);
+        return blood ? (
+          <ellipse key={i} cx={x} cy={y} rx="9" ry="5" fill="#CF8980" />
+        ) : (
+          <circle key={i} cx={x} cy={y} r={3 + (i % 3)} fill={a} opacity=".8" />
+        );
+      })}
+      <TextBlock x={55} y={345} text={plan.labels[0]} size={19} />
+      <TextBlock x={55} y={632} text={plan.labels[1]} size={19} />
+    </g>
+  );
+}
 export function CrossSectionScene({ plan, frame, progress }: DiagramProps) {
+  if (plan.icon === 'cell' || plan.icon === 'blood')
+    return <TissueSection plan={plan} frame={frame} progress={progress} />;
   const a = plan.accentColor,
     grow = ease(progress, 0, 0.78);
   return (
@@ -158,19 +194,17 @@ export function CrossSectionScene({ plan, frame, progress }: DiagramProps) {
             <path key={i} d={`M${x} ${y}l-3 8`} stroke="#ACDEED" strokeWidth="2" />
           );
         })}
-      <Mark x={54} y={328}>
-        ORTAM / {plan.weather === 'snow' ? 'KAR' : plan.weather === 'rain' ? 'YAĞMUR' : 'AÇIK'}
-      </Mark>
-      <Mark x={52} y={634} color="#E8D7C6">
-        ALT KATMAN
-      </Mark>
+      <TextBlock x={54} y={331} text={plan.labels[0]} size={17} />
+      <TextBlock x={54} y={635} text={plan.labels[1]} size={17} />
     </g>
   );
 }
 export function ThermometerGaugeScene({ plan, progress }: DiagramProps) {
-  const v = interpolate(ease(progress, 0.04, 0.88), [0, 1], [plan.fromValue, plan.toValue]);
-  const min = Math.min(plan.fromValue, plan.toValue),
-    max = Math.max(plan.fromValue, plan.toValue),
+  const from = plan.fromValue ?? 0,
+    to = plan.toValue ?? 0;
+  const v = interpolate(ease(progress, 0.04, 0.88), [0, 1], [from, to]);
+  const min = Math.min(from, to),
+    max = Math.max(from, to),
     pad = Math.max(1, (max - min) * 0.15);
   const y = interpolate(v, [min - pad, max + pad], [604, 349]);
   return (
@@ -216,14 +250,14 @@ export function ThermometerGaugeScene({ plan, progress }: DiagramProps) {
         BAŞLANGIÇ → BİTİŞ
       </Mark>
       <text x="220" y="566" fontSize="25" fill={ink}>
-        {num(plan.fromValue)}° → {num(plan.toValue)}°
+        {num(from)}° → {num(to)}°
       </text>
     </g>
   );
 }
 export function FocusCalloutScene({ plan, frame, progress }: DiagramProps) {
   const a = plan.accentColor,
-    [one, two] = parts(plan, ['İncelenen yapı', 'Odak noktası']),
+    [one, two] = plan.labels,
     pulse = (1 - Math.cos((frame * Math.PI) / 32)) / 2;
   return (
     <g>
@@ -237,18 +271,9 @@ export function FocusCalloutScene({ plan, frame, progress }: DiagramProps) {
         strokeWidth="3"
         opacity={0.85 - 0.5 * pulse}
       />
-      <path
-        d="M208 517 Q197 422 327 404 Q333 502 262 532 Q234 540 208 517Z"
-        fill={a}
-        opacity="0.85"
-      />
-      <path
-        d="M202 540Q254 477 313 422M245 488l-2-38M263 469l38 1"
-        fill="none"
-        stroke={dark}
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
+      <g transform="translate(193 406) scale(1.44)">
+        <ScienceGlyph icon={plan.icon} accent={a} />
+      </g>
       {[
         [one, 46, 332, 'M74 350H160L219 429', 'M217 419l2 10-11-3'],
         [two, 329, 634, 'M464 600H359L300 526', 'M302 537l-2-11 11 5'],
@@ -256,26 +281,35 @@ export function FocusCalloutScene({ plan, frame, progress }: DiagramProps) {
         <g key={i} opacity={0.3 + 0.7 * ease(progress, i * 0.2, 0.6 + i * 0.2)}>
           <path d={String(d)} fill="none" stroke={a} strokeWidth="2" />
           <path d={String(arrow)} fill="none" stroke={a} strokeWidth="2.5" />
-          <TextBlock
-            x={Number(x)}
-            y={Number(y)}
-            text={String(label)}
-            width={16}
-            rows={2}
-            size={17}
-          />
+          <TextBlock x={Number(x)} y={Number(y)} text={String(label)} maxWidth={168} size={17} />
         </g>
       ))}
     </g>
   );
 }
 export function ComparisonScene({ plan, progress }: DiagramProps) {
+  if (plan.fromValue === null || plan.toValue === null)
+    return (
+      <g>
+        {plan.labels.map((label, i) => {
+          const k = ease(progress, i * 0.2, 0.7 + i * 0.2),
+            y = 361 + i * 148;
+          return (
+            <g key={i} opacity={0.24 + 0.76 * k}>
+              <rect x="47" y={y} width="446" height="117" rx="8" fill="#1D3831" stroke={rule} />
+              <path d={`M64 ${y + 15}v87`} stroke={i ? plan.accentColor : muted} strokeWidth="4" />
+              <TextBlock x={91} y={y + 56} text={label} maxWidth={376} size={25} />
+            </g>
+          );
+        })}
+      </g>
+    );
   const values = [plan.fromValue, plan.toValue],
     min = Math.min(0, ...values),
     max = Math.max(0, ...values),
     scale = (v: number) => 59 + ((v - min) / (max - min || 1)) * 420,
     zero = scale(0),
-    labels = parts(plan, ['A · İlk değer', 'B · İkinci değer']);
+    labels = plan.labels;
   return (
     <g>
       {seq(8).map((i) => (
@@ -295,7 +329,7 @@ export function ComparisonScene({ plan, progress }: DiagramProps) {
           y = 400 + i * 128;
         return (
           <g key={i}>
-            <TextBlock x={59} y={y - 13} text={labels[i]} width={24} rows={1} size={21} />
+            <TextBlock x={59} y={y - 13} text={labels[i]} maxWidth={317} size={21} />
             <text x="479" y={y - 13} fill={plan.accentColor} textAnchor="end" fontSize="23">
               {num(v * k)}
             </text>
@@ -319,7 +353,7 @@ export function ComparisonScene({ plan, progress }: DiagramProps) {
   );
 }
 export function ProcessFlowScene({ plan, progress }: DiagramProps) {
-  const labels = parts(plan, ['Başlangıç', 'Dönüşüm', 'Sonuç']);
+  const labels = plan.labels;
   return (
     <g>
       {labels.map((l, i) => {
@@ -350,7 +384,7 @@ export function ProcessFlowScene({ plan, progress }: DiagramProps) {
               >
                 0{i + 1}
               </text>
-              <TextBlock x={145} y={y + 35} text={l} width={23} rows={2} size={20} />
+              <TextBlock x={145} y={y + 35} text={l} maxWidth={320} size={20} />
             </g>
           </g>
         );
@@ -391,7 +425,7 @@ export function ScientificPlate({
       style={{ display: 'block', background: dark, fontFamily: 'Arial, sans-serif' }}
     >
       <rect width="540" height="960" fill={dark} />
-      <path d="M36 65H504M36 696H504" stroke={rule} />
+      <path d="M36 65H504" stroke={rule} />
       <rect x="36" y="33" width="9" height="9" fill={plan.accentColor} />
       <Mark x={55} y={42}>
         NEDENMİŞ / BİLİM ATLASI
@@ -402,33 +436,9 @@ export function ScientificPlate({
       <Mark x={36} y={110} color={plan.accentColor}>
         {templateNames[plan.template].toLocaleUpperCase('tr')}
       </Mark>
-      <TextBlock x={34} y={163} text={plan.title} width={22} rows={3} size={34} weight={650} />
+      <TextBlock x={34} y={163} text={plan.title} maxWidth={470} size={34} weight={650} />
       <Drawing plan={plan} frame={frame} progress={progress} />
-      {plan.subtitle && !plan.subtitle.includes('|') && (
-        <TextBlock
-          x={36}
-          y={729}
-          text={plan.subtitle}
-          width={49}
-          rows={2}
-          size={16}
-          color={muted}
-        />
-      )}
-      <line x1="36" x2="504" y1="906" y2="906" stroke={rule} />
-      <Mark x={36} y={930}>
-        BİLİMSEL GÖRSELLEŞTİRME
-      </Mark>
-      <text
-        x="504"
-        y="930"
-        textAnchor="end"
-        fontFamily="monospace"
-        fontSize="12"
-        fill={plan.accentColor}
-      >
-        ŞEMA / 0{id}
-      </text>
+      {/* The lower safe area belongs exclusively to Film's timed caption track. */}
     </svg>
   );
 }

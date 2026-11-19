@@ -45,7 +45,8 @@ import {
   useRun,
   useStudio,
 } from './lib';
-import { defaultSvg, templateNames, plannerLabels } from '../../shared/svg';
+import { defaultSvg, displayPlan } from '../../shared/svg-story';
+import { svgPlanSchema, templateNames, plannerLabels } from '../../shared/svg';
 import { sceneCaptions, unvoicedSvg, captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
 // Photo-only projects do not need to load the diagram renderer.
@@ -314,11 +315,27 @@ export function ScriptEditor({ p }: { p: Project }) {
     </>
   );
 }
+// Old signed plans stay unchanged on disk until the user explicitly edits/approves the board.
+const editableBoard = (scenes: Scene[], topic: string) =>
+  scenes.map((s) =>
+    s.svgPlan ? { ...s, svgPlan: displayPlan(s.svgPlan, s.narration, topic) } : s,
+  );
 export function BoardEditor({ p }: { p: Project }) {
   const { go, notify, refresh, setP, settings } = useStudio();
   const autoFill = settings?.pollinations.autoFill;
   const { run, busy } = useRun();
-  const d = useDraft(p, 'board', { scenes: p.scenes, styleGuide: p.styleGuide }, (v) => v);
+  const d = useDraft(
+    p,
+    'board',
+    { scenes: editableBoard(p.scenes, p.topic), styleGuide: p.styleGuide },
+    (v) => ({ ...v, scenes: editableBoard(v.scenes, p.topic) }),
+  );
+  const invalidPlan = d.v.scenes.some(
+    (s) =>
+      s.visualMode === 'svg' &&
+      (!s.svgPlan ||
+        !svgPlanSchema.safeParse(displayPlan(s.svgPlan, s.narration, p.topic)).success),
+  );
   const [open, setOpen] = useState<string | null>(null),
     [confirmSvg, setConfirmSvg] = useState(false);
   const locked = busy || p.job.state === 'working';
@@ -410,8 +427,9 @@ export function BoardEditor({ p }: { p: Project }) {
               <h2>Kod Tabanlı SVG Animasyon</h2>
             </div>
             <p>
-              Onaylı anlatımı beş hazır bilim şablonuyla görselleştir. Anahtar gerekmez. Ses
-              eklemezsen SVG sahnesi seçtiğin süre, ekran metni ve ambiyansla işlenir.
+              Beş bilim şablonu yerel olarak çizilir. Videoyu üretirken eksik seslendirme ve
+              hizalama otomatik hazırlanır. Anahtarsız çalışmak için kendi sesini yükleyebilir veya
+              sahnede otomatik sesi kapatabilirsin.
             </p>
             <div className="actions">
               <Button
@@ -506,7 +524,7 @@ export function BoardEditor({ p }: { p: Project }) {
                     if (e.target.value === 'svg') {
                       edit(s.id, {
                         visualMode: 'svg',
-                        svgPlan: s.svgPlan ?? defaultSvg(s.narration, i),
+                        svgPlan: s.svgPlan ?? defaultSvg(s.narration, i, p.topic),
                       });
                       setOpen(s.id);
                     } else edit(s.id, { visualMode: 'photo' });
@@ -568,11 +586,30 @@ export function BoardEditor({ p }: { p: Project }) {
                   {s.visualMode === 'svg' && s.svgPlan && (
                     <Suspense fallback={<p>Şablon yükleniyor…</p>}>
                       <SvgEditor
-                        plan={s.svgPlan}
+                        narration={s.narration}
+                        topic={p.topic}
+                        plan={displayPlan(s.svgPlan, s.narration, p.topic)}
                         seconds={s.seconds}
                         onChange={(svgPlan) => edit(s.id, { svgPlan })}
                       />
                     </Suspense>
+                  )}
+                  {s.visualMode === 'svg' && (
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={s.svgVoiceMode !== 'existing-only'}
+                        onChange={(e) =>
+                          edit(s.id, { svgVoiceMode: e.target.checked ? 'auto' : 'existing-only' })
+                        }
+                      />
+                      Eksik anlatımı otomatik seslendir
+                    </label>
+                  )}
+                  {s.visualMode === 'svg' && s.svgVoiceMode === 'existing-only' && (
+                    <small className="help">
+                      Kayıt yoksa yalnız ekran metni ve ambiyans kullanılır; TTS istenmez.
+                    </small>
                   )}
                   <div className="form-grid">
                     {(
@@ -678,6 +715,11 @@ export function BoardEditor({ p }: { p: Project }) {
                 </button>
               </Notice>
             )}
+          {invalidPlan && (
+            <Notice>
+              Şema başlığı 2–4 sözcük olmalı; her etikete farklı, kısa bir konu adı gir.
+            </Notice>
+          )}
           <div className="approval-footer">
             <span>
               <CheckCheck size={14} />
@@ -685,7 +727,10 @@ export function BoardEditor({ p }: { p: Project }) {
             </span>
             <Button
               disabled={
-                locked || !d.v.scenes.length || (!!p.boardApproval && d.status === 'Kaydedildi')
+                locked ||
+                invalidPlan ||
+                !d.v.scenes.length ||
+                (!!p.boardApproval && d.status === 'Kaydedildi')
               }
               onClick={() =>
                 void run(async () => {
@@ -698,7 +743,7 @@ export function BoardEditor({ p }: { p: Project }) {
             </Button>
             <Button
               variant="primary"
-              disabled={locked || !d.v.scenes.length}
+              disabled={locked || invalidPlan || !d.v.scenes.length}
               onClick={() =>
                 void run(async () => {
                   const saved = await d.flush({ approve: true });
@@ -731,7 +776,11 @@ function SceneThumbnail({ p, s }: { p: Project; s: Scene }) {
     return (
       <div className="station-art svg-thumb">
         <Suspense fallback={null}>
-          <AtlasPreview plan={s.svgPlan} frame={20} frames={60} />
+          <AtlasPreview
+            plan={displayPlan(s.svgPlan, s.narration, p.topic)}
+            frame={20}
+            frames={60}
+          />
         </Suspense>
       </div>
     );
@@ -903,11 +952,7 @@ export function ProductionView({ p }: { p: Project }) {
                 onClick={() => void run(() => mutate('generate', { kind: 'all' }))}
               >
                 <Film size={15} />
-                {p.job.state === 'failed' ||
-                p.job.state === 'config' ||
-                (!p.final && Object.keys(p.assets).length > 0)
-                  ? 'Üretime devam et'
-                  : 'Üretimi başlat'}
+                Videoyu üret
               </Button>
               <Button disabled={locked} onClick={() => setPrefs(true)}>
                 <SlidersHorizontal size={14} />
@@ -929,8 +974,9 @@ export function ProductionView({ p }: { p: Project }) {
               {autoFill
                 ? 'Eksik fotoğraflar Pollinations ile üretilir; SVG şablonları yereldir. '
                 : 'Eksik fotoğrafları yükle, ardından üretime devam et. SVG sahnelerine görsel yüklenmez. '}
-              Başarılı varlıklar yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe
-              aktarabilirsin. Müzik eklemezsen stüdyonun özgün ambiyans müziği kullanılır.
+              Videoyu üret: eksik anlatımı seslendirir, sesle hizalar ve MP4’e aktarır. Hazır sesler
+              ve zamanlar yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe aktarabilirsin.
+              Müzik eklemezsen stüdyonun özgün ambiyans müziği kullanılır.
             </p>
           </div>
           <div className="section-head spaced">
@@ -1018,7 +1064,7 @@ export function ProductionView({ p }: { p: Project }) {
                           disabled={
                             locked ||
                             (k === 'align' && !m.voice) ||
-                            (k === 'clip' && !svg && (!m.image || !m.voice))
+                            (k === 'clip' && ((!svg && !m.image) || (!silent && !m.voice)))
                           }
                           onClick={() =>
                             void run(() => mutate('generate', { kind: k, scene: s.id }))

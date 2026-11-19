@@ -31,7 +31,8 @@ export async function svgRenderControl(out: string) {
     {
       template: 'CrossSectionScene',
       title: 'Yüzeyin altında',
-      subtitle: 'Su toprak katmanlarına sızar.',
+      icon: 'earth',
+      labels: ['Toprak yüzeyi', 'Kök bölgesi'],
       weather: 'rain',
       accentColor: '#9ADBC1',
       fromValue: 0,
@@ -40,7 +41,8 @@ export async function svgRenderControl(out: string) {
     {
       template: 'ThermometerGaugeScene',
       title: 'Bir sıcaklık ölçümü',
-      subtitle: 'Örnek veri dizisi · derece Celsius',
+      icon: 'flame',
+      labels: [],
       weather: 'none',
       accentColor: '#F1BB79',
       fromValue: -5,
@@ -49,7 +51,8 @@ export async function svgRenderControl(out: string) {
     {
       template: 'FocusCalloutScene',
       title: 'Yaprağın yapısı',
-      subtitle: 'Yaprak ayası | Ana damar',
+      icon: 'leaf',
+      labels: ['Yaprak ayası', 'Ana damar'],
       weather: 'none',
       accentColor: '#B6D88D',
       fromValue: 0,
@@ -58,7 +61,8 @@ export async function svgRenderControl(out: string) {
     {
       template: 'ComparisonScene',
       title: 'İki örneği karşılaştır',
-      subtitle: 'Örnek A | Örnek B',
+      icon: 'water',
+      labels: ['Örnek A', 'Örnek B'],
       weather: 'none',
       accentColor: '#8FCDE5',
       fromValue: 24,
@@ -67,7 +71,8 @@ export async function svgRenderControl(out: string) {
     {
       template: 'ProcessFlowScene',
       title: 'Su döngüsü',
-      subtitle: 'Buharlaşma | Yoğuşma | Yağış',
+      icon: 'water',
+      labels: ['Buharlaşma', 'Yoğuşma', 'Yağış'],
       weather: 'none',
       accentColor: '#C5B8EB',
       fromValue: 0,
@@ -80,6 +85,7 @@ export async function svgRenderControl(out: string) {
     description: plan.title,
     seconds: 1.6,
     visualMode: 'svg',
+    svgVoiceMode: 'existing-only', // Explicit offline export, never an implicit fallback for a missing voice.
     svgPlan: plan,
   }));
   const photo = {

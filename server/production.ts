@@ -6,6 +6,7 @@ import {
   sceneSeconds,
   sceneCaptions,
   unvoicedSvg,
+  useExistingVoiceOnly,
   captionEntries,
   cue,
   groups,
@@ -38,6 +39,7 @@ import {
   verifyVideo,
   type Paths,
 } from './media';
+import { displayPlan } from '../shared/svg-story';
 import { svgPlanSchema } from '../shared/svg';
 import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
@@ -339,8 +341,11 @@ export class Production {
     approved(p);
     const m = (p.assets[s.id] ??= {}),
       silent = unvoicedSvg(s, m);
-    const diagram = (scene?: Scene) =>
-      scene?.visualMode === 'svg' ? svgPlanSchema.parse(scene.svgPlan) : undefined;
+    const diagram = (scene?: Scene) => {
+      if (scene?.visualMode !== 'svg') return undefined;
+      requireThat(scene.svgPlan, 'SVG şablonu eksik.');
+      return svgPlanSchema.parse(displayPlan(scene.svgPlan, scene.narration, p.topic));
+    };
     const svg = diagram(s),
       nextSvg = diagram(next);
     requireThat(
@@ -354,17 +359,17 @@ export class Production {
     }
     const words = sceneCaptions(s, m),
       sentenceCaptions = silent || m.align?.method === 'estimated';
-    // Incoming diagrams always start at frame zero. Photo-only keys remain compatible with 1.0.7.
+    // Incoming diagrams always start at frame zero. Separate the diagram and active-word revisions from the static photo and timing inputs.
     const adjacent = next && !nextSvg ? p.assets[next.id]?.image : undefined;
     const key = hash(
       'film-5-static-crossfade',
-      svg ? ['atlas-svg-v1', svg] : m.image!.file,
+      svg ? ['atlas-svg-v2', svg] : m.image!.file,
       words,
       frames,
-      nextSvg ? ['atlas-svg-v1', nextSvg] : adjacent?.file,
+      nextSvg ? ['atlas-svg-v2', nextSvg] : adjacent?.file,
       p.subtitleSize,
       p.highlight,
-      ...(sentenceCaptions ? ['sentence-cues-v1'] : []),
+      ...(sentenceCaptions ? ['sentence-cues-v1'] : p.highlight ? ['active-word-amber-v1'] : []),
     );
     if (!force && this.usable(p, m.clip, key)) {
       await verifyVideo(this.file(p, m.clip!.file), frames, false);
@@ -426,8 +431,8 @@ export class Production {
       };
   }
   private async batchVoice(p: Project, s: Scene) {
-    if (s.visualMode !== 'svg') return this.asset(p, s, 'voice', false);
-    // SVG mode never buys narration implicitly. An imported/explicitly generated track wins.
+    if (!useExistingVoiceOnly(s)) return this.asset(p, s, 'voice', false);
+    // Explicit offline opt-out. Never replace a lost recording with a paid request in this mode.
     const voice = p.assets[s.id]?.voice;
     if (voice) {
       requireThat(this.usable(p, voice, voiceKey(p, s)), 'Kayıtlı anlatımı yeniden yükleyin.');
@@ -447,7 +452,7 @@ export class Production {
       let needWhisper = false;
       for (const s of scenes) {
         const m = p.assets[s.id];
-        if (s.visualMode !== 'svg' && !this.usable(p, m?.voice, voiceKey(p, s)))
+        if (!useExistingVoiceOnly(s) && !this.usable(p, m?.voice, voiceKey(p, s)))
           this.g.allowed('tts');
         if (!waiting && !unvoicedSvg(s, m) && !this.cachedAlignment(p, s)) needWhisper = true;
       }

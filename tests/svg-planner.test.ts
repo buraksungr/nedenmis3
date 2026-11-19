@@ -1,3 +1,4 @@
+import thirst from './fixtures/thirst.json';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -5,7 +6,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { z } from 'zod';
-import { defaultSvg, svgPlanSchema, templates } from '../shared/svg';
+import { defaultSvg, diagramLabels, displayPlan, storyboardPlans } from '../shared/svg-story';
+import { icons, svgPlanSchema, templates, type LegacySvgPlan } from '../shared/svg';
 import { blankScene, normalize } from '../shared/schema';
 import { Store, makeProject, scriptSig, approveBoard, approved } from '../server/store';
 import { SvgPlanner } from '../server/svg-planner';
@@ -29,10 +31,16 @@ function setup(t: TestContext, transport: typeof fetch) {
   return { store, planner, p, keys };
 }
 const valid = defaultSvg('Toprakta kök gelişimi.');
-test('diagram contract accepts exactly seven typed fields for five templates', () => {
+test('diagram contract accepts only the typed artwork fields for five templates', () => {
   assert.equal(z.toJSONSchema(svgPlanSchema).additionalProperties, false);
   for (const template of templates)
-    assert.ok(svgPlanSchema.safeParse({ ...valid, template }).success);
+    assert.ok(
+      svgPlanSchema.safeParse({
+        ...valid,
+        template,
+        labels: diagramLabels(template, 'Toprakta kök gelişimi'),
+      }).success,
+    );
   for (const invalid of [
     { ...valid, other: 'markup' },
     { ...valid, toValue: '4' },
@@ -41,7 +49,14 @@ test('diagram contract accepts exactly seven typed fields for five templates', (
     { ...valid, weather: 'storm' },
     { ...valid, accentColor: 'url(example)' },
     { ...valid, title: '' },
-    { ...valid, subtitle: undefined },
+    { ...valid, subtitle: 'Eski açıklama' },
+    { ...valid, icon: 'script' },
+    { ...valid, icon: undefined },
+    { ...valid, labels: ['Odak noktası', 'İncelenen yapı'] },
+    { ...valid, labels: [] },
+    { ...valid, title: 'Uzun anlatı cümlesini olduğu gibi yazma' },
+    { ...valid, title: 'Tek' },
+    { ...valid, fromValue: null },
   ])
     assert.equal(svgPlanSchema.safeParse(invalid).success, false);
   assert.ok(svgPlanSchema.safeParse(defaultSvg('🍃'.repeat(120))).success);
@@ -217,4 +232,64 @@ test('SVG edits detach only dependent clips, keep old photo and voice assets, an
   b.svgPlan = { ...valid, accentColor: '#FF9900' };
   invalidate(p, orig);
   assert.ok(!p.assets[a.id].clip && !p.assets[b.id].clip && p.assets[c.id].clip);
+});
+
+test('content and sequence guide both offline and repetitive remote plans, without inventing measurements', () => {
+  for (const hints of [
+    [],
+    thirst.map(() => ({
+      ...defaultSvg('Yaprağın yapısı'),
+      template: 'FocusCalloutScene' as const,
+      labels: ['Yaprak ayası', 'Ana damar'],
+    })),
+  ]) {
+    const plans = storyboardPlans(thirst, 'Susama', hints);
+    assert.ok(
+      plans.every(
+        (p) =>
+          svgPlanSchema.safeParse(p).success &&
+          p.icon !== 'leaf' &&
+          p.template !== 'ThermometerGaugeScene',
+      ),
+    );
+    assert.ok(plans.every((p, i) => i === 0 || p.template !== plans[i - 1].template));
+    assert.ok(new Set(plans.map((p) => p.template)).size >= 3);
+    for (const p of plans.filter((p) => p.template === 'ComparisonScene'))
+      assert.deepEqual([p.fromValue, p.toValue], [null, null]);
+  }
+  const inferred = [
+    'Hücre zarı',
+    'Su damlası',
+    'Beyin dalgaları',
+    'Molekül yapısı',
+    'Kan dolaşımı',
+    'Bir yaprak',
+    'Dünya dönüyor',
+    'Alev ısı yayar.',
+  ].map((t) => defaultSvg(t).icon);
+  assert.deepEqual(inferred, icons);
+});
+test('1.1.0 plans retain original signed data; old prose never becomes a second caption', () => {
+  const old: LegacySvgPlan = {
+    template: 'FocusCalloutScene',
+    title: 'İnsan beyninin merkezinde bulunan sinir hücreleri düzenli',
+    subtitle: 'Bu yarım anlatım alta yazılmamalı.',
+    weather: 'none',
+    accentColor: '#FFAA00',
+    fromValue: 4,
+    toValue: 7,
+  };
+  const saved = JSON.stringify(old);
+  const resolved = displayPlan(old, 'Beyin susama sinyali verir.');
+  assert.ok(svgPlanSchema.safeParse(resolved).success);
+  assert.equal(resolved.icon, 'brain');
+  assert.equal(resolved.title, 'Beynin Susama Sinyali');
+  assert.equal(JSON.stringify(old), saved);
+  assert.ok(!JSON.stringify(resolved).includes('yarım anlatım'));
+  const custom = displayPlan(
+    { ...old, subtitle: 'Hipotalamus | Sinir hücresi', title: 'Susama Sinyali' },
+    'Beyindeki susama merkezi.',
+  );
+  assert.deepEqual(custom.labels, ['Hipotalamus', 'Sinir hücresi']);
+  assert.equal(custom.title, 'Susama Sinyali');
 });

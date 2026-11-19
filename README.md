@@ -2,39 +2,43 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, nostaljik 2D piksel sanatı, sabit kadraj ve yumuşak geçiş, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-[Windows x64 kurucu · 1.1.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897/artifacts/14496088572) · [Tüm derlemeler](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
+[Windows x64 derlemeleri](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.1.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.1.1-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
 2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Kesin sözcük zamanları için isteğe bağlı:** **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
 4. **Anahtarsız SVG kullanacaksan 6. adıma geç.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
 5. Listeden metin ve TTS modellerini seç. *Yalnızca ücretsiz proje* iznini, ancak Google projesinde faturalandırmanın kapalı olduğunu ve ücretsiz kotanı doğruladıysan ver. Otomatik fotoğraflar ayrı bir servis olan **Pollinations** ile üretilir: aynı ayarlar sekmesinde isteğe bağlı anahtarı kaydet veya eski adresi kullanmak için alanı boş bırak. Başka modele, sağlayıcıya veya ücretli izne otomatik geçiş yoktur.
-6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Üretime devam et** kaydedilen aşamaları kullanır.
+6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Videoyu üret** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
 
-### Kod Tabanlı SVG Animasyon · 1.1.0
+### Kod Tabanlı SVG Animasyon ve tek tıkla sesli üretim · 1.1.1
 
 **Anahtarsız başlamak için:** Yeni Video → **Kendi senaryomu kullanacağım**. Senaryo ekranında **Storyboard biçimi → Kod Tabanlı SVG Animasyon** seç ve onayla. Varsayılan **Yerel şablonlar** internet kullanmaz. Var olan bir storyboard’da **SVG planı oluştur** tüm sahneleri planlar; yalnız tek bir sahneyi değiştirmek için karttaki **Sahne türü → SVG Animasyon** seçilir. **Fotoğraf** seçeneğine döndüğünde değişmemiş yerel fotoğraf yeniden kullanılır.
 
-Şablon ayrıntılarında alanları düzenle, kare sürgüsü veya oynat düğmesiyle önizle. **Onayla ve üret** gerçek MP4’ü oluşturur. Anlatım dosyası yoksa SVG sahnesi, seçilen süre boyunca ambiyans ve ekran metniyle işlenir: TTS, Whisper ve görsel servisi çağrılmaz. Altyazı JSON’unda bu cümleler `timing: "scene-duration"` olarak işaretlenir; ölçülmüş sözcükler değildir. Ses yüklersen ölçülen süre ve ses hizalaması kullanılır. Fotoğraf sahnelerinde mevcut anlatım/yükleme iş akışı aynıdır.
+**Sesli MP4:** Senaryoyu ve storyboard’u onayla. **Üretim Merkezi → Videoyu üret** (veya **Onayla ve üret**) eksik anlatımı **seçtiğin konuşmacı, yönerge ve tempoyla** seslendirir, Whisper ile sesin üzerine hizalar, sonra klipleri ve MP4’ü üretir. Kayıtlı geçerli anlatım ve zamanlar yeniden istenmez. TTS için seçilmiş ve izin verilmiş bir model yoksa üretim durur; sessiz bir MP4’ü başarı diye sunmaz. Seslendirme veya hizalama düğmelerini tek tek kullanmak zorunda değilsin.
 
-Her SVG sahnesi `visualMode: "svg"` ve yalnızca şu yedi alanı kabul eden bir `svgPlan` taşır:
+**Anahtarsız dışa aktarım:** **Yalnızca onayla** ile önce kendi ses dosyanı yükleyebilirsin. Ya da bir SVG sahnesinin ayrıntılarında **Eksik anlatımı otomatik seslendir** seçimini kaldır: kayıt yoksa o sahnede seçilen süre, tek katman ekran metni ve ambiyans kullanılır. Ses verisi olmayan bu cümlelerin JSON kaydı `timing: "scene-duration"` taşır. Whisper kurulu değilse sesli sahnelerde mevcut, uyarılı **tahmini cümle** yolu korunur; tahminlere sözcük vurgusu uygulanmaz.
+
+**Şablon planı:** `title` 2–4 tam sözcüktür; ekranda bir cümlenin başı kesilerek başlık yapılmaz. `icon` yalnız `cell | water | brain | molecule | blood | leaf | earth | flame` olabilir. `labels` şemanın içindeki kısa etiketlerdir; ikinci bir altyazı değildir. Alt alan zamanlanmış anlatım altyazısına ayrılmıştır. Etkin sözcük `#FACC15`, diğerleri beyazdır. Örnek `svgPlan`:
 
 ```json
-{"template":"ThermometerGaugeScene","title":"Toprak sıcaklığı","subtitle":"Örnek ölçüm","fromValue":-5,"toValue":4,"weather":"none","accentColor":"#F1BB79"}
+{"template":"FocusCalloutScene","title":"Beynin Susama Sinyali","icon":"brain","labels":["Sıvı dengesi","Susama merkezi"],"fromValue":0,"toValue":0,"weather":"none","accentColor":"#9ADBC1"}
 ```
 
-| Şablon | Gösterim |
+| Şablon | Şemanın içinde |
 |---|---|
-| `CrossSectionScene` | Toprak katmanları, gelişen kökler; `snow`, `rain` veya `none` |
-| `ThermometerGaugeScene` | Başlangıç ve bitiş sıcaklıkları arasında yükselen veya düşen gösterge (°C) |
-| `FocusCalloutScene` | Odak halkası, iki ok ve `Etiket A \| Etiket B` biçiminde alt başlık |
-| `ComparisonScene` | Ortak sıfır çizgisine göre iki sayının çubukları; iki etiket |
-| `ProcessFlowScene` | Alt başlıkta `\|` ile ayrılan üç adım; sıralı belirme ve bağlantı okları |
+| `CrossSectionScene` | Üst/alt bölgenin iki etiketi. Hücre ve kan için doku kesiti; toprak için kökler ve seçilmiş hava durumu. |
+| `ThermometerGaugeScene` | İki sıcaklık (°C); `labels` boş liste. |
+| `FocusCalloutScene` | Seçilen bilim ikonu, odak halkası, iki açıklama oku ve etiketi. |
+| `ComparisonScene` | İki etiket; ölçüm varsa ortak sıfırlı çubuklar, nitel kıyasta iki değer de `null` (uydurma ölçek yok). |
+| `ProcessFlowScene` | `labels` içindeki üç konuya özel adım ve bağlantı okları. |
 
-Ek alan, bilinmeyen şablon, geçersiz renk veya yanlış veri türü reddedilir. Metinler yalnızca metin olarak çizilir; modelden React kodu, SVG işaretlemesi, dosya veya render komutu alınmaz.
+Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelden React kodu veya SVG işaretlemesi alınmaz.
+
+**1.1.0’daki videonu güncellemek için:** **Videoyu üret** ile yeni klipleri oluştur. Eski onaylı plan diskte kendiliğinden değiştirilmez; eski `subtitle` videoya basılmaz. `A | B` biçimindeki geçerli eski etiketler şemada kalır. Eski plandaki tekrarlı şablonları da değiştirmek istersen **Storyboard → SVG planı oluştur**, incele ve yeniden onayla. Anlatım ve ses ayarları aynıysa mevcut ses ve hizalama korunur. Önceden dışa aktardığın MP4 değişmez.
 
 **Ayarlar → SVG planlayıcı** sadece bu JSON planının kaynağını değiştirir:
 - **Yerel şablonlar:** API ve model olmadan, onaylı anlatımdan düzenlenebilir plan. Sayısal değerleri onaydan önce kontrol et.
@@ -55,13 +59,13 @@ Uzak planlayıcıya yalnız onaylı sahne anlatımları gönderilir. Anahtar yok
 
 `{istem}` için sahnenin görsel istemine (boşsa betimlemesine) tam olarak `, nostalgic 2D pixel art style, highly detailed, nature documentary aesthetic` eklenir; **tamamı** tek URL yol bileşeni olarak kodlanır. Sağlayıcıya proje dosyaları veya referans fotoğraflar yüklenmez. İndirme en fazla 90 sn ve 30 MB ile sınırlıdır. Geçerli JPEG/PNG/WebP çözümlenir, sabit bir JPEG olarak `Projects/<UUID>/media/storyboard/` altına yazılır. Storyboard ve render yalnız yerel dosyayı okur.
 
-**Yalnızca onayla** ile istek göndermeden storyboard’da kalabilirsin. **Görsel yükle** her iki yolda da kullanılabilir. Yanıt yoksa, kota doluysa veya dosya bozuksa önceki görsel korunur; başka adrese geçilmez ve otomatik tekrar yapılmaz. İstersen yalnız o sahneyi yeniden dene. **Onayla ve üret** ve **Üretime devam et** hazır varlıkları yeniden kullanır. Tüm görselleri kendin yükleyeceksen ayarlarda **Toplu üretimde eksik görselleri Pollinations ile üret** seçimini kaldır; seslendirmeler hazırlanır, render eksik görselleri bekler.
+**Yalnızca onayla** ile istek göndermeden storyboard’da kalabilirsin. **Görsel yükle** her iki yolda da kullanılabilir. Yanıt yoksa, kota doluysa veya dosya bozuksa önceki görsel korunur; başka adrese geçilmez ve otomatik tekrar yapılmaz. İstersen yalnız o sahneyi yeniden dene. **Onayla ve üret** ve **Videoyu üret** hazır varlıkları yeniden kullanır. Tüm görselleri kendin yükleyeceksen ayarlarda **Toplu üretimde eksik görselleri Pollinations ile üret** seçimini kaldır; seslendirmeler hazırlanır, render eksik görselleri bekler.
 
-**Sabit görseller (1.0.6):** Kamera hareketi, dijital zoom, bulanıklık, paralaks ve hareketli kaplamalar kaldırıldı. Yalnızca iki sabit görselin opaklık geçişi var (30 FPS’te en fazla 20 kare, kısa sahnelerde daha kısa). Eski kesme/maske/hareket ayarları da render’a uygulanmaz. Anlatım ve altyazı süreleri değişmez. Önceki bir MP4’ü yeni biçimde üretmek için **Üretim Merkezi → Üretimi başlat** (veya **Üretime devam et**); geçerli görseller, sesler ve altyazılar tekrar kullanılabilir.
+**Sabit görseller (1.0.6):** Kamera hareketi, dijital zoom, bulanıklık, paralaks ve hareketli kaplamalar kaldırıldı. Yalnızca iki sabit görselin opaklık geçişi var (30 FPS’te en fazla 20 kare, kısa sahnelerde daha kısa). Eski kesme/maske/hareket ayarları da render’a uygulanmaz. Anlatım ve altyazı süreleri değişmez. Önceki bir MP4’ü yeni biçimde üretmek için **Üretim Merkezi → Videoyu üret**; geçerli görseller, sesler ve altyazılar tekrar kullanılabilir.
 
 **Senaryo üretiminde HTTP 503 (1.0.6):** Senaryo yazımı ve metin revizyonları sunucuda resmî `@google/genai` 3.6.0 ile `POST https://generativelanguage.googleapis.com/v1/models/{seçili-model}:generateContent` kullanır. Gerçek bir HTTP 503 yanıtında aynı istek aynı modelde **1, 2 ve 4 sn** beklenerek en fazla üç kez tekrarlanır (ilk istekle toplam dört). Google daha uzun bir bekleme süresi bildirirse ona uyulur. Bekleme ve deneme numarası iş durumunda ve `production.ndjson` içinde görünür; her deneme yerel istek sayacına girer. Model ve kullanım izni değiştirilmez. Kota, geçersiz anahtar/model, bağlantı kesintisi ve geçersiz yanıtlar bu tekrarı tetiklemez. Kalıcı 503’te taslak ve onaylar korunur; daha sonra **Senaryoyu oluştur / yenile** ile tekrar deneyebilirsin. Yeniden deneme, Google hizmetinin geri geleceğini garanti etmez.
 
-**Hizalama hatasından sonra devam et (1.0.4):** Mevcut projede **Üretim Merkezi → Üretime devam et** yeterli; güncel görsel ve anlatımlar yeniden istenmez. Whisper kurulu değilse, işlem başarısız olursa veya sözcük zamanları geçersizse, o sahnenin **onaylı** anlatımı Türkçe cümlelere ayrılır. Her cümlenin payı sözcük sayısıyla orantılıdır; son cümle FFprobe’un ölçtüğü gerçek ses süresinde biter. MP4 ve SRT bu cümleleri gösterir; JSON’da `sentences[].estimated` ayrımı vardır. Tahmini cümleler `words` alanına yazılmaz ve sözcük vurgusu almaz.
+**Hizalama hatasından sonra devam et (1.0.4):** Mevcut projede **Üretim Merkezi → Videoyu üret** yeterli; güncel görsel ve anlatımlar yeniden istenmez. Whisper kurulu değilse, işlem başarısız olursa veya sözcük zamanları geçersizse, o sahnenin **onaylı** anlatımı Türkçe cümlelere ayrılır. Her cümlenin payı sözcük sayısıyla orantılıdır; son cümle FFprobe’un ölçtüğü gerçek ses süresinde biter. MP4 ve SRT bu cümleleri gösterir; JSON’da `sentences[].estimated` ayrımı vardır. Tahmini cümleler `words` alanına yazılmaz ve sözcük vurgusu almaz.
 
 **Nedeni nerede?** **Üretim Merkezi → ilgili sahnenin üretim araçları → Hizalama günlüğü**. Ayrıntılı kayıt terminale ve `Belgeler/NedenmisStudio/Projects/<proje-kimliği>/production.ndjson` dosyasına yazılır: sahne, ses dosyası ve süresi, Python/FFmpeg/FFprobe yolları, varsa süreç hatası veya ilk geçersiz zaman aralığı. **Altyazıyı düzenle** ile cümleleri dinleyerek ayarlayabilir, istersen **Sesi hizala** ile yalnız o sahnede kesin zamanları yeniden deneyebilirsin. Okunamayan ses dosyası, eksik FFmpeg/Remotion veya bozuk MP4 bir altyazı hatası değildir; bu durumlarda üretim başarılı sayılmaz.
 

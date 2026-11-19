@@ -643,6 +643,7 @@ test('approved script → 503 SVG planner → editable fallback, strict review, 
     await board({
       ...plan,
       template: 'ThermometerGaugeScene',
+      labels: [],
       fromValue: -5,
       toValue: 4,
       title: 'Toprak sıcaklığı',

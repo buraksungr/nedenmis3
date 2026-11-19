@@ -89,7 +89,9 @@ export function sentenceEstimates(text: string, duration: number): TimedText[] {
   return cues;
 }
 
-export const unvoicedSvg = (s: Scene, m?: Media) => s.visualMode === 'svg' && !m?.voice;
+export const useExistingVoiceOnly = (s: Scene) =>
+  s.visualMode === 'svg' && s.svgVoiceMode === 'existing-only';
+export const unvoicedSvg = (s: Scene, m?: Media) => useExistingVoiceOnly(s) && !m?.voice;
 export const sceneSeconds = (s: Scene, m?: Media) =>
   unvoicedSvg(s, m) ? s.seconds : (m?.voice?.duration ?? 0);
 export const sceneCaptions = (s: Scene, m?: Media) =>

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Speaker } from './speakers';
-import { svgPlanSchema, type PlannerSettings } from './svg';
+import { svgPlanSchema, type StoredSvgPlan, type PlannerSettings } from './svg';
 // Retain legacy board fields in saved approvals/version history; none drive the composition.
 const cameras = ['push', 'pull', 'pan', 'tilt', 'track', 'focus'] as const;
 const environments = ['dust', 'snow', 'bubbles', 'water', 'rays', 'fog', 'stars', 'none'] as const;
@@ -11,6 +11,7 @@ export const sceneSchema = z.object({
   id: z.string().uuid(),
   visualMode: z.enum(['photo', 'svg']).optional(), // absent in pre-1.1 projects: keep content-bound approvals intact
   svgPlan: svgPlanSchema.optional(),
+  svgVoiceMode: z.enum(['auto', 'existing-only']).optional(), // Default: produce missing narration. Explicit opt-out keeps keyless SVG export.
   narration: str,
   description: str,
   prompt: str,
@@ -25,7 +26,7 @@ export const sceneSchema = z.object({
   seconds: z.number().min(0.2).max(120),
   motion: z.number().min(0.2).max(2).optional(),
 });
-export type Scene = z.infer<typeof sceneSchema>;
+export type Scene = Omit<z.infer<typeof sceneSchema>, 'svgPlan'> & { svgPlan?: StoredSvgPlan };
 export type TimedText = { text: string; start: number; end: number };
 export type Word = TimedText;
 export const wordSchema = z.object({

@@ -32,7 +32,8 @@ export function invalidate(p: Project, old: Project) {
       visualKey(p, s) !== visualKey(old, old.scenes[oldIndex]) ||
       (s.visualMode === 'svg' &&
         !m.voice &&
-        (s.seconds !== old.scenes[oldIndex].seconds ||
+        (s.svgVoiceMode !== old.scenes[oldIndex].svgVoiceMode ||
+          s.seconds !== old.scenes[oldIndex].seconds ||
           s.narration !== old.scenes[oldIndex].narration)) ||
       p.subtitleSize !== old.subtitleSize ||
       p.highlight !== old.highlight ||

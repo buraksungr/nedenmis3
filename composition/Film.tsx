@@ -91,7 +91,12 @@ export function Film({
               <React.Fragment key={i}>
                 {i ? ' ' : ''}
                 <span
-                  style={{ color: highlight && t >= w.start && t < w.end ? '#c3efa5' : 'inherit' }}
+                  style={{
+                    color:
+                      highlight && !sentenceCaptions && t >= w.start && t < w.end
+                        ? '#FACC15'
+                        : 'inherit',
+                  }}
                 >
                   {w.text}
                 </span>
