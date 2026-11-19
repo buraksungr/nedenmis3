@@ -7,7 +7,7 @@ export type Geometry = {
   children: Geometry[];
   text?: string;
 };
-export type Drawing = { defs: Geometry[]; layers: Record<Layer, Geometry> };
+export type Drawing = { viewBox?: string; defs: Geometry[]; layers: Record<Layer, Geometry> };
 // Validate editorial output; never shorten, complete, or derive a title from narration.
 export const heading = z
   .string()

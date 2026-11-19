@@ -60,11 +60,19 @@ async function main() {
   };
   const observed = new Map<ChildProcess, Operation>(),
     c = channel('child_process');
+  let signalMix!: () => void;
+  const mixerStarted = new Promise<void>((r) => {
+    signalMix = r;
+  });
   const track = (m: unknown) => {
     const op = operation();
     if (op?.owner === p.id) {
       const proc = (m as { process: ChildProcess }).process;
       observed.set(proc, op);
+      proc.once('spawn', () => {
+        if (proc.spawnargs.some((a) => typeof a === 'string' && a.includes('sidechaincompress=')))
+          signalMix();
+      });
       proc.once('close', () => observed.delete(proc));
     }
   };
@@ -130,9 +138,27 @@ async function main() {
       fs.readdirSync(cache).filter((n) => n !== 'vector'),
       [],
     );
+    const mixing: Project = await post(route + '/generate', { kind: 'all' }, p.rev);
+    await Promise.race([
+      mixerStarted,
+      settled().then((v) => {
+        throw Error(`Expected live final FFmpeg: ${v.job.label}`);
+      }),
+    ]);
+    await post(`/operations/${mixing.job.runId}/stop`, {});
+    p = await settled();
+    assert.equal(p.job.label, STOPPED);
+    assert.ok(p.assets[second.id].clip);
+    assert.ok(!p.final && !p.subtitleFiles);
+    assert.deepEqual(
+      fs.readdirSync(cache).filter((n) => n !== 'vector'),
+      [],
+    );
+    const completeAssets = structuredClone(p.assets);
     await post(route + '/generate', { kind: 'all' }, p.rev);
     p = await settled();
     assert.equal(p.job.state, 'done', p.job.label);
+    assert.deepEqual(p.assets, completeAssets);
     assert.ok(p.final && fs.existsSync(ctx.prod.file(p, p.final.file)));
     assert.deepEqual(p.assets[p.scenes[0].id], { ...voice, clip });
     assert.deepEqual(
@@ -144,6 +170,7 @@ async function main() {
       interruptedChildren: children,
       previousClipReused: true,
       voiceAndTimingUnchanged: true,
+      finalFfmpegStopped: true,
       tempFilesLeft: 0,
       verifiedMp4Seconds: p.final.duration,
     };
@@ -152,6 +179,7 @@ async function main() {
     console.log(report);
   } finally {
     c.unsubscribe(track);
+    await ctx.stopActive();
     await new Promise<void>((r) => server.close(() => r()));
     ctx.store.db.close();
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

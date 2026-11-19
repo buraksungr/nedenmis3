@@ -381,13 +381,17 @@ export class SvgPlanner {
         work[s.id] = { state: 'pending' };
       }
     }
-    if (!Object.keys(work).length) return scenes;
-    const artist = this.artist(); // consent before creating a new draft
+    const artist = Object.keys(work).length ? this.artist() : undefined; // consent before issuing any new draw
     if (scenes !== p.scenes) {
       const old = structuredClone(p);
       p.scenes = scenes;
       this.changed(p, old);
+      if (!artist) {
+        delete p.vectorWork;
+        this.store.save(p);
+      } // even an entirely cached reorder is a real board change
     }
+    if (!artist) return p.scenes;
     p.vectorWork = work;
     this.store.save(p);
     let failures = 0,

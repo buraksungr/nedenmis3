@@ -92,7 +92,18 @@ export function VectorScene({ scene, frame }: { scene: VectorFrame; frame: numbe
         </defs>
         {layers.map((l, i) => (
           <g key={l} data-vector-layer={l} {...pose(l, frame, ref.fx)}>
-            {shape(drawing.layers[l], scope, i)}
+            {drawing.viewBox ? (
+              <svg
+                width="1080"
+                height="1350"
+                viewBox={drawing.viewBox}
+                preserveAspectRatio="xMidYMid slice"
+              >
+                {shape(drawing.layers[l], scope, i)}
+              </svg>
+            ) : (
+              shape(drawing.layers[l], scope, i)
+            )}
           </g>
         ))}
         <rect width="1080" height="225" fill={`url(#${scope}-scrim)`} />

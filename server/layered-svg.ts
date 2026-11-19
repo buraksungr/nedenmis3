@@ -2,7 +2,8 @@ import { SaxesParser } from 'saxes';
 import { SVGPathData } from 'svg-pathdata';
 import { layers, type Drawing, type Geometry, type Layer } from '../shared/vector';
 export const MAX_XML = 96 * 1024;
-const ns = 'http://www.w3.org/2000/svg';
+const ns = 'http://www.w3.org/2000/svg',
+  stage = '0 0 1080 1350';
 const shapes = new Set(['path', 'polygon', 'polyline', 'rect', 'circle', 'ellipse', 'line']);
 const gradients = new Set(['linearGradient', 'radialGradient']);
 export class InvalidDrawing extends Error {}
@@ -108,12 +109,20 @@ export function parseIllustration(
     for (const [k, { value: v }] of Object.entries(t.attributes)) {
       if (k === 'xmlns' && tag === 'svg' && v === ns) continue;
       if (tag === 'svg') {
-        if (k === 'viewBox' && nums(v).join(' ') === '0 0 1080 1350') {
-          a.viewBox = '0 0 1080 1350';
+        if (k === 'viewBox') {
+          const box = nums(v);
+          if (box.length !== 4 || box[2] < 0.1 || box[3] < 0.1)
+            bad('viewBox geçerli ve sonlu bir alan olmalı.');
+          a.viewBox = box.join(' ');
           continue;
         }
-        if ((k === 'width' && v === '1080') || (k === 'height' && v === '1350')) continue;
-        bad('Kök yalnız viewBox="0 0 1080 1350" içermeli.');
+        if (k === 'width' || k === 'height') {
+          const n = num(v.replace(/(?:%|px)$/, ''));
+          if (n <= 0) bad('Geçersiz tuval boyutu.');
+          if (!v.endsWith('%')) a[k] = String(n);
+          continue;
+        }
+        bad('İzin verilmeyen SVG kök özniteliği.');
       }
       if (k === 'id') {
         if (!/^[A-Za-z][A-Za-z0-9_-]{0,48}$/.test(v) || ids.has(v))
@@ -188,7 +197,13 @@ export function parseIllustration(
     }
     const n: Geometry = { tag, attrs: a, children: [] };
     if (!parent) {
-      if (!a.viewBox) bad('viewBox="0 0 1080 1350" gerekli.');
+      a.viewBox ??= `0 0 ${a.width ?? 1080} ${a.height ?? 1350}`;
+      if (
+        nums(a.viewBox)
+          .slice(2)
+          .some((v) => v < 0.1)
+      )
+        bad('Geçersiz tuval boyutu.');
       root = n;
     } else parent.children.push(n);
     if (parent?.tag === 'svg' && tag === 'g') {
@@ -234,7 +249,9 @@ export function parseIllustration(
     if (!defs.some((g) => g.attrs.id === ref)) bad('Kullanılan gradyan tanımsız.');
   if (layers.some((id) => !root!.children.some((n) => n.tag === 'g' && n.attrs.id === id)))
     bad('layer-bg, layer-main ve layer-fx grupları gerekli.');
+  const box = root.attrs.viewBox;
   const drawing: Drawing = {
+    ...(box === stage ? {} : { viewBox: box }),
     defs,
     layers: Object.fromEntries(
       layers.map((l) => [l, root!.children.find((n) => n.tag === 'g' && n.attrs.id === l)!]),
@@ -242,7 +259,7 @@ export function parseIllustration(
   };
   const document: Geometry = {
     tag: 'svg',
-    attrs: { xmlns: ns, viewBox: '0 0 1080 1350' },
+    attrs: { xmlns: ns, viewBox: box },
     children: [
       ...(defs.length ? [{ tag: 'defs', attrs: {}, children: defs }] : []),
       ...layers.map((l) => drawing.layers[l]),
@@ -254,11 +271,12 @@ export function parseIllustration(
   // an otherwise valid scene. This fixed, id-free light pass needs no resource.
   if (editorial && counts['layer-bg'] <= 1) {
     const bg = drawing.layers['layer-bg'],
-      before = bg.children.length;
+      before = bg.children.length,
+      [x, y, w, h] = nums(box);
     if (!counts['layer-bg'])
       bg.children.push({
         tag: 'rect',
-        attrs: { width: '1080', height: '1350', fill: '#192738' },
+        attrs: { x: String(x), y: String(y), width: String(w), height: String(h), fill: '#192738' },
         children: [],
       });
     bg.children.push({
@@ -266,7 +284,12 @@ export function parseIllustration(
       attrs: {
         d: 'M0 260 Q320 140 620 240 T1080 198 V230 Q859 296 604 270 T0 294Z M0 1050 Q356 921 637 1012 T1080 970 V985 Q884 1085 624 1027 T0 1070Z',
         fill: '#fff2d6',
+        stroke: '#203344',
+        'stroke-width': '5',
         opacity: '.12',
+        ...(box === stage
+          ? {}
+          : { transform: `translate(${x} ${y}) scale(${w / 1080} ${h / 1350})` }),
       },
       children: [],
     });

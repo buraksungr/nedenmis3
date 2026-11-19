@@ -49,7 +49,7 @@ test('reject malformed XML, active/foreign/external content, invalid geometry an
     v.slice(0, -9),
     '<!DOCTYPE svg>' + v,
     v.repeat(2),
-    v.replace('1080 1350', '1080 1920'),
+    v.replace('1080 1350', '1080 -1'),
     v.replace('id="layer-bg"', 'id="layer-main"'),
     v.replace(/<g id="layer-main">[\s\S]*<g id="layer-fx">/, '<g id="layer-fx">'),
     v + ' '.repeat(MAX_XML),
@@ -95,6 +95,29 @@ test('flat and gradient environments pass on the first response and round-trip w
   for (const layer of layers)
     assert.throws(() => parseIllustration(flat('#123').replace(layer, 'unknown')));
   assert.throws(() => parseIllustration(flat('url(https://example.invalid/a)')));
+});
+test('safe alternate coordinate systems are fitted to the full stage, not sent for aesthetic repair', () => {
+  for (const input of [
+    flat('#fff').replace('viewBox="0 0 1080 1350"', 'width="200px" height="300"'),
+    flat('#fff').replace('0 0 1080 1350', '-10 2 400 402'),
+    flat('#fff').replace('viewBox="0 0 1080 1350"', 'width="100%"'),
+  ]) {
+    const a = parseIllustration(input, { title: 'Deneme Sahnesi', narration: '' });
+    assert.deepEqual(parseIllustration(a.canonical), a);
+    assert.equal(a.drawing.layers['layer-bg'].children.length, 2);
+  }
+});
+test('a shorter approved script consisting entirely of finished scenes commits the reused IDs offline', async (t) => {
+  const { store, vaults, p } = setup(t);
+  const planner = new SvgPlanner(store, vaults, async () => completion(sample()));
+  planner.key('openrouter', 'isolated-key');
+  await planner.plan(p);
+  const first = p.scenes[0];
+  p.script = first.narration;
+  p.scriptApproval = scriptSig(p);
+  planner.key('openrouter');
+  await planner.plan(p);
+  assert.deepEqual(store.get(p.id).scenes, [first]);
 });
 test('headings are validated, not cut to fit or rebuilt from narration', () => {
   for (const s of [

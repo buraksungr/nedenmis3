@@ -295,13 +295,22 @@ export function WorkspaceBar() {
     </div>
   ) : null;
 }
-function StopButton({ id, stopping }: { id: string; stopping: boolean }) {
+function StopButton({
+  id,
+  stopping,
+  onAccepted,
+}: {
+  id: string;
+  stopping: boolean;
+  onAccepted?: (id: string) => void;
+}) {
   const { notify } = useStudio(),
     [requested, setRequested] = useState(false);
   const stop = async () => {
     setRequested(true);
     try {
       await post(`/operations/${id}/stop`);
+      onAccepted?.(id);
     } catch (e) {
       setRequested(false);
       notify((e as Error).message, true);
@@ -319,7 +328,7 @@ function StopButton({ id, stopping }: { id: string; stopping: boolean }) {
     </button>
   );
 }
-function ProgressNote({ job }: { job: Task }) {
+function ProgressNote({ job, onAccepted }: { job: Task; onAccepted?: (id: string) => void }) {
   return (
     <div className={'job-note ' + job.state} role="status">
       <LoaderCircle className="spin" size={16} />
@@ -328,7 +337,12 @@ function ProgressNote({ job }: { job: Task }) {
         {job.state === 'working' && job.progress !== undefined ? ` · %${job.progress}` : ''}
       </span>
       {job.runId && (
-        <StopButton key={job.runId} id={job.runId} stopping={job.state === 'stopping'} />
+        <StopButton
+          onAccepted={onAccepted}
+          key={job.runId}
+          id={job.runId}
+          stopping={job.state === 'stopping'}
+        />
       )}
     </div>
   );
@@ -346,8 +360,11 @@ export function OtherOperation() {
       try {
         const a = await api<OperationInfo | null>('/operation');
         if (!live) return;
-        if (stopping.current && a?.id !== stopping.current) notify(STOPPED);
-        stopping.current = a?.stopping ? a.id : undefined;
+        if (stopping.current && a?.id !== stopping.current) {
+          notify(STOPPED);
+          stopping.current = undefined;
+        }
+        if (a?.stopping) stopping.current = a.id;
         setActive(a);
         if (a) delay = 650;
       } catch {
@@ -365,6 +382,9 @@ export function OtherOperation() {
     return null;
   return (
     <ProgressNote
+      onAccepted={(id) => {
+        stopping.current = id;
+      }}
       job={{
         runId: active.id,
         state: active.stopping ? 'stopping' : 'working',

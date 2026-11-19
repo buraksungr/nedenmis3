@@ -2582,3 +2582,13 @@ audio {
 .scene-work .btn {
   flex-shrink: 0;
 }
+
+/* Keep stop in reach when a redraw/voice job is launched from a lower scene. */
+.job-note.working,
+.job-note.stopping {
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  align-items: center;
+  box-shadow: 0 3px 12px #0003;
+}

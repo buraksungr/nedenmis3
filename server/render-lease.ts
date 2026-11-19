@@ -67,7 +67,10 @@ export async function withRenderLease<T>(work: () => Promise<T>): Promise<T> {
     clearTimeout(timer);
     if (signal.aborted) {
       force();
-      await Promise.all([...children.values(), ...kills.values()]);
+      // A renderer cleanup callback may spawn another helper while an earlier
+      // handle is closing. Keep draining the live set, not just its first snapshot.
+      while (children.size) await Promise.all(children.values());
+      await Promise.all(kills.values());
       for (const dir of profiles)
         await fs.rm(dir, { recursive: true, force: true, maxRetries: 6, retryDelay: 80 });
     }
