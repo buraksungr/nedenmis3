@@ -1,5 +1,14 @@
 # Doğrulama kaydı
 
+## 1.1.1 — tek altyazı, konuya uygun şemalar ve otomatik sesli kurgu
+
+**[Windows x64 Setup (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849/artifacts/14501395640)** · **[Tatlı ve Susama: MP4, SRT, zamanlar ve rapor](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849/artifacts/14500174738)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849) · Derleme `22fefd452c11b972e42863f2092201d6f69d4d20`.
+
+- **Gerçek sesli film:** Onaylı altı Türkçe sahne, başlangıçta hiç ses veya hizalama dosyası olmadan tek üretim isteğiyle tamamlandı. 1080 × 1920, 30 FPS, **776 kare / 25,87 sn**, H.264/AAC, **53 gerçek Whisper sözcük zamanı**; hiçbir sahnede tahmin kullanılmadı. TTS aktarımı canlı Google yerine bu metin için sentezlenmiş Türkçe DFKI OT / Piper sesini döndüren test yanıtıyla sınandı. İlk üretimde altı ses isteği, sıfır görsel isteği yapıldı; ikinci üretim ses, hizalama, klip ve MP4 dosyalarının hepsini yeniden kullandı. Model/konuşmacı atfı ve QA lisansı ZIP içindeki `report.json` dosyasındadır.
+- **Görsel denetim:** Tatlı ve susama senaryosunda nitel karşılaştırma, su damlası, glikozun kana geçişi, hücre kesiti ve beynin susama sinyali gösterildi. Hiçbir komşu sahne aynı şablonu kullanmadı. [Piksel ve kurulum raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849/artifacts/14499624929): 1.1.0’ın düz `subtitle` alanıyla açılan şemada ilk sözcükten önce alt bant tamamen boştu. `#FACC15` vurgu birinci sözcükten ikinciye geçti; kapatıldığında sarı piksel kalmadı. Sabit fotoğraf kaynak pikselleri ve opaklık geçişleri de doğrulandı.
+- **Arayüz ve kurulum:** TypeScript, **43 test**, Edge’de tek tıkla üretim ve [ayrı gerçek Türkçe ses kayması kontrolü](https://github.com/buraksungr/nedenmis3/actions/runs/44461916849/artifacts/14500513108) geçti. İmzasız `Nedenmis-Studio-1.1.1-Setup.exe` temiz ortama kuruldu; kurulu uygulama sistem Edge’i ile Remotion kompozisyonunu açtı. **EXE** SHA-256: `944b8cb9549ce1432a719a4cff0a6dca110da515fe1e1ea0c1b3519b8c2d6203`; **kurucu ZIP** SHA-256: `0f47800b63f8de382cfda6261f2d488c887037e744cd1385f16126c21778ba72`.
+- İlk akustik denemede test seslerinden biri onaylı metinle eşleşmedi; bu render başarılı sayılmadı. Yukarıdaki nihai kontrol tam hassasiyetli Türkçe test sesiyle geçti. **Üretim hizalayıcısı, ses/metin eşleşme eşiği ve kullanıcının seslendirme ayarları değiştirilmedi.**
+
 ## 1.1.0 — Kod Tabanlı SVG Animasyon
 
 **[Windows x64 kurucusu (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897/artifacts/14496088572)** · [Başarılı Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44452229897) · Derlenen uygulama: `e582025d7341f81e886ca467bad4bcd18c5e85ed`.
