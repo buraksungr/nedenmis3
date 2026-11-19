@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Karaya Vurma",
+    "fx": "drift"
+  },
+  {
+    "title": "Kaldırma Kuvveti",
+    "fx": "rise"
+  },
+  {
+    "title": "Yerçekimi Baskısı",
+    "fx": "fall"
+  },
+  {
+    "title": "Solunum Güçlüğü",
+    "fx": "pulse"
+  },
+  {
+    "title": "İskelet Yükü",
+    "fx": "pulse"
+  },
+  {
+    "title": "Aşırı Isınma",
+    "fx": "rise"
+  },
+  {
+    "title": "Uzman Müdahalesi",
+    "fx": "pulse"
+  }
+]

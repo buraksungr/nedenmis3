@@ -40,8 +40,8 @@ import {
   verifyVideo,
   type Paths,
 } from './media';
-import { displayPlan } from '../shared/svg-story';
-import { svgPlanSchema } from '../shared/svg';
+import { legacyPlate } from '../shared/legacy-atlas';
+import { verifiedFrame } from './vector-files';
 import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
 export type Step = 'all' | 'image' | 'voice' | 'align' | 'clip';
@@ -343,14 +343,20 @@ export class Production {
     const m = (p.assets[s.id] ??= {}),
       silent = unvoicedSvg(s, m);
     const diagram = (scene?: Scene) => {
-      if (scene?.visualMode !== 'svg') return undefined;
+      if (scene?.visualMode !== 'svg' || scene.vector) return undefined;
       requireThat(scene.svgPlan, 'SVG şablonu eksik.');
-      return svgPlanSchema.parse(displayPlan(scene.svgPlan, scene.narration, p.topic));
+      return legacyPlate(scene.svgPlan);
     };
+    const vectorFor = (v?: Scene) =>
+      v?.visualMode === 'svg' && v.vector
+        ? verifiedFrame(this.store.dir(p.id), v.vector, v.narration)
+        : undefined;
+    const vector = vectorFor(s),
+      nextVector = vectorFor(next);
     const svg = diagram(s),
       nextSvg = diagram(next);
     requireThat(
-      (svg || this.usable(p, m.image, imageKey(p, s))) &&
+      (vector || svg || this.usable(p, m.image, imageKey(p, s))) &&
         (silent || this.usable(p, m.voice, voiceKey(p, s))),
       'Güncel sahne görseli ve seslendirme gerekiyor.',
     );
@@ -361,7 +367,7 @@ export class Production {
     const words = sceneCaptions(s, m),
       sentenceCaptions = silent || m.align?.method === 'estimated';
     // Incoming diagrams always start at frame zero. Separate the diagram and active-word revisions from the static photo and timing inputs.
-    const adjacent = next && !nextSvg ? p.assets[next.id]?.image : undefined;
+    const adjacent = next && !nextSvg && !nextVector ? p.assets[next.id]?.image : undefined;
     const data = (plan: typeof svg) => {
       const art = plan?.artwork && readArtwork(this.store.dir(p.id), plan.artwork.digest);
       return art ? 'data:image/svg+xml;base64,' + Buffer.from(art).toString('base64') : undefined;
@@ -370,12 +376,18 @@ export class Production {
       nextArtHref = data(nextSvg);
     const key = hash(
       'film-5-static-crossfade',
-      svg ? ['atlas-svg-v3', svg, ...(svg.artwork ? [!!artHref] : [])] : m.image!.file,
+      vector
+        ? ['vector-film-v1', vector.ref]
+        : svg
+          ? ['atlas-svg-v3', svg, ...(svg.artwork ? [!!artHref] : [])]
+          : m.image!.file,
       words,
       frames,
-      nextSvg
-        ? ['atlas-svg-v3', nextSvg, ...(nextSvg.artwork ? [!!nextArtHref] : [])]
-        : adjacent?.file,
+      nextVector
+        ? ['vector-film-v1', nextVector.ref]
+        : nextSvg
+          ? ['atlas-svg-v3', nextSvg, ...(nextSvg.artwork ? [!!nextArtHref] : [])]
+          : adjacent?.file,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : p.highlight ? ['active-word-amber-v1'] : []),
@@ -388,9 +400,11 @@ export class Production {
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
+      ...(vector ? { vector } : {}),
+      ...(nextVector ? { nextVector } : {}),
       ...(svg ? { svg, artHref } : {}),
       ...(nextSvg ? { nextSvg, nextArtHref } : {}),
-      image: svg ? '' : url(m.image!),
+      image: vector || svg ? '' : url(m.image!),
       next: adjacent ? url(adjacent) : null,
       words,
       frames,

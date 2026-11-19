@@ -1,0 +1,164 @@
+[
+  {
+    "weather": "none",
+    "accentColor": "#9ADBC1",
+    "template": "TitleHookScene",
+    "icon": "airplane",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Uçakların Seyir Yüksekliği",
+    "labels": [
+      "Yolcu uçağı"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#F1BB79",
+    "template": "TimelineScaleScene",
+    "icon": "airplane",
+    "fromValue": 0,
+    "toValue": 10,
+    "title": "Yükseklik Ölçeği",
+    "labels": [
+      "Deniz seviyesi",
+      "Ara irtifa",
+      "Üst irtifa"
+    ],
+    "unit": "km",
+    "midValue": 5
+  },
+  {
+    "weather": "none",
+    "accentColor": "#8FCDE5",
+    "template": "LayerStackScene",
+    "icon": "globe",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Atmosferin Katmanları",
+    "labels": [
+      "Mezosfer",
+      "Stratosfer",
+      "Troposfer"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#C5B8EB",
+    "template": "ThermometerGaugeScene",
+    "icon": "flame",
+    "fromValue": 15,
+    "toValue": -50,
+    "title": "Havanın Sıcaklığı",
+    "labels": [
+      "Hava sıcaklığı",
+      "Sıcaklık aralığı"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#D1D986",
+    "template": "ComparisonScene",
+    "icon": "molecule",
+    "fromValue": null,
+    "toValue": null,
+    "title": "Havanın Yoğunluğu",
+    "labels": [
+      "Yoğun hava",
+      "Seyrek hava"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#9ADBC1",
+    "template": "SplitCauseEffectScene",
+    "icon": "airplane",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Havanın Direnci",
+    "labels": [
+      "Havanın seyrelmesi",
+      "Azalan sürükleme"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#F1BB79",
+    "template": "RatioGaugeScene",
+    "icon": "molecule",
+    "fromValue": 0,
+    "toValue": 21,
+    "title": "Havadaki Oksijen Oranı",
+    "labels": [
+      "Oksijen"
+    ],
+    "unit": "%"
+  },
+  {
+    "weather": "none",
+    "accentColor": "#8FCDE5",
+    "template": "FocusCalloutScene",
+    "icon": "shield",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Kabinde Hava Basıncı",
+    "labels": [
+      "Kabin basıncı",
+      "Yolcuların solunumu"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#C5B8EB",
+    "template": "CrossSectionScene",
+    "icon": "airplane",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Kanadın Kesiti",
+    "labels": [
+      "Üst yüzey",
+      "Alt yüzey"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#D1D986",
+    "template": "ProcessFlowScene",
+    "icon": "airplane",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Jet Motorunun İşleyişi",
+    "labels": [
+      "Havanın sıkıştırılması",
+      "Yakıtın yanması",
+      "Gazın çıkışı"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#9ADBC1",
+    "template": "WavePulseScene",
+    "icon": "soundwave",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Radyoyla Haberleşme",
+    "labels": [
+      "Uçak anteni",
+      "Kontrol kulesi"
+    ]
+  },
+  {
+    "weather": "none",
+    "accentColor": "#F1BB79",
+    "template": "CycleLoopScene",
+    "icon": "airplane",
+    "fromValue": 0,
+    "toValue": 0,
+    "title": "Uçuşun Evreleri",
+    "labels": [
+      "Kalkış",
+      "Tırmanış",
+      "Seyir",
+      "İniş"
+    ]
+  }
+]

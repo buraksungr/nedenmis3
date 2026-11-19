@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { blankScene, type Scene } from '../shared/schema';
 import { type SvgPlan, templates } from '../shared/svg';
-import { storyboardPlans } from '../shared/svg-story';
+import legacyFlight from './fixtures/legacy-flight.json';
 import flight from './fixtures/flight.json';
 import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
 import { framesForVoice, Production } from '../server/production';
@@ -29,7 +29,7 @@ export async function svgRenderControl(out: string) {
   };
   const images = testImages(store, offline),
     prod = new Production(store, new Gemini(store, memoryVault(), offline), paths, images);
-  const plans: SvgPlan[] = storyboardPlans(flight, 'Uçaklar neden yüksekten uçar?');
+  const plans: SvgPlan[] = legacyFlight as SvgPlan[];
   assert.deepEqual(new Set(plans.map((s) => s.template)), new Set(templates));
   const scenes: Scene[] = plans.map((plan, i) => ({
     ...blankScene(randomUUID()),

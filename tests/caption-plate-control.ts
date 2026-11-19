@@ -4,27 +4,30 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { renderStill } from '@remotion/renderer';
 import type { FilmProps } from '../composition/Film';
-import { displayPlan } from '../shared/svg-story';
+import { sample } from './vector-test-data';
+import { parseIllustration } from '../server/layered-svg';
+import { vectorSchema } from '../shared/vector';
 import { ff } from '../server/media';
 import { withDocumentaryScene } from '../server/render-browser';
 export async function captionPlateControl(out: string) {
   const tmp = fs.mkdtempSync(path.join(out, 'caption-')),
     width = 270,
     height = 480;
-  const svg = displayPlan(
-    {
-      template: 'FocusCalloutScene',
-      weather: 'none',
-      accentColor: '#90B5C9',
-      fromValue: 0,
-      toValue: 0,
-      title: 'Tatlı yedikten sonra bir yudum su',
-      subtitle: 'Bu eski gri anlatım satırı görünmemeli.',
-    },
-    'Beynin susama merkezinde bir sinyal oluşur.',
-  );
+  const art = sample(2),
+    { drawing } = parseIllustration(art.svg);
   const props: FilmProps = {
-    svg,
+    vector: {
+      ref: vectorSchema.parse({
+        kind: 'layered-v1',
+        title: art.title,
+        fx: art.fx,
+        provider: 'openrouter',
+        model: 'qa-illustrator-replay',
+        digest: 'f'.repeat(64),
+        narrationHash: 'b'.repeat(64),
+      }),
+      drawing,
+    },
     image: '',
     next: null,
     words: [

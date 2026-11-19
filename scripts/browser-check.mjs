@@ -22,18 +22,26 @@ const ctx = studio.createStudio(
   {
     transport: async (url, opts) => {
       const host = new URL(url).host;
-      if (host === 'api.iconify.design') {
-        const u = new URL(url);
-        if (u.pathname === '/search')
-          return Response.json({ icons: ['tabler:' + u.searchParams.get('query')] });
-        return new Response(
-          '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 2h20v20H2Z"/></svg>',
-          { headers: { 'Content-Type': 'image/svg+xml' } },
-        );
-      }
       if (host === 'openrouter.ai') {
-        plannerCalls.push(host);
-        return new Response(null, { status: 503 });
+        const data = JSON.parse(JSON.parse(opts.body).messages[1].content);
+        plannerCalls.push(data);
+        if (plannerCalls.length === 1) return new Response(null, { status: 503 });
+        const svg = fs.readFileSync('tests/fixtures/vector-ant.svg', 'utf8');
+        return Response.json({
+          model: 'qa-illustrator-replay',
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content: JSON.stringify({
+                  title: data.yönlendirme ? 'Feromon İzi' : 'Karınca Kolonisi',
+                  fx: 'drift',
+                  svg: data.yönlendirme ? svg.replace('#ffe298', '#ff9263') : svg,
+                }),
+              },
+            },
+          ],
+        });
       }
       if (['gen.pollinations.ai', 'image.pollinations.ai'].includes(host)) {
         imageCalls.push([host, new Headers(opts.headers).get('authorization')]);
@@ -306,60 +314,27 @@ try {
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
   await page.getByLabel('Storyboard biçimi').selectOption('svg');
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
-  await page.locator('.job-note.waiting').filter({ hasText: 'OpenRouter: HTTP 503' }).waitFor();
+  await page.locator('.job-note.failed').filter({ hasText: 'OpenRouter HTTP 503' }).waitFor();
+  assert.equal(await page.locator('.scene-card').count(), 0);
+  await page.getByRole('button', { name: 'SVG planı oluştur' }).click();
   const card = page.locator('.scene-card').first(),
     mode = card.getByLabel('Sahne türü');
+  await card.locator('[data-vector-scene]').waitFor();
   assert.equal(await mode.inputValue(), 'svg');
+  assert.equal(await card.locator('[data-vector-layer]').count(), 3);
   await mode.selectOption('photo');
   await card.getByText('Sabit kadraj · Yumuşak geçiş').waitFor();
   await mode.selectOption('svg');
-  const templateSelect = card.getByLabel('SVG şablonu');
-  await templateSelect.waitFor(); // SVG editor is lazy-loaded.
-  assert.equal(await templateSelect.locator('option').count(), 12);
-  assert.equal(await card.getByLabel('Bilim ikonu').locator('option').count(), 20);
-  const keyword = card.getByLabel('Iconify anahtar kelimesi');
-  await keyword.fill('lungs');
-  await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith('/scene-art') && r.ok()),
-    card.getByRole('button', { name: 'İkon ara', exact: true }).click(),
-  ]);
-  await card.locator('.svg-paper [data-atlas-source="iconify"] image').first().waitFor();
-  await card.getByText('Iconify · tabler:lungs', { exact: true }).first().waitFor();
-  await templateSelect.selectOption('CycleLoopScene');
-  await card.getByLabel('Aşama sayısı').selectOption('4');
-  await card.getByLabel('Adım 4').fill('Yuvaya dönüş');
-  await templateSelect.selectOption('LayerStackScene');
-  await card.getByLabel('Katman 2').fill('');
-  assert.ok(await page.getByRole('button', { name: 'Onayla ve üret' }).isDisabled());
-  await templateSelect.selectOption('RatioGaugeScene');
-  await card.getByLabel('Gösterge birimi').selectOption('×');
-  await card.getByLabel('Kat sayısı').fill('50');
-  await card.getByLabel('Şema etiketi 1').click();
-  assert.match(await card.locator('.svg-paper').textContent(), /50×/);
-  await templateSelect.selectOption('TimelineScaleScene');
-  await card.getByLabel('Gösterge birimi').selectOption('km');
-  await card.getByLabel('Bitiş değeri').fill('10');
-  await card.getByLabel('Orta değer').fill('4');
-  await card.getByLabel('Şema etiketi 1').click();
-  assert.match(await card.locator('.svg-paper').textContent(), /4 km/);
-  await card.getByLabel('SVG şablonu').selectOption('FocusCalloutScene');
-  await card.getByLabel('Bilim ikonu').selectOption('cell');
-  await card.locator('[data-science-icon="cell"]').first().waitFor();
-  await card.getByLabel('Şema etiketi 1').fill('Hücre zarı');
-  await card.getByLabel('Şema etiketi 2').fill('Su geçişi');
-  await card
-    .getByLabel('Şema başlığı')
-    .fill('Bu cümle başlık olarak kullanılamayacak kadar uzundur');
-  assert.ok(await page.getByRole('button', { name: 'Onayla ve üret' }).isDisabled());
-  await card.getByLabel('SVG şablonu').selectOption('ThermometerGaugeScene');
-  await card.getByLabel('Şema başlığı').fill('Toprak sıcaklığı');
-  await card.getByLabel('Başlangıç değeri').fill('-5');
-  await card.getByLabel('Bitiş değeri').fill('4');
-  await card.getByLabel('Tahmini süre (sn)').fill('1.2');
-  await card.getByRole('button', { name: 'Şemayı oynat' }).click();
+  const direction = card.getByLabel('Çizim yönlendirmesi (isteğe bağlı)');
+  await direction.fill('İz parçacıklarını turuncu çiz.');
+  await card.getByRole('button', { name: 'Bu sahneyi yeniden çiz' }).click();
+  await card.getByText('Feromon İzi', { exact: true }).first().waitFor();
+  assert.equal(plannerCalls.at(-1).yönlendirme, 'İz parçacıklarını turuncu çiz.');
+  await card.getByRole('button', { name: 'Hareketi önizle' }).click();
   await page.waitForFunction(
-    () => +document.querySelector('input[aria-label="Şema önizleme karesi"]').value > 0,
+    () => +document.querySelector('input[aria-label="Vektör önizleme karesi"]').value > 0,
   );
+  assert.equal(await card.getByLabel('SVG şablonu').count(), 0);
   await page.getByRole('button', { name: 'Onayla ve üret' }).click();
   await page.locator('.job-note.config').filter({ hasText: 'Seslendirme' }).waitFor();
   assert.deepEqual(voiceCalls, []);
@@ -375,12 +350,10 @@ try {
   assert.ok(shot.voice && shot.align && shot.clip);
   assert.equal(shot.align.method, 'estimated');
   assert.equal(svgResult.final.duration, Math.ceil(shot.voice.duration * 30) / 30);
-  assert.equal(svgResult.scenes[0].svgPlan.icon, 'cell');
-  assert.equal(svgResult.scenes[0].svgPlan.title, 'Toprak sıcaklığı');
-  assert.equal(svgResult.scenes[0].svgPlan.fromValue, -5);
-  assert.equal(svgResult.scenes[0].svgPlan.toValue, 4);
+  assert.equal(svgResult.scenes[0].vector.title, 'Feromon İzi');
+  assert.equal(svgResult.scenes[0].svgPlan, undefined);
   assert.ok(!shot.image);
-  assert.deepEqual(plannerCalls, ['openrouter.ai']);
+  assert.equal(plannerCalls.length, 3);
   assert.equal(imageCalls.length, 2);
   // Play an already FFprobe-validated control, never a fabricated render in the dashboard.
   const previous = path.resolve('out/render-control/Projects');
@@ -429,7 +402,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → editable SVG icon/labels/title → one-click TTS, alignment attempt and MP4.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → full-stage SVG → directed redraw → one-click TTS, alignment attempt and MP4.',
   );
 } finally {
   await browser.close();

@@ -33,6 +33,7 @@ try {
   if ($process.ExitCode -ne 0) { throw "Installed app exit code $($process.ExitCode): $rawReport" }
   $report = $rawReport | ConvertFrom-Json
   if (!$report.secureStorage -or !$report.pollinationsSecureStorage) { throw 'Provider credential isolation not verified' }
+  if (!$report.vectorPaintWorker) { throw 'Packaged vector paint worker not verified' }
   $remotion = $report.checks | Where-Object id -eq 'remotion'
   if (!$report.installed -or !$remotion.ok -or $remotion.detail -notmatch '(msedge|chrome|chromium)\.exe$') {
     throw "Expected a connected system browser: $rawReport"

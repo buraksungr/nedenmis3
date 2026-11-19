@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultSpeaker, type Speaker } from '../shared/speakers';
-import { svgPlanSchema } from '../shared/svg';
+import { legacySvgPlanSchema, svgPlanSchema } from '../shared/svg';
+import { vectorSchema } from '../shared/vector';
 import {
   blankScene,
   normalize,
@@ -53,7 +54,14 @@ export function approveBoard(p: Project) {
       p.scenes.every(
         (s) =>
           s.narration &&
-          (s.visualMode === 'svg' ? svgPlanSchema.safeParse(s.svgPlan).success : s.description),
+          (s.visualMode === 'svg'
+            ? s.vector
+              ? !s.svgPlan &&
+                vectorSchema.safeParse(s.vector).success &&
+                s.vector.narrationHash === hash(normalize(s.narration))
+              : svgPlanSchema.safeParse(s.svgPlan).success ||
+                legacySvgPlanSchema.safeParse(s.svgPlan).success
+            : s.description),
       ),
     'Her sahnede anlatım ve geçerli bir SVG planı veya fotoğraf betimlemesi gerekiyor.',
   );

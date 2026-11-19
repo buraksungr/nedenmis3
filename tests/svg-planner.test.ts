@@ -1,485 +1,261 @@
-import { grounded } from '../shared/svg-copy';
-import thirst from './fixtures/thirst.json';
-import flight from './fixtures/flight.json';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
-import { z } from 'zod';
-import { defaultSvg, diagramLabels, displayPlan, storyboardPlans } from '../shared/svg-story';
-import { catalogue, icons, svgPlanSchema, templates, type LegacySvgPlan } from '../shared/svg';
-import { blankScene, normalize } from '../shared/schema';
-import { Store, makeProject, scriptSig, approveBoard, approved } from '../server/store';
+import { randomUUID } from 'node:crypto';
+import { parseIllustration, MAX_XML } from '../server/layered-svg';
+import { checkPaint } from '../server/vector-proof';
+import { readIllustration, verifiedFrame } from '../server/vector-files';
 import { SvgPlanner } from '../server/svg-planner';
+import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
-import { invalidate } from '../server/invalidate';
-import { imageKey, voiceKey } from '../server/production';
-function setup(t: TestContext, transport: typeof fetch) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-svg-'));
-  const store = new Store(root, false);
+import { Store, makeProject, scriptSig, approveBoard, approved } from '../server/store';
+import { blankScene } from '../shared/schema';
+import { heading, layers } from '../shared/vector';
+import { legacyPlate } from '../shared/legacy-atlas';
+import { svgPlanSchema } from '../shared/svg';
+import { sample, completion } from './vector-test-data';
+import whale from './fixtures/whale.json';
+import legacy from './fixtures/legacy-flight.json';
+function setup(t: TestContext, n = 2) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-vector-')),
+    store = new Store(root, false),
+    vaults = { groq: memoryVault(), openrouter: memoryVault() },
+    p = store.create(
+      makeProject('Karaya vuran balinalar neden ölür?', whale.slice(0, n).join(' ')),
+    );
+  p.scriptApproval = scriptSig(p);
   t.after(() => {
     store.db.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { force: true, recursive: true });
   });
-  const keys = { groq: memoryVault(), openrouter: memoryVault() },
-    planner = new SvgPlanner(store, keys, transport);
-  const p = makeProject(
-    'Kış',
-    'Toprak yüzeyi karla kaplanır. Sıcaklık -5 dereceden +4 dereceye çıkar.',
-  );
-  p.scriptApproval = scriptSig(p);
-  return { store, planner, p, keys };
+  return { root, store, p, vaults };
 }
-const valid = defaultSvg('Toprakta kök gelişimi.');
-test('strict JSON Schema branches require meaningful headings and every template-specific slot', () => {
-  const json = z.toJSONSchema(svgPlanSchema);
-  assert.equal(templates.length, 12);
-  assert.equal(icons.length, 20);
-  assert.equal(json.oneOf?.length, templates.length);
-  assert.ok(json.oneOf?.every((b) => typeof b === 'object' && b.additionalProperties === false));
-  for (const t of templates) {
-    const p = defaultSvg('Toprakta kök gelişimi.', 0, '', t),
-      [min, max] = catalogue[t].slots;
-    assert.ok(svgPlanSchema.safeParse(p).success, t);
-    assert.equal(
-      svgPlanSchema.safeParse({ ...p, labels: p.labels.slice(0, min - 1) }).success,
-      false,
-    );
-    assert.equal(
-      svgPlanSchema.safeParse({
-        ...p,
-        labels: Array.from({ length: max + 1 }, (_, i) => 'Toprak ' + i),
-      }).success,
-      false,
-    );
-    assert.equal(
-      svgPlanSchema.safeParse({ ...p, labels: p.labels.map((v, i) => (i ? v : '   ')) }).success,
-      false,
-    );
+test('rich colors, bounded local gradients and all three visible full-stage layers survive canonical round trip', async () => {
+  for (const [i] of whale.entries()) {
+    const s = sample(i),
+      a = parseIllustration(s.svg);
+    assert.deepEqual(parseIllustration(a.canonical), a);
+    assert.ok(a.drawing.defs.length);
+    assert.deepEqual(Object.keys(a.drawing.layers), layers);
+    assert.ok((await checkPaint(a.drawing)).subject > 0.1);
+    assert.ok(heading.safeParse(s.title).success);
   }
-  for (const invalid of [
-    { ...valid, other: 'markup' },
-    { ...valid, toValue: '4' },
-    { ...valid, fromValue: Infinity },
-    { ...valid, template: 'CustomJSX' },
-    { ...valid, weather: 'storm' },
-    { ...valid, accentColor: 'url(example)' },
-    { ...valid, title: '' },
-    { ...valid, subtitle: 'Eski açıklama' },
-    { ...valid, icon: 'script' },
-    { ...valid, icon: undefined },
-    { ...valid, labels: ['Odak noktası', 'İncelenen yapı'] },
-    { ...valid, labels: [] },
-    { ...valid, title: 'Uzun anlatı cümlesini olduğu gibi yazma' },
-    { ...valid, title: 'Tek' },
-    { ...valid, fromValue: null },
+});
+test('reject malformed XML, active/foreign/external content, invalid geometry and wrong or empty layers', () => {
+  const v = sample().svg;
+  const inject = (s: string) => v.replace('<g id="layer-fx">', '<g id="layer-fx">' + s);
+  for (const x of [
+    v.slice(0, -9),
+    '<!DOCTYPE svg>' + v,
+    v.repeat(2),
+    v.replace('1080 1350', '1080 1920'),
+    v.replace('id="layer-bg"', 'id="layer-main"'),
+    v.replace(
+      /<g id="layer-main">[\s\S]*<g id="layer-fx">/,
+      '<g id="layer-main"/><g id="layer-fx">',
+    ),
+    v + ' '.repeat(MAX_XML),
+    v.replace('url(#sky)', 'url(#missing)'),
+    inject('<circle r="8" fill="url(https://example.com/paint)"/>'),
+    inject('<use href="#sky"/>'),
+    inject('<script/>'),
+    inject('<image/>'),
+    inject('<a/>'),
+    inject('<animate/>'),
+    inject('<foreignObject/>'),
+    inject('<style/>'),
+    inject('<g onload="1"/>'),
+    inject('<circle r="1e999"/>'),
+    inject('<path d="M3 4 C90"/>'),
+    inject('<rect width="0" height="10"/>'),
+    inject('<g transform="matrix(1 2)"/>'),
+    inject('<z:g xmlns:z="urn:other"/>'),
+    inject('<g style="stroke:red"/>'),
+    inject('<text>Üç bilimsel kelime</text>'),
+    inject('<text>A</text>'.repeat(3)),
+    inject('<g>'.repeat(20) + '</g>'.repeat(20)),
+    v.replace('<g id="layer-bg">', '<g id="layer-bg"><text>Başlık</text>'),
   ])
-    assert.equal(svgPlanSchema.safeParse(invalid).success, false);
-  assert.throws(() => storyboardPlans(['🍃'.repeat(120)], 'Bir başka konu'), /yeterli anlatım/); // Impossible to make a grounded heading.
+    assert.throws(() => parseIllustration(x));
 });
-test('local planning keeps approved narration verbatim, needs neither keys nor transport', async (t) => {
+test('actual paint test detects tiny, transparent, offscreen or fully hidden geometry', async () => {
+  for (const [id, attribute] of [
+    ['layer-bg', 'opacity="0"'],
+    ['layer-main', 'transform="scale(.1)"'],
+    ['layer-main', 'transform="translate(5000 0)"'],
+    ['layer-fx', 'opacity="0"'],
+  ]) {
+    const { drawing } = parseIllustration(
+      sample().svg.replace(`id="${id}"`, `id="${id}" ${attribute}`),
+    );
+    await assert.rejects(checkPaint(drawing));
+  }
+});
+test('headings are validated, not cut to fit or rebuilt from narration', () => {
+  for (const s of [
+    'Devlerin Karadaki',
+    'Yapar ve nefes',
+    'Devasa Efendileri Olan Balinalar',
+    'Kuvvet',
+    'Etkiler ve',
+    '<g>Basınç</g>',
+    'Başlık 1',
+  ])
+    assert.ok(!heading.safeParse(s).success, s);
+  for (const s of ['Solunum Güçlüğü', 'Kaldırma Kuvveti', 'Aşırı Isınma', 'Karada Isı Kaybı'])
+    assert.equal(heading.parse(s), s);
+});
+test('consent before requests; no slide, fabricated headline, or automatic provider switch on outage', async (t) => {
+  const { store, vaults, p } = setup(t);
   let calls = 0;
-  const { planner, p } = setup(t, async () => {
+  const planner = new SvgPlanner(store, vaults, async () => {
     calls++;
-    throw Error();
+    return new Response('private-error', { status: 503 });
   });
-  const result = await planner.plan(p);
+  await assert.rejects(planner.plan(p), /Ayarlar/);
   assert.equal(calls, 0);
-  assert.equal(result.warning, '');
-  assert.equal(normalize(result.scenes.map((s) => s.narration).join(' ')), normalize(p.script));
-  assert.ok(
-    result.scenes.every(
-      (s) => s.visualMode === 'svg' && svgPlanSchema.safeParse(s.svgPlan).success,
-    ),
-  );
-  assert.equal(result.scenes[1].svgPlan.template, 'ThermometerGaugeScene');
-  assert.deepEqual([result.scenes[1].svgPlan.fromValue, result.scenes[1].svgPlan.toValue], [-5, 4]);
-  p.scriptApproval = null;
-  await assert.rejects(planner.plan(p), /onay/);
+  planner.key('openrouter', 'isolated-key');
+  await assert.rejects(planner.plan(p), /HTTP 503/);
+  assert.equal(calls, 1);
+  assert.deepEqual(p.scenes, []);
+  planner.configure({ provider: 'disabled' });
+  await assert.rejects(planner.plan(p), /Ayarlar/);
+  assert.equal(calls, 1);
+  assert.ok(!JSON.stringify(planner.settings()).includes('isolated-key'));
 });
-test('OpenAI-compatible planners target only their selected host and validate the entire JSON plan', async (t) => {
-  const calls: { url: string; h: Headers; b: any; redirect: RequestRedirect | undefined }[] = [];
-  const { planner, p } = setup(t, async (url, opts) => {
-    calls.push({
-      url: String(url),
-      h: new Headers(opts?.headers),
-      b: JSON.parse(String(opts?.body)),
-      redirect: opts?.redirect,
-    });
-    if (String(url).endsWith('/api/show'))
-      return Response.json({ model_info: { 'general.architecture': 'qwen2' } });
-    return Response.json({
-      choices: [
-        {
-          finish_reason: 'stop',
-          message: {
-            content: JSON.stringify({
-              scenes: [
-                { ...valid, title: 'Toprak Yüzeyi' },
-                { ...valid, title: 'Sıcaklık Çıkar' },
-              ],
-            }),
-          },
-        },
-      ],
-    });
-  });
-  for (const provider of ['groq', 'openrouter', 'ollama'] as const) {
-    if (provider !== 'ollama') planner.key(provider, provider + '-isolated-secret');
-    planner.configure({ provider, ollamaModel: 'qwen2.5:7b', groqFreeConfirmed: true });
-    const r = await planner.plan(p);
-    assert.equal(r.warning, '');
-    assert.deepEqual(
-      r.scenes.map((s) => s.svgPlan.title),
-      ['Toprak Yüzeyi', 'Sıcaklık Çıkar'],
+test('scene-specific XML/title from model, one repair, immutable verified assets, offline playback, and independent redraw', async (t) => {
+  const { store, vaults, p } = setup(t);
+  let calls = 0;
+  const prompts: Record<string, unknown>[] = [];
+  const planner = new SvgPlanner(store, vaults, async (url, o) => {
+    assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
+    const b = JSON.parse(String(o?.body));
+    assert.equal(b.model, 'openrouter/free');
+    assert.equal(o?.redirect, 'error');
+    const input = JSON.parse(b.messages[1].content);
+    prompts.push(input);
+    calls++;
+    return completion(
+      calls === 1
+        ? { ...sample(), svg: '<svg>' }
+        : input.yönlendirme
+          ? sample(2)
+          : sample(input.sahne - 1),
     );
-  }
-  assert.deepEqual(
-    calls.map((c) => c.url),
-    [
-      'https://api.groq.com/openai/v1/chat/completions',
-      'https://openrouter.ai/api/v1/chat/completions',
-      'http://127.0.0.1:11434/api/show',
-      'http://127.0.0.1:11434/v1/chat/completions',
-    ],
-  );
-  assert.deepEqual(
-    calls.map((c) => c.h.get('authorization')),
-    ['Bearer groq-isolated-secret', 'Bearer openrouter-isolated-secret', null, null],
-  );
-  assert.equal(calls[1].b.model, 'openrouter/free');
-  assert.ok(
-    calls.every((c) => c.redirect === 'error' && !JSON.stringify(c.b).includes('isolated-secret')),
-  );
-  assert.ok(calls[0].b.messages[0].content.includes('additionalProperties'));
-  assert.equal(calls[0].b.response_format.type, 'json_object');
-  assert.ok(!JSON.stringify(planner.settings()).includes('secret'));
-  planner.key('groq', 'another-free-account');
-  assert.equal(planner.settings().groqFreeConfirmed, false);
-  planner.key('openrouter');
-  assert.deepEqual(planner.settings().keys, { groq: true, openrouter: false });
-});
-test('503, timeout, missing key, truncated/invalid/extra JSON and cloud Ollama all fall back without replay or losing authored fields', async (t) => {
-  let calls = 0,
-    reply: () => Response = () => new Response(null, { status: 503 });
-  const { p, planner } = setup(t, async () => {
-    calls++;
-    return reply();
   });
-  const manual = {
-    ...defaultSvg(p.script, 0, '', 'CrossSectionScene'),
-    title: 'Toprak Yüzeyi',
-    labels: ['Toprak yüzeyi', 'Sıcaklık'],
-    accentColor: '#ABCD99',
-  };
-  p.scenes = [
-    {
-      ...blankScene(randomUUID()),
-      narration: p.script,
-      description: p.script,
-      visualMode: 'svg',
-      svgPlan: manual,
-    },
-  ];
-  planner.configure({
-    provider: 'openrouter',
-    ollamaModel: 'qwen2.5:7b',
-    groqFreeConfirmed: false,
-  });
-  assert.match((await planner.plan(p)).warning, /anahtarı yok/);
-  assert.equal(calls, 0);
-  planner.key('openrouter', 'fixture-only-secret');
-  for (reply of [
-    () => new Response(null, { status: 503 }),
-    () => {
-      throw Error('fixture-only-secret');
-    },
-    () => Response.json({ choices: [{ finish_reason: 'length', message: { content: '{}' } }] }),
-    ...[
-      'not JSON',
-      JSON.stringify({ scenes: [] }),
-      JSON.stringify({ scenes: [{ ...valid, code: 'untrusted text' }] }),
-    ].map(
-      (content) => () =>
-        Response.json({ choices: [{ finish_reason: 'stop', message: { content } }] }),
-    ),
-  ]) {
-    const n: number = calls,
-      r = await planner.plan(p);
-    assert.equal(calls, n + 1);
-    assert.match(r.warning, /Yerel şablon/);
-    assert.ok(!r.warning.includes('fixture-only-secret'));
-    assert.deepEqual(r.scenes[0].svgPlan, manual);
-    assert.equal(r.scenes[0].id, p.scenes[0].id);
-  }
+  planner.key('openrouter', 'isolated-key');
+  p.scenes = whale.slice(0, 2).map((narration) => ({ ...blankScene(randomUUID()), narration }));
+  const before = structuredClone(p.scenes);
+  p.scenes = await planner.plan(p);
+  assert.equal(calls, 3);
+  assert.ok(prompts[1].onarım);
+  assert.equal(prompts[0].anlatım, p.scenes[0].narration);
+  assert.deepEqual(
+    p.scenes.map((s) => [s.id, s.narration]),
+    before.map((s) => [s.id, s.narration]),
+  );
+  const ref = p.scenes[0].vector!;
+  assert.equal(ref.title, sample().title);
+  const base = store.dir(p.id),
+    image = verifiedFrame(base, ref, p.scenes[0].narration);
+  assert.deepEqual(
+    (await planner.plan(p)).map((s) => s.vector),
+    p.scenes.map((s) => s.vector),
+  );
+  assert.equal(calls, 3);
+  const next = await planner.redraw(p, p.scenes[0], 'Kırmızı okları büyüt');
+  assert.equal(calls, 4);
+  assert.equal(prompts.at(-1)?.yönlendirme, 'Kırmızı okları büyüt');
+  assert.ok(prompts.at(-1)?.öncekiÇizim);
+  assert.notEqual(next.digest, ref.digest);
   assert.throws(() =>
-    planner.configure({ provider: 'groq', ollamaModel: 'local', groqFreeConfirmed: false }),
+    verifiedFrame(base, { ...ref, title: 'Farklı Bir Başlık' }, p.scenes[0].narration),
   );
-  planner.configure({ provider: 'ollama', ollamaModel: 'local', groqFreeConfirmed: false });
-  reply = () =>
-    Response.json({ remote_host: 'remote', model_info: { 'general.architecture': 'remote' } });
-  const n: number = calls;
-  assert.match((await planner.plan(p)).warning, /yerel Ollama/);
-  assert.equal(calls, n + 1);
+  assert.throws(() => verifiedFrame(base, ref, 'Yeni anlatım'));
+  planner.key('openrouter');
+  assert.deepEqual(readIllustration(base, ref.digest).drawing, image.drawing);
+  fs.appendFileSync(path.join(base, 'media', 'illustrations', ref.digest + '.svg'), ' ');
+  assert.throws(() => readIllustration(base, ref.digest));
+  assert.throws(() => readIllustration(base, '../a'));
 });
-test('SVG edits detach only dependent clips, keep old photo and voice assets, and require review', () => {
-  const p = makeProject('Katman', 'Bir. İki. Üç.');
-  p.scenes = ['Bir.', 'İki.', 'Üç.'].map((n) => ({
-    ...blankScene(randomUUID()),
-    description: n,
-    narration: n,
-  }));
-  const [a, b, c] = p.scenes;
-  for (const s of p.scenes)
-    p.assets[s.id] = {
-      image: { file: s.id + '.jpg', key: imageKey(p, s) },
-      voice: { file: s.id + '.wav', key: voiceKey(p, s) },
-      clip: { file: s.id + '.mp4', key: 'clip' },
-    };
-  p.scriptApproval = scriptSig(p);
-  approveBoard(p);
-  const photo = structuredClone(p);
-  b.visualMode = 'svg';
-  b.svgPlan = valid;
-  invalidate(p, photo);
-  assert.ok(!p.assets[a.id].clip && !p.assets[b.id].clip && p.assets[c.id].clip);
-  assert.deepEqual(p.assets[b.id].image, photo.assets[b.id].image);
-  assert.deepEqual(p.assets[b.id].voice, photo.assets[b.id].voice);
-  assert.throws(() => approved(p));
-  approveBoard(p);
-  const orig = structuredClone(p);
-  p.assets[a.id].clip = photo.assets[a.id].clip;
-  p.assets[b.id].clip = photo.assets[b.id].clip;
-  b.svgPlan = { ...valid, accentColor: '#FF9900' };
-  invalidate(p, orig);
-  assert.ok(!p.assets[a.id].clip && !p.assets[b.id].clip && p.assets[c.id].clip);
-});
-
-test('content and sequence guide both offline and repetitive remote plans, without inventing measurements', () => {
-  for (const hints of [
-    [],
-    thirst.map(() => ({
-      ...defaultSvg('Yaprağın yapısı'),
-      template: 'FocusCalloutScene' as const,
-      labels: ['Yaprak ayası', 'Ana damar'],
-    })),
-  ]) {
-    const plans = storyboardPlans(thirst, 'Susama', hints);
-    assert.ok(
-      plans.every(
-        (p) =>
-          svgPlanSchema.safeParse(p).success &&
-          p.icon !== 'leaf' &&
-          p.template !== 'ThermometerGaugeScene',
-      ),
-    );
-    assert.ok(plans.every((p, i) => i === 0 || p.template !== plans[i - 1].template));
-    assert.ok(new Set(plans.map((p) => p.template)).size >= 5);
-    for (const p of plans.filter((p) => p.template === 'ComparisonScene'))
-      assert.deepEqual([p.fromValue, p.toValue], [null, null]);
-  }
-  const inferred = [
-    'Hücre zarı',
-    'Su damlası',
-    'Beyin dalgaları',
-    'Molekül yapısı',
-    'Kan dolaşımı',
-    'Bir yaprak',
-    'Dünya dönüyor',
-    'Alev ısı yayar.',
-    'Yolcu uçağı',
-    'Güneş ışınları',
-    'Kar kristali',
-    'Karıncaların yuvası',
-    'Göz merceği',
-    'Kalp ritmi',
-    'Atom çekirdeği',
-    'Ses dalgaları',
-    'Koruyucu tabaka',
-    'Bir saat',
-    'Yerkürenin enlemleri',
-    'Şimşek çaktı.',
-  ].map((t) => defaultSvg(t).icon);
-  assert.deepEqual(inferred, icons);
-});
-test('1.1.0 plans retain original signed data; old prose never becomes a second caption', () => {
-  const old: LegacySvgPlan = {
-    template: 'FocusCalloutScene',
-    title: 'İnsan beyninin merkezinde bulunan sinir hücreleri düzenli',
-    subtitle: 'Bu yarım anlatım alta yazılmamalı.',
-    weather: 'none',
-    accentColor: '#FFAA00',
-    fromValue: 4,
-    toValue: 7,
-  };
-  const saved = JSON.stringify(old);
-  const resolved = displayPlan(old, 'Beyin susama sinyali verir.');
-  assert.ok(svgPlanSchema.safeParse(resolved).success);
-  assert.equal(resolved.icon, 'brain');
-  assert.ok(grounded(resolved.title, 'Beyin susama sinyali verir.'));
-  assert.equal(JSON.stringify(old), saved);
-  assert.ok(!JSON.stringify(resolved).includes('yarım anlatım'));
-  const custom = displayPlan(
-    { ...old, subtitle: 'Hipotalamus | Sinir hücresi', title: 'Susama Sinyali' },
-    'Beyindeki susama merkezi.',
-  );
-  assert.deepEqual(custom.labels, ['Hipotalamus', 'Sinir hücresi']);
-  assert.equal(custom.title, 'Susama Sinyali');
-});
-
-test('a fresh flight script plans the entire atlas in order without authored scene/template hints', async (t) => {
-  const { planner, p } = setup(t, async () => {
-    throw Error('No network');
+test('second rejected drawing leaves the entire approved board intact; validated intermediate shots can be reused', async (t) => {
+  const { store, vaults, p } = setup(t);
+  let calls = 0,
+    fail = true;
+  const planner = new SvgPlanner(store, vaults, async (_url, o) => {
+    calls++;
+    const i = JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne - 1;
+    return completion(fail && i === 1 ? { ...sample(i), title: 'Devlerin Karadaki' } : sample(i));
   });
-  p.topic = 'Uçaklar neden yüksekten uçar?';
-  p.script = flight.join(' ');
-  p.scriptApproval = scriptSig(p);
-  const { scenes } = await planner.plan(p);
-  assert.deepEqual(
-    scenes.map((s) => s.narration),
-    flight,
-  );
-  const plans = scenes.map((s) => svgPlanSchema.parse(s.svgPlan));
-  assert.deepEqual(new Set(plans.map((s) => s.template)), new Set(templates));
-  assert.deepEqual(plans.filter((s) => s.template === 'LayerStackScene')[0].labels, [
-    'Mezosfer',
-    'Stratosfer',
-    'Troposfer',
-  ]);
-  assert.deepEqual(plans.at(-1)?.labels, ['Kalkış', 'Tırmanış', 'Seyir', 'İniş']);
-  assert.equal(plans[0].icon, 'airplane');
-  const scale = plans.find((p) => p.template === 'TimelineScaleScene')!;
-  assert.deepEqual([scale.fromValue, scale.midValue, scale.toValue, scale.unit], [0, 5, 10, 'km']);
-  const ring = plans.find((p) => p.template === 'RatioGaugeScene')!;
-  assert.deepEqual([ring.toValue, ring.unit], [21, '%']);
+  planner.key('openrouter', 'isolated-key');
+  p.scenes = whale
+    .slice(0, 2)
+    .map((narration) => ({ ...blankScene(randomUUID()), narration, description: 'Fotoğraf' }));
+  approveBoard(p);
+  const old = structuredClone(p);
+  await assert.rejects(planner.plan(p), /tek onarım/);
+  assert.equal(calls, 3);
+  assert.deepEqual(p, old);
+  approved(p);
+  fail = false;
+  assert.equal((await planner.plan(p)).length, 2);
+  assert.equal(calls, 4);
 });
-test('model holes are repaired per field, not by discarding the scene or the other boards', async (t) => {
-  const drafts = [
-    {
-      template: 'TitleHookScene',
-      title: '  ',
-      icon: 'airplane',
-      labels: ['Uçuş rotası'],
-      accentColor: '#123456',
+test('authorised Gemini text generateContent path, one repair for an incomplete response, no TTS/images', async (t) => {
+  const { store, vaults, p } = setup(t, 1);
+  let calls = 0;
+  const model = 'gemini-2.5-flash',
+    g = new Gemini(store, memoryVault(), async (url, o) => {
+      if (o?.method === 'GET')
+        return Response.json({
+          models: [{ name: 'models/' + model, supportedGenerationMethods: ['generateContent'] }],
+        });
+      assert.match(String(url), /v1beta\/models\/gemini-2\.5-flash:generateContent$/);
+      const b = JSON.parse(String(o?.body));
+      assert.equal(b.generationConfig.responseMimeType, 'application/json');
+      assert.match(b.contents[0].parts[0].text, /layer-main/);
+      const truncated = calls++ === 0;
+      return Response.json({
+        candidates: [
+          {
+            finishReason: truncated ? 'MAX_TOKENS' : 'STOP',
+            content: { parts: [{ text: truncated ? '{' : JSON.stringify(sample()) }] },
+          },
+        ],
+      });
+    });
+  const planner = new SvgPlanner(
+    store,
+    vaults,
+    async () => {
+      throw Error('not OpenRouter');
     },
-    {
-      template: 'CycleLoopScene',
-      icon: null,
-      title: 'İniş Döngüsü',
-      labels: [null, 'Yükselme', 'Etiket 3', 'İniş'],
-    },
-    { template: 'RatioGaugeScene', title: null, labels: null, unit: '×', toValue: 999 },
-    {
-      template: 'LayerStackScene',
-      title: 'Atmosfer ve',
-      labels: ['Üst atmosfer', '  ', 'Üst atmosfer'],
-    },
+    g,
+  );
+  g.key('isolated-gemini-key');
+  await g.test();
+  await assert.rejects(planner.plan(p), /metin modeli/);
+  assert.equal(calls, 0);
+  g.configure('text', { model, consent: 'free' });
+  const [s] = await planner.plan(p);
+  assert.equal(calls, 2);
+  assert.equal(s.vector?.provider, 'gemini');
+  assert.equal(s.vector?.model, model);
+});
+test('opening a signed legacy storyboard never selects a template, calls a model, or modifies the project file', (t) => {
+  const { store, p } = setup(t, 1);
+  const plan = svgPlanSchema.parse(legacy[0]);
+  p.scenes = [
+    { ...blankScene(randomUUID()), visualMode: 'svg', narration: p.script, svgPlan: plan },
   ];
-  const { planner, p } = setup(t, async () =>
-    Response.json({
-      choices: [
-        { finish_reason: 'stop', message: { content: JSON.stringify({ scenes: drafts }) } },
-      ],
-    }),
-  );
-  planner.key('openrouter', 'isolated-only');
-  planner.configure({ provider: 'openrouter', groqFreeConfirmed: false, ollamaModel: 'local' });
-  p.topic = 'Uçuş';
-  p.script = [flight[0], flight[11], flight[6], flight[2]].join(' ');
-  p.scriptApproval = scriptSig(p);
-  const { scenes, warning } = await planner.plan(p);
-  assert.equal(warning, '');
-  const [hook, cycle, ratio, stack] = scenes.map((s) => svgPlanSchema.parse(s.svgPlan));
-  assert.equal(hook.accentColor, '#123456');
-  assert.ok(!hook.labels.includes('Uçuş rotası'));
-  assert.ok([hook.title, ...hook.labels].every((s) => grounded(s, flight[0])));
-  assert.equal(cycle.title, drafts[1].title);
-  assert.equal(cycle.icon, 'airplane');
-  assert.deepEqual(cycle.labels, ['Kalkış', 'Tırmanış', 'Seyir', 'İniş']);
-  assert.deepEqual([ratio.toValue, ratio.unit, ...ratio.labels], [21, '%', 'Oksijen']);
-  assert.ok(grounded(stack.title, flight[2]));
-  assert.deepEqual(stack.labels, ['Mezosfer', 'Stratosfer', 'Troposfer']);
-});
-test('short and homogeneous boards honor adjacency and the distinct-template budget, even with repetitive model hints', () => {
-  for (const len of [1, 2, 4, 5, 6, 12, 24])
-    for (const hints of [false, true]) {
-      const rows = Array<string>(len).fill('Bir mercek ışığı toplar.');
-      const plans = storyboardPlans(
-        rows,
-        'Mercek',
-        hints
-          ? rows.map(() => ({
-              template: 'FocusCalloutScene',
-              icon: 'leaf',
-              title: 'Yaprağın Yapısı',
-            }))
-          : [],
-      );
-      assert.ok(
-        plans.every(
-          (s, i) =>
-            svgPlanSchema.safeParse(s).success && (!i || s.template !== plans[i - 1].template),
-        ),
-      );
-      assert.ok(new Set(plans.map((s) => s.template)).size >= Math.min(5, len));
-      assert.ok(
-        plans.every(
-          (s) =>
-            !['ThermometerGaugeScene', 'RatioGaugeScene'].includes(s.template) && s.icon !== 'leaf',
-        ),
-      );
-    }
-});
-test('ratio and scale keep actual units; no fictitious measurements from hints or unrelated numerals', () => {
-  for (const [line, amt, unit] of [
-    ['Karınca ağırlığının 50 katını taşır.', 50, '×'],
-    ['Kütlesi 50x artar.', 50, '×'],
-    ['Bir karışımın %70,5 kadarı sudur.', 70.5, '%'],
-    ['Havanın yüzde yirmi biri oksijendir.', 21, '%'],
-  ] as const) {
-    const [p] = storyboardPlans([line], '');
-    assert.deepEqual([p.template, p.toValue, p.unit], ['RatioGaugeScene', amt, unit]);
-  }
-  for (const line of [
-    'Uçak 10 km yukarıdadır.',
-    '20 Fahrenheit ve 35 Fahrenheit ölçüldü.',
-    'Açı 30 dereceden 60 dereceye çıkar.',
-    '2 sensör sıcaklığı 20 derece ölçtü.',
-  ]) {
-    const [p] = storyboardPlans([line], '', [
-      { template: 'ThermometerGaugeScene', fromValue: 2, toValue: 60 },
-    ]);
-    assert.notEqual(p.template, 'ThermometerGaugeScene');
-  }
-  const [p] = storyboardPlans(['Yol 0 ile 10 km arasında uzanır.'], '');
-  assert.deepEqual([p.unit, p.midValue], ['km', 5]);
-  assert.equal(svgPlanSchema.safeParse({ ...p, midValue: 11 }).success, false);
-  const ring = defaultSvg('%70 su', 0, '', 'RatioGaugeScene');
-  assert.equal(svgPlanSchema.safeParse({ ...ring, toValue: 101 }).success, false);
-  assert.equal(svgPlanSchema.safeParse({ ...ring, unit: undefined }).success, false);
-  assert.deepEqual(
-    diagramLabels('CycleLoopScene', 'Buharlaşma, yoğuşma ve yağış sürekli bir döngü oluşturur.'),
-    ['Buharlaşma', 'Yoğuşma', 'Yağış'],
-  );
-  assert.deepEqual(
-    diagramLabels('LayerStackScene', 'Yer kabuğu, manto, dış çekirdek ve iç çekirdek farklıdır.'),
-    ['Yer kabuğu', 'Manto', 'Dış çekirdek', 'İç çekirdek'],
-  );
-});
-test('an approved 1.1.1 thermometer is projected without rewriting its signed content or measurements', () => {
-  const old = {
-    ...defaultSvg('Toprak sıcaklığı', 0, '', 'ThermometerGaugeScene'),
-    labels: [],
-    fromValue: -5,
-    toValue: 4,
-  };
-  const before = JSON.stringify(old);
-  assert.equal(svgPlanSchema.safeParse(old).success, false);
-  const p = displayPlan(old, 'Toprakta iki sıcaklık ölçüldü.');
-  assert.ok(svgPlanSchema.safeParse(p).success);
-  assert.deepEqual([p.fromValue, p.toValue], [-5, 4]);
-  assert.ok(p.labels.every((s) => grounded(s, 'Toprakta iki sıcaklık ölçüldü.')));
-  assert.equal(JSON.stringify(old), before);
+  approveBoard(p);
+  store.save(p);
+  const fname = path.join(store.dir(p.id), 'project.json'),
+    before = fs.readFileSync(fname),
+    reopened = store.get(p.id);
+  approved(reopened);
+  assert.deepEqual(legacyPlate(reopened.scenes[0].svgPlan!), plan);
+  assert.deepEqual(fs.readFileSync(fname), before);
 });

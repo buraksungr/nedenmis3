@@ -366,6 +366,12 @@ export class Gemini {
     const candidate = out?.candidates?.[0];
     const parts = candidate?.content?.parts;
     const block = out?.promptFeedback?.blockReason;
+    if (schema && candidate?.finishReason === 'MAX_TOKENS')
+      throw new Issue(
+        502,
+        'Yanıt yarım kaldı; daha az geometriyle eksiksiz bir çizim döndür.',
+        'incomplete',
+      );
     if (
       !Array.isArray(parts) ||
       (block && !['BLOCK_REASON_UNSPECIFIED', 'BLOCKED_REASON_UNSPECIFIED'].includes(block)) ||

@@ -13,7 +13,11 @@ import { dissolveAt } from './fade';
 import type { SvgPlan } from '../shared/svg';
 import { AnimatedPlate } from './ScientificPlate';
 
+import { AnimatedVector } from './VectorScene';
+import type { VectorFrame } from '../shared/vector';
 export type FilmProps = {
+  vector?: VectorFrame;
+  nextVector?: VectorFrame;
   svg?: SvgPlan;
   nextSvg?: SvgPlan;
   artHref?: string;
@@ -37,6 +41,8 @@ const still: React.CSSProperties = {
 export function Film({
   svg,
   nextSvg,
+  vector,
+  nextVector,
   artHref,
   nextArtHref,
   image,
@@ -52,17 +58,23 @@ export function Film({
   const cap = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
     (g) => t >= g[0].start && t < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
   );
-  const alpha = next || nextSvg ? dissolveAt(f, fps, durationInFrames) : 0;
+  const alpha = next || nextSvg || nextVector ? dissolveAt(f, fps, durationInFrames) : 0;
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
-      {svg ? (
+      {vector ? (
+        <AnimatedVector scene={vector} />
+      ) : svg ? (
         <AnimatedPlate plan={svg} artHref={artHref} />
       ) : (
         image && <Img src={image} style={still} />
       )}
       {/* Source-over on the opaque first photo gives (1-alpha)*old + alpha*new. */}
       {alpha > 0 &&
-        (nextSvg ? (
+        (nextVector ? (
+          <AbsoluteFill style={{ opacity: alpha }}>
+            <AnimatedVector scene={nextVector} opening />
+          </AbsoluteFill>
+        ) : nextSvg ? (
           <AbsoluteFill style={{ opacity: alpha }}>
             <AnimatedPlate plan={nextSvg} artHref={nextArtHref} opening />
           </AbsoluteFill>

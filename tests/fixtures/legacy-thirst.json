@@ -1,0 +1,82 @@
+[
+  {
+    "template": "ComparisonScene",
+    "title": "Tatlı ve Susama",
+    "icon": "water",
+    "labels": [
+      "Susama hissi",
+      "Bir yudum su"
+    ],
+    "fromValue": null,
+    "toValue": null,
+    "weather": "none",
+    "accentColor": "#9ADBC1"
+  },
+  {
+    "template": "FocusCalloutScene",
+    "title": "Ağızda Kalan Tat",
+    "icon": "water",
+    "labels": [
+      "Tatlı lokma",
+      "Bir yudum su"
+    ],
+    "fromValue": 0,
+    "toValue": 0,
+    "weather": "none",
+    "accentColor": "#F1BB79"
+  },
+  {
+    "template": "ProcessFlowScene",
+    "title": "Glikozun Kana Geçişi",
+    "icon": "blood",
+    "labels": [
+      "Sindirim",
+      "Glikoz emilimi",
+      "Kana geçiş"
+    ],
+    "fromValue": 0,
+    "toValue": 0,
+    "weather": "none",
+    "accentColor": "#8FCDE5"
+  },
+  {
+    "template": "CrossSectionScene",
+    "title": "Hücrede Su Dengesi",
+    "icon": "cell",
+    "labels": [
+      "Hücre dışı sıvı",
+      "Hücre içi sıvı"
+    ],
+    "fromValue": 0,
+    "toValue": 0,
+    "weather": "none",
+    "accentColor": "#C5B8EB"
+  },
+  {
+    "template": "FocusCalloutScene",
+    "title": "Beynin Susama Sinyali",
+    "icon": "brain",
+    "labels": [
+      "Sıvı dengesi",
+      "Susama merkezi"
+    ],
+    "fromValue": 0,
+    "toValue": 0,
+    "weather": "none",
+    "accentColor": "#D1D986"
+  },
+  {
+    "template": "ProcessFlowScene",
+    "title": "Vücudun Su Dengesi",
+    "icon": "water",
+    "labels": [
+      "Susama sinyali",
+      "Su içme",
+      "Sıvı dengesi"
+    ],
+    "fromValue": 0,
+    "toValue": 0,
+    "weather": "none",
+    "accentColor": "#9ADBC1"
+  }
+]

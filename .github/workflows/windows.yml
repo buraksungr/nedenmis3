@@ -1,6 +1,11 @@
 name: Windows desktop installer
 on:
   workflow_dispatch:
+    inputs:
+      require_live:
+        description: 'Require live OpenRouter or explicitly configured free Gemini text (no QA replay)'
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: ['arena/**']
@@ -18,7 +23,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Render all twelve SVG templates, mixed storyboard, static photo fades and subtitle fallback
+      - name: Verify legacy atlas playback, mixed storyboard, static photo fades and single-layer captions
         run: npm run test:render
       - name: Test storyboard editing, voice preflight and one-click production in Edge
         run: npm run test:ui
@@ -70,21 +75,26 @@ jobs:
           python tests/prepare-qa-speech.py --flight
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/prepare-qa-speech.py --whale
-      - name: Whale film with live keyless Iconify search + download, decoded pixel comparison and CPU Whisper
+      - name: Full-stage whale documentary, decoded layer motion, complete titles and real CPU Whisper
+        env:
+          QA_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          QA_GEMINI_KEY: ${{ secrets.GEMINI_API_KEY }}
+          QA_GEMINI_TEXT_MODEL: ${{ vars.QA_FREE_GEMINI_TEXT_MODEL }}
+          QA_REQUIRE_LIVE: ${{ inputs.require_live }}
         run: npm run test:whale
       - uses: actions/upload-artifact@v4
         with:
-          name: Karaya-Vuran-Balinalar-Iconify-Whisper-MP4
+          name: Karaya-Vuran-Balinalar-Tam-Ekran-Vektor-Whisper-MP4
           if-no-files-found: error
           path: |
             out/whale-control/karaya-vuran-balinalar.*
-            out/whale-control/balina-kare.png
+            out/whale-control/frames/
             out/whale-control/report.json
-            out/whale-control/iconify.json
+            out/whale-control/layers.json
             out/whale-control/drawings/
       - name: One-click thirst documentary with actual CPU word alignment
         run: npm run test:thirst
-      - name: Render all twelve automatically selected flight scenes with CPU Whisper
+      - name: Play back a saved twelve-scene flight atlas with CPU Whisper
         run: npm run test:flight
       - uses: actions/upload-artifact@v4
         with:

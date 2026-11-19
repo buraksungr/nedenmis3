@@ -19,7 +19,7 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
-      const { createStudio } = require('../build/server.cjs');
+      const { createStudio, verifyPaintRuntime } = require('../build/server.cjs');
       const state = app.getPath('userData');
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
       // Local OS association lookup; does not open the URL or contact the network.
@@ -138,6 +138,8 @@ if (!app.requestSingleInstanceLock()) {
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,
         );
+        if (!(await verifyPaintRuntime()))
+          throw new Error('Packaged vector paint validation unavailable');
         if (!loaded) throw new Error('Installed renderer or SQLite unavailable');
         const r = await fetch(origin + '/api/settings/checks', {
           method: 'POST',
@@ -157,6 +159,7 @@ if (!app.requestSingleInstanceLock()) {
               installed: app.isPackaged,
               renderer: true,
               sqlite: true,
+              vectorPaintWorker: true,
               secureStorage: true,
               pollinationsSecureStorage: true,
               checks,

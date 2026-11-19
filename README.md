@@ -2,62 +2,26 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, nostaljik 2D piksel sanatı, sabit kadraj ve yumuşak geçiş, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-[Windows x64 Setup · 1.3.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44493453587/artifacts/14513884021) · [Karaya vuran balinalar neden ölür? — canlı Iconify ile üretilen sesli Windows filmi](https://github.com/buraksungr/nedenmis3/actions/runs/44493453587/artifacts/14514132279) · [Doğrulama ve önceki sürümler](docs/VALIDATION.md)
+[Windows kurulumları ve doğrulanmış örnek filmler](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.3.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.4.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
 2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Kesin sözcük zamanları için isteğe bağlı:** **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
-4. **Anahtarsız SVG kullanacaksan 6. adıma geç.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
+4. **Özel vektör çizimi için OpenRouter veya Gemini metin modeli gerekir.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
 5. Listeden metin ve TTS modellerini seç. *Yalnızca ücretsiz proje* iznini, ancak Google projesinde faturalandırmanın kapalı olduğunu ve ücretsiz kotanı doğruladıysan ver. Otomatik fotoğraflar ayrı bir servis olan **Pollinations** ile üretilir: aynı ayarlar sekmesinde isteğe bağlı anahtarı kaydet veya eski adresi kullanmak için alanı boş bırak. Başka modele, sağlayıcıya veya ücretli izne otomatik geçiş yoktur.
 6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Videoyu üret** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
 
-### Bilim atlası ve tek tıkla sesli üretim · 1.3.0
+### Tam ekran vektör belgesel · 1.4.0
 
-**Anahtarsız başlamak için:** Yeni Video → **Kendi senaryomu kullanacağım**. Senaryo ekranında **Storyboard biçimi → Kod Tabanlı SVG Animasyon** seç ve onayla. Varsayılan **Yerel şablonlar** başlık ve etiketleri cihazında, yalnız ilgili sahnenin anlatımından çıkarır. Çizim kaynağı ayrı seçilir. Var olan bir storyboard’da **SVG planı oluştur** tüm sahneleri planlar; yalnız tek bir sahneyi değiştirmek için karttaki **Sahne türü → SVG Animasyon** seçilir. **Fotoğraf** seçeneğine döndüğünde değişmemiş yerel fotoğraf yeniden kullanılır.
+1. **Ayarlar → SVG planlayıcı**: OpenRouter anahtarını kaydet veya izin verdiğin Gemini metin modelini seç. Otomatik seçim, kayıtlı OpenRouter anahtarına öncelik verir. Başka sağlayıcıya hata sonrası geçiş yapılmaz.
+2. Senaryoyu onayla. **Storyboard → SVG planı oluştur** (yeni projede **Storyboard biçimi → Tam ekran özel vektör**). Model her sahnenin anlatımına özel, tam genişlikte bir illüstrasyon ve tek bir **2–3 sözcüklük Türkçe başlık** yazar. Iconify araması, yerel başlık kesme ve sunum şablonları yeni üretimde kullanılmaz. Arka plan, ana özne ve efektler ayrı hareket eder.
+3. Önizlemeyi oynat. Tek çekimi değiştirmek için **Çizim ayrıntıları → Bu sahneyi yeniden çiz**. İstersen “Balinayı yandan çiz, kırmızı kuvvet oklarını büyüt” gibi bir yön ver. Bu iş seslendirmeyi veya Whisper zamanlarını silmez. Eski projeler yalnız açıldıkları için değiştirilmez. Model veya çizim doğrulaması başarısızsa önceki storyboard yerinde kalır.
+4. **Onayla ve üret**: eksik ses → Whisper → klipler → MP4 tek iştir; ses düğmeleri zorunlu değildir. Seçili konuşmacı, ton ve tempo korunur. Alt kısımda tek bir zamanlanmış altyazı vardır; gerçek sözcük zamanlarında etkin sözcük `#FACC15` olur. Fotoğraflar sabit kalır; geçiş yalnız opaklıktır. Daha önce kaydedilmiş çizimler, sesler ve zamanlar çevrimdışı tekrar kullanılabilir.
 
-**Sesli MP4:** Senaryoyu ve storyboard’u onayla. **Üretim Merkezi → Videoyu üret** (veya **Onayla ve üret**) eksik anlatımı **seçtiğin konuşmacı, yönerge ve tempoyla** seslendirir, Whisper ile sesin üzerine hizalar, sonra klipleri ve MP4’ü üretir. Kayıtlı geçerli anlatım ve zamanlar yeniden istenmez. TTS için seçilmiş ve izin verilmiş bir model yoksa üretim durur; sessiz bir MP4’ü başarı diye sunmaz. Seslendirme veya hizalama düğmelerini tek tek kullanmak zorunda değilsin.
-
-**Anahtarsız dışa aktarım:** **Yalnızca onayla** ile önce kendi ses dosyanı yükleyebilirsin. Ya da bir SVG sahnesinin ayrıntılarında **Eksik anlatımı otomatik seslendir** seçimini kaldır: kayıt yoksa o sahnede seçilen süre, tek katman ekran metni ve ambiyans kullanılır. Ses verisi olmayan bu cümlelerin JSON kaydı `timing: "scene-duration"` taşır. Whisper kurulu değilse sesli sahnelerde mevcut, uyarılı **tahmini cümle** yolu korunur; tahminlere sözcük vurgusu uygulanmaz.
-
-**Şablon planı:** `title` 2–4 tam sözcüktür; ekranda bir cümlenin başı kesilerek başlık yapılmaz. `iconKeyword` İngilizce arama terimidir, 20 yerel ikonla sınırlı değildir. `icon` çevrimdışı yedek ikondur; başarılı aramada eklenen `artwork` ise projedeki doğrulanmış çizimin kaynağı, adı ve SHA-256 kimliğidir. `labels` şemanın içindeki kısa etiketlerdir; ikinci bir altyazı değildir. Alt alan zamanlanmış anlatım altyazısına ayrılmıştır. Etkin sözcük `#FACC15`, diğerleri beyazdır. “Akciğerlere binen basınç nefes almayı zorlaştırır.” için çizim aranırken kullanılan plan:
-
-```json
-{"template":"FocusCalloutScene","title":"Akciğerlere Binen Basınç","iconKeyword":"lungs","artMode":"auto","icon":"cell","labels":["Akciğerlere binen basınç","Nefes alma"],"fromValue":0,"toValue":0,"weather":"none","accentColor":"#9ADBC1"}
-```
-
-| Şablon | Şemanın içinde |
-|---|---|
-| `CrossSectionScene` | Üst/alt bölgenin iki etiketi. Hücre ve kan için doku kesiti; toprak için kökler ve seçilmiş hava durumu. |
-| `ThermometerGaugeScene` | İki sıcaklık (°C); ölçülen ortam ve aralık için iki etiket. |
-| `FocusCalloutScene` | Seçilen bilim ikonu, odak halkası, iki açıklama oku ve etiketi. |
-| `ComparisonScene` | İki etiket; ölçüm varsa ortak sıfırlı çubuklar, nitel kıyasta iki değer de `null` (uydurma ölçek yok). |
-| `ProcessFlowScene` | `labels` içindeki üç konuya özel adım ve bağlantı okları. |
-| `TitleHookScene` | Parçacıklarla hareket eden açılış, büyük başlık ve bir konu etiketi. |
-| `CycleLoopScene` | Üç veya dört adlı evre; çevrimi izleyen işaretçi. |
-| `RatioGaugeScene` | Anlatımdaki yüzde veya kat sayısı (örn. `%70` veya `50×`), bir konu etiketi. |
-| `LayerStackScene` | Üstten alta üç veya dört adlı kesit tabakası. |
-| `WavePulseScene` | Kaynak ve alıcı arasında yayılan hareketli sinyal. |
-| `SplitCauseEffectScene` | Nedeni ve etkisini gösteren iki etiketli panel. |
-| `TimelineScaleScene` | Üç etiketli nokta, ortak zaman/mesafe/yükseklik birimi veya ölçümsüz evre sırası. |
-
-Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Beş veya daha fazla sahnede en az beş farklı şablon kullanılır. Eksik, yinelenen veya yer tutucu etiketler yalnız ilgili alanda, sahnenin anlatımından tamamlanır. Birimi ve miktarı anlatımda olmayan bir yüzde/kat göstergesi otomatik seçilmez. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelin planına ham SVG, URL veya React kodu konamaz. Özel çizim, ayrı bir güvenlik denetiminden geçirilir.
-
-**1.2.0 balina projeni güncellemek için:** **Storyboard → SVG planı oluştur**. Başlıkları ve çizimleri incele; gerekirse kartta İngilizce kelimeyi değiştirip **İkon ara** seç. **Onayla ve üret** değişen görüntüleri işler; anlatım ve ses ayarları aynıysa kayıtlı ses ve hizalama kullanılır. Yalnız projeyi açmak onaylı eski planı değiştirmez.
-
-**1.1.x videonu güncellemek için:** **Videoyu üret** ile yeni klipleri oluştur. Eski onaylı plan diskte kendiliğinden değiştirilmez; eski `subtitle` videoya basılmaz. `A | B` biçimindeki geçerli eski etiketler şemada kalır. Eski plandaki tekrarlı şablonları da değiştirmek istersen **Storyboard → SVG planı oluştur**, incele ve yeniden onayla. Anlatım ve ses ayarları aynıysa mevcut ses ve hizalama korunur. Önceden dışa aktardığın MP4 değişmez.
-
-**Çizim kaynağı:** **Ayarlar → SVG planlayıcı → Şema çizimi**. Varsayılan hibrit modda İngilizce kavram (ör. `whale`, `lungs`, `skeleton`) için ücretsiz ve anahtarsız Iconify aranır. Bulunamazsa veya özel bir ilişki çizimi gerekirse, yalnız izinli metin modelinden statik SVG istenir. Güvenli çizim bulunamazsa yerel ikon kalır. **Çevrimdışı** mod çizim için hiç istek yapmaz. Storyboard kartında **Iconify anahtar kelimesi → İkon ara** ile çizimi değiştir, sonra yeniden onayla. Önizleme ve MP4 aynı proje dosyasını kullanır. Çizimler ve lisansları proje yedeğine dahildir; seslendirmeyi yeniden üretmek gerekmez. [Önbellek, güvenlik ve lisanslar](docs/ATLAS.md).
-
-**Ayarlar → SVG planlayıcı → Planlama kaynağı** seçenekleri:
-- **Yerel şablonlar:** API ve model olmadan, onaylı anlatımdan düzenlenebilir plan. Sayısal değerleri onaydan önce kontrol et.
-- **Groq:** Kendi ücretsiz hesabını doğrula ve anahtarını kaydet. Sunucudan `api.groq.com/openai/v1/chat/completions` kullanılır. Faturalandırma katmanı uzaktan doğrulanamaz; ücretli hesap kullanma.
-- **OpenRouter:** Kendi anahtarınla yalnız `openrouter/free` kullanılır. Kota dolarsa ücretli modele geçilmez.
-- **Ollama:** Stüdyonun çalıştığı bilgisayarda Ollama’yı başlat ve kurulu yerel modelin adını yaz. Sunucu `127.0.0.1:11434/api/show` ile modeli kontrol eder, ardından `/v1/chat/completions` kullanır. Model indirilmez, bulut modeli kullanılmaz. Tarayıcı önizlemesinde bu adres tarayıcının değil, sunucunun bilgisayarıdır.
-
-Uzak planlayıcıya yalnız onaylı sahne anlatımları gönderilir. Anahtar yoksa, süre aşılırsa, 503/kota hatası gelirse veya nesneler şemayı karşılamazsa başka bir metin modeline geçilmez. Neden storyboard’da görünür; geçerli mevcut şablonlar veya yerel varsayılanlar düzenlemeye açık kalır. Şablon ya da sahne türü değişikliği yeni onay gerektirir. Eski projelerde tür belirtilmemiş sahneler fotoğraf olarak açılır.
+[Çizim sözleşmesi, güvenlik, depolama ve geri alma](docs/ATLAS.md). TTS izni eksikken sesli üretim sessiz bir başarıya dönmez. İstersen kendi anlatımını yükleyebilir veya bir SVG sahnesinde **Eksik anlatımı otomatik seslendir** seçimini bilinçli olarak kapatabilirsin. Tahmini cümle zamanları sözcük hizalaması olarak gösterilmez.
 
 ### Storyboard görselleri · Pollinations (1.0.7)
 
@@ -95,7 +59,7 @@ Uzak planlayıcıya yalnız onaylı sahne anlatımları gönderilir. Anahtar yok
 - **Ücretli işlemlerden önce ön kontrol.** Tam üretim, ihtiyaç duyulan bulut izinlerini ve yerel servisleri kontrol eder. Kota hatasını bildirir; başarılı varlıkları korur. Bağlantı testi yalnız `models.list` çağrısıdır, Pollinations çağrısı veya üretim hakkı testi değildir.
 - **Üretilen medya doğrulanır.** Pollinations görseli çözümlenip JPEG olarak saklanır; WAV/PCM ses örnekleme hızı denetlenir ve FFprobe ile ölçülür. Bozuk varlık başarı sayılmaz. Bir sahnenin görselini, anlatımını veya ses efektini bağımsız değiştirebilirsin.
 - **Altyazılar ses verisinden.** Whisper önce bağımsız Türkçe transkripsiyon yapar. Aynı model stable-ts ile onaylı metni ses üzerine zorla hizalar. Metin/ses uyuşmazlığı veya bozuk zaman dizisi günlükte belirtilir; yalnız ilgili sahnede tahmini cümle altyazısına geçilir. Uyarı varsa anlatımı dinleyip metinle eşleştiğini kontrol et. Doğrulanmış sözcükler de tahmini cümleler de üretim merkezinde düzenlenebilir.
-- **Görüntü ve ses.** Fotoğraf sahneleri sabit 9:16 kadrajdır; kamera veya nesne hareketi eklenmez. SVG sahnelerinde yalnız seçilen şablonun çizimi hareket eder. Her iki türde geçiş opaklıkla yapılır. FFmpeg özgün prosedürel fon/ambiyans ve Foley’yi veya içe aktarılan sesi kullanır; müzik ducking, yumuşak geçiş ve −16 LUFS hedefli normalizasyon uygular.
+- **Görüntü ve ses.** Fotoğraf sahneleri sabit 9:16 kadrajdır; kamera veya nesne hareketi eklenmez. Yeni vektör sahnelerinde ortam, ana özne ve efektler ayrı hareket eder. Her iki türde geçiş opaklıkla yapılır. FFmpeg özgün prosedürel fon/ambiyans ve Foley’yi veya içe aktarılan sesi kullanır; müzik ducking, yumuşak geçiş ve −16 LUFS hedefli normalizasyon uygular.
 - **Artımlı kurgu.** Sahne süreleri gerçek sesin sonunu kesmeyecek şekilde tam kareye yukarı yuvarlanır. Klip kendi ve sıradaki görsele, altyazılara ve gerçek süreye bağlıdır. Eski kamera ayarları klip önbelleğini etkilemez. Klip anahtarı değişmeyen kareler yeniden render edilmez. Son dışa aktarım, klipleri tekrar video kodlamadan birleştirir; ses/görüntü süresi, codec, kare sayısı ve tüm dosyanın decode edilmesi doğrulanır.
 - **Sınırlı ve güvenli revizyonlar.** “Altyazı boyutunu küçült”, “Müziği azalt” ve seçili görseli yeniden çizme gibi istekler desteklenir. Belirsiz komutlar uygulanmaz. Anlatım kendiliğinden değiştirilmez; sahne konsepti değişiklikleri yeniden onaylanır.
 
@@ -139,7 +103,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 
 `npm test` bozuk dosyaları, onay sırasını, metin bütünlüğünü, eski revizyonları, sürüm geri almayı, kısmi başarıyı, kesintiden dönüşü, kota hatasını ve anahtar/izin yalıtımını kapsar. Sağlayıcı sözleşme testlerindeki taşıma katmanı test çiftidir; normal uygulamada sahte sağlayıcı yoktur.
 
-`npm run build && npm run test:render` (Edge/Chrome gerekir) iki farklı gerçek ses dosyası, harici referans sözcük zamanları ve iki kapakla **gerçek bir 1080 × 1920 H.264/AAC kontrol MP4’ü** üretir. Ayrıca uçuş senaryosundan otomatik seçilen on iki SVG şablonunu ve bir manuel fotoğrafı sıfır sağlayıcı isteğiyle `svg-atlas-control.mp4` olarak render eder. `svg-atlas-report.json`, şemalardaki hareketi ve birleşim karelerini ölçer. Son dosya ve FFprobe raporu `out/render-control/` altındadır. `static-fade-report.json` her iki resmin özgün piksel değerleriyle eşleşmesini, hareket olmadığını ve görüntü geçişini denetler. İkinci render’da değişmeyen klibin yeniden kullanılmasını da kontrol eder. Ayrı `fallback-control.mp4` ise geçersiz zaman ve bulunamayan Whisper örnekleriyle üretilir; SRT/JSON ve `fallback-diagnostics.ndjson` aynı dizindedir. Bu test sesleri Gemini değildir ve bu kontroller başarılı Whisper hizalamasının kanıtı değildir. Uygulamanın normal üretim yolu referans test verisini kullanmaz.
+`npm run build && npm run test:render` (Edge/Chrome gerekir) iki farklı gerçek ses dosyası, harici referans sözcük zamanları ve iki kapakla **gerçek bir 1080 × 1920 H.264/AAC kontrol MP4’ü** üretir. Ayrıca geçmiş sürümde kaydedilmiş on iki atlas sahnesini ve bir manuel fotoğrafı sıfır sağlayıcı isteğiyle `svg-atlas-control.mp4` olarak render eder. `svg-atlas-report.json`, şemalardaki hareketi ve birleşim karelerini ölçer. Son dosya ve FFprobe raporu `out/render-control/` altındadır. `static-fade-report.json` her iki resmin özgün piksel değerleriyle eşleşmesini, hareket olmadığını ve görüntü geçişini denetler. İkinci render’da değişmeyen klibin yeniden kullanılmasını da kontrol eder. Ayrı `fallback-control.mp4` ise geçersiz zaman ve bulunamayan Whisper örnekleriyle üretilir; SRT/JSON ve `fallback-diagnostics.ndjson` aynı dizindedir. Bu test sesleri Gemini değildir ve bu kontroller başarılı Whisper hizalamasının kanıtı değildir. Uygulamanın normal üretim yolu referans test verisini kullanmaz.
 
 **“Karıncalar kışın neden ortadan kaybolur?” uçtan uca kabulü henüz tamamlanmış sayılmaz.** Bu geliştirme ortamına gerçek bir Gemini anahtarı sağlanmamıştır. Canlı senaryo, Pollinations görselleri, Gemini TTS kalitesi, gerçek sesle Whisper hizalaması ve 30 sn hedefli bitmiş belgesel ayrıca doğrulanmalıdır. Kullanıcı onaylarını atlayan bir kabul betiği veya sahte tamamlanma durumu yoktur. [Kabul kontrol listesi](docs/ACCEPTANCE.md).
 
@@ -149,6 +113,6 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 
 Ek çevrimdışı denetim: `npm run test:ui` derlenmiş arayüzü, izole SQLite deposunu ve gerçek Chromium’u kullanır. Proje oluşturma, otomatik kayıt/yeniden açma, iki onay, çevrimdışı Pollinations hatasından manuel yüklemeye geçiş, anahtarlı üretimden dönen yerel resim ve anahtar yönetimi, yerel denetimler, mobil gezinme ve mevcut kontrol MP4’ünün oynatılmasını sınar. Önce `npm run build` ve `npm run test:render` çalıştırın. `npm run test:render -- --whisper --setup-python` **ayrı ve açıkça indirme gerektiren** akustik testtir: referans altyazıları üretime vermeden gerçek Whisper/stable-ts çalıştırır ve 800 ms sessizlik eklenmiş aynı kayıttaki sözcük zamanlarının akustik kaymayı izlediğini denetler. Yalnız bu test için SHA-256 doğrulamalı, sabitlenmiş Türkçe Piper/DFKI konuşma örneği indirilir (kaynak ve atıf `tests/fixtures/README.md`). Sonuçlar ayrı `out/acoustic-control/` dizinindedir.
 
-`npm run test:whale`, yeni bir projede **canlı anahtarsız Iconify** ve gerçek CPU Whisper kullanır. Seçilmiş SVG’lerin kaynağını, şablonların ekrana yazdığı metni ve son MP4’teki balina piksellerini denetler. TTS bu kabulde de senaryoya uygun, atıflı bir test kaydıdır.
+`npm run test:whale`, yedi katmanlı çekim, tek tık ses ve **gerçek Windows CPU Whisper** yolunu sınar. Her çekimin bitmiş MP4 karesi, üç katmanı ayrı ayrı gizlenmiş ve dondurulmuş referanslarla ve başlıksız referansla karşılaştırılır. `report.json` sanat kaynağını ayırır: açıkça yapılandırılmış canlı metin sağlayıcısı veya CI anahtarı yoksa yalnız testteki özgün vektör yanıtlarının tekrarı. Kesin canlı kabul için `-- --require-live`; üretimde test yanıtı veya yerel yedek yoktur. [Koşullar ve atıflar](tests/fixtures/README.md).
 
 `npm run test:flight`, Windows CPU kabulünde aynı 12 sahneyi **tek üretim işiyle** Türkçe ses, gerçek Whisper zamanları, SRT/JSON ve MP4 olarak doğrular. Girdi senaryosu, test sesinin kaynağı ve yeniden çalıştırma adımları: [test kayıtları](tests/fixtures/README.md).

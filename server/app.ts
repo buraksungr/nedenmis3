@@ -1,21 +1,14 @@
-import { AtlasArt, readArtwork } from './atlas-art';
-import { keywordSchema, artMode } from '../shared/artwork';
-import { displayPlan } from '../shared/svg-story';
-import { svgPlanSchema } from '../shared/svg';
+import { isDeepStrictEqual } from 'node:util';
+export { verifyPaintRuntime } from './vector-proof';
+import { readArtwork } from './atlas-art';
+import { readIllustration, verifiedFrame } from './vector-files';
 import archiver from 'archiver';
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { validWords } from '../shared/captions';
-import {
-  kinds,
-  sceneSchema,
-  wordSchema,
-  normalize,
-  type Task,
-  type Project,
-} from '../shared/schema';
+import { kinds, sceneSchema, wordSchema, type Task, type Project } from '../shared/schema';
 import { speakers } from '../shared/speakers';
 import { Gemini } from './gemini';
 import { memoryVault, type Vault } from './vault';
@@ -42,7 +35,12 @@ const short = z.string().trim().min(2).max(240),
   txt = z.string().trim().max(10000),
   uuid = z.string().uuid();
 const sceneList = z
-  .array(sceneSchema.refine((s) => s.visualMode !== 'svg' || !!s.svgPlan, 'SVG şablonu eksik.'))
+  .array(
+    sceneSchema.refine(
+      (s) => !(s.vector && s.svgPlan) && (s.visualMode !== 'svg' || !!s.vector || !!s.svgPlan),
+      'Geçerli bir sahne çizimi gerekli.',
+    ),
+  )
   .max(24)
   .refine(
     (a) => new Set(a.map((s) => s.id)).size === a.length,
@@ -77,7 +75,6 @@ export function createStudio(
       store,
       options.plannerVaults ?? { groq: memoryVault(), openrouter: memoryVault() },
       options.transport,
-      new AtlasArt(store, options.transport),
       g,
     ),
     settings = () => ({
@@ -214,42 +211,9 @@ export function createStudio(
     requireThat(svg, 'Çizim bulunamadı.', 404);
     r.set('Content-Security-Policy', "default-src 'none'; sandbox").type('image/svg+xml').send(svg);
   });
-  app.post('/api/projects/:id/scene-art', async (q, r) => {
-    idle();
-    const p = writable(q),
-      b = z.strictObject({ scene: uuid, keyword: keywordSchema, mode: artMode }).parse(q.body),
-      s = find(p, b.scene);
-    requireThat(
-      p.scriptApproval === scriptSig(p) &&
-        normalize(p.scenes.map((s) => s.narration).join(' ')) === normalize(p.script),
-      'Yalnız onaylı anlatım için çizim hazırlanabilir.',
-    );
-    requireThat(s.visualMode === 'svg' && s.svgPlan, 'Önce SVG sahnesini kaydet.');
-    busy = p.id;
-    try {
-      const old = structuredClone(p),
-        result = await planner.illustrate(
-          p,
-          {
-            ...displayPlan(s.svgPlan, s.narration, p.topic),
-            iconKeyword: b.keyword,
-            artMode: b.mode,
-          },
-          s.narration,
-        );
-      const plan = svgPlanSchema.parse(result.plan);
-      if (JSON.stringify(s.svgPlan) !== JSON.stringify(plan)) {
-        store.checkpoint(p);
-        s.svgPlan = plan;
-        clearFinal(p);
-        p.boardApproval = null;
-        invalidate(p, old);
-        store.save(p);
-      }
-      r.json({ project: p, message: result.reason });
-    } finally {
-      busy = null;
-    }
+  app.get('/api/projects/:id/illustrations/:digest', (q, r) => {
+    const { ref, drawing } = readIllustration(store.dir(q.params.id), q.params.digest);
+    r.json({ ref, drawing });
   });
   app.post('/api/projects/:id/board', (q, r) => {
     const p = writable(q);
@@ -263,6 +227,22 @@ export function createStudio(
       .parse(q.body);
     const old = structuredClone(p);
     const next = { ...p, scenes: b.scenes, styleGuide: b.styleGuide };
+    for (const s of b.scenes)
+      if (s.svgPlan) {
+        requireThat(
+          isDeepStrictEqual(p.scenes.find((v) => v.id === s.id)?.svgPlan, s.svgPlan),
+          'Eski atlas yalnız kayıtlı sahnede okunabilir. Yeni sahne için vektör çizimi oluşturun.',
+          422,
+        );
+      } else if (s.vector) {
+        requireThat(
+          isDeepStrictEqual(p.scenes.find((v) => v.id === s.id)?.vector, s.vector),
+          'Çizim ve başlığı yalnız sahne modeli üretebilir.',
+          422,
+        );
+        if (b.approve && s.visualMode === 'svg')
+          verifiedFrame(store.dir(p.id), s.vector, s.narration);
+      }
     if (b.approve) approveBoard(next);
     const changed =
       JSON.stringify([p.scenes, p.styleGuide]) !== JSON.stringify([b.scenes, b.styleGuide]);
@@ -297,6 +277,7 @@ export function createStudio(
           'paragraph',
           'board',
           'svg-board',
+          'redraw-vector',
           'concept',
           'all',
           'image',
@@ -305,14 +286,15 @@ export function createStudio(
           'clip',
         ]),
         scene: uuid.optional(),
+        instruction: z.string().trim().max(400).optional(),
         paragraph: z.number().int().nonnegative().optional(),
       })
       .parse(q.body);
     const s = b.scene ? find(p, b.scene) : undefined;
-    if (['board', 'svg-board', 'concept'].includes(b.kind))
+    if (['board', 'svg-board', 'redraw-vector', 'concept'].includes(b.kind))
       requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
     if (['all', 'image', 'voice', 'align', 'clip'].includes(b.kind)) approved(p);
-    if (['image', 'voice', 'align', 'clip', 'concept'].includes(b.kind))
+    if (['image', 'voice', 'align', 'clip', 'concept', 'redraw-vector'].includes(b.kind))
       requireThat(s, 'Bir sahne seçin.');
     if (b.kind === 'image')
       requireThat(s?.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
@@ -322,20 +304,27 @@ export function createStudio(
         if (['script', 'shorten', 'lengthen', 'paragraph'].includes(b.kind)) {
           return generateScript(p, b.kind, b.paragraph);
         }
-        if (b.kind === 'svg-board') {
-          const result = await planner.plan(p),
-            old = structuredClone(p);
-          p.scenes = result.scenes;
+        if (b.kind === 'svg-board' || b.kind === 'redraw-vector') {
+          const old = structuredClone(p);
+          if (b.kind === 'svg-board')
+            p.scenes = await planner.plan(p, (i, n) =>
+              prod.tick(
+                p,
+                `Özel vektör sahnesi çiziliyor · ${i + 1}/${n}`,
+                'svg-board',
+                undefined,
+                Math.round((i * 100) / n),
+              ),
+            );
+          else {
+            const vector = await planner.redraw(p, s!, b.instruction ?? '');
+            s!.visualMode = 'svg';
+            s!.vector = vector;
+            delete s!.svgPlan;
+          }
           p.boardApproval = null;
           clearFinal(p);
           invalidate(p, old);
-          if (result.warning)
-            return {
-              state: 'waiting',
-              kind: 'svg-plan-fallback',
-              label: result.warning,
-              at: now(),
-            };
           return;
         }
         if (b.kind === 'board' || b.kind === 'concept') {
@@ -579,7 +568,7 @@ export function createStudio(
     } else if (scene && /görsel|çiz|resim/.test(t)) {
       requireThat(
         scene.visualMode !== 'svg',
-        'SVG şablonunu storyboard alanlarından düzenleyin.',
+        'Bu sahneyi storyboard üzerinden yeniden çizin.',
         422,
       );
       store.checkpoint(p);

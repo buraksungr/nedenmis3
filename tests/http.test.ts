@@ -1,3 +1,4 @@
+import { sample, completion } from './vector-test-data';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -597,139 +598,104 @@ test('storyboard uses one key-selected Pollinations route, publishes locally, an
   for (const secret of [gemini, key, rotated]) assert.ok(!serialized.includes(secret));
 });
 
-test('approved script → 503 SVG planner → editable fallback, strict review, independent keys and no image calls', async (t) => {
-  let requests = 0;
-  const { req, base, settle } = await app(t, undefined, async () => {
-    requests++;
-    return new Response('do-not-echo-response', { status: 503 });
+test('no slide on provider failure; ready drawing, board approval and single directed redraw preserve narration/times and undo', async (t) => {
+  let mode = 'fail';
+  const prompts: Record<string, any>[] = [];
+  const { req, store, settle, base } = await app(t, undefined, async (url, o) => {
+    assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
+    const input = JSON.parse(JSON.parse(String(o?.body)).messages[1].content);
+    prompts.push(input);
+    return mode === 'fail'
+      ? new Response('private-provider-error', { status: 503 })
+      : mode === 'invalid'
+        ? completion('broken')
+        : completion(sample(input.yönlendirme ? 4 : input.sahne - 1));
   });
-  const secret = 'groq-isolated-http-credential';
-  const saved = await req('/settings/svg-planner/key/groq', { key: secret });
-  assert.equal(saved.status, 200);
-  const body = await saved.text();
-  assert.ok(!body.includes(secret));
-  assert.deepEqual(JSON.parse(body).svgPlanner.keys, { groq: true, openrouter: false });
-  assert.equal(
-    (
-      await req('/settings/svg-planner', {
-        provider: 'groq',
-        artworkPolicy: 'offline',
-        groqFreeConfirmed: true,
-        ollamaModel: 'qwen2.5:7b',
-      })
-    ).status,
-    200,
-  );
-  let p: Project = await (
-    await req('/projects', { topic: 'Toprak kesiti', script: 'Yağmur yağar. Su toprağa sızar.' })
-  ).json();
-  const route = '/projects/' + p.id;
-  assert.equal((await req(route + '/generate', { kind: 'svg-board' }, p.rev)).status, 409);
-  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
-  assert.equal((await req(route + '/generate', { kind: 'svg-board' }, p.rev)).status, 202);
-  p = await settle(route);
-  assert.match(p.job.label, /Groq: HTTP 503.*Yerel şablon/);
-  assert.ok(!p.boardApproval && p.scenes.length === 2);
-  assert.equal(p.job.kind, 'svg-plan-fallback');
-  const s = p.scenes[0],
-    plan = s.svgPlan!;
-  const board = (svgPlan: any) =>
-    req(
-      route + '/board',
-      { scenes: [{ ...s, svgPlan }, p.scenes[1]], styleGuide: p.styleGuide, approve: true },
-      p.rev,
-    );
-  assert.equal((await board({ ...plan, extra: 'no' })).status, 400);
-  assert.equal((await board(undefined)).status, 400);
-  p = await (
-    await board({
-      ...plan,
-      template: 'ThermometerGaugeScene',
-      labels: ['Toprak sıcaklığı', 'Sıcaklık aralığı'],
-      fromValue: -5,
-      toValue: 4,
-      title: 'Toprak sıcaklığı',
-    })
-  ).json();
-  assert.ok(p.boardApproval);
-  assert.equal(p.scenes[0].svgPlan!.title, 'Toprak sıcaklığı');
-  assert.equal((await req(route + '/generate', { kind: 'image', scene: s.id }, p.rev)).status, 409);
-  const imp = await fetch(base + route + '/import/image?scene=' + s.id, {
-    method: 'POST',
-    headers: { 'If-Match': String(p.rev), 'Content-Type': 'application/octet-stream' },
-    body: fs.readFileSync('ui/public/art/ants.jpg'),
-  });
-  assert.equal(imp.status, 409);
-  assert.equal(requests, 1);
-  p = await (
-    await req(
-      route + '/board',
-      { scenes: [{ ...p.scenes[0], visualMode: 'photo' }, p.scenes[1]], styleGuide: p.styleGuide },
-      p.rev,
-    )
-  ).json();
-  assert.equal(p.boardApproval, null);
-  assert.ok(p.scenes[0].svgPlan);
-  assert.equal(p.scenes[1].visualMode, 'svg');
-});
-
-test('editable scene query resolves a project-local served SVG and invalidates only dependent video', async (t) => {
-  const { req, store, settle } = await app(t, undefined, async (url, opts) => {
-    const u = new URL(String(url));
-    assert.equal(u.origin, 'https://api.iconify.design');
-    assert.ok(!new Headers(opts?.headers).has('authorization'));
-    if (u.pathname === '/search')
-      return Response.json({ icons: ['tabler:' + u.searchParams.get('query')] });
-    return new Response(
-      `<svg viewBox="0 0 24 24"><circle fill="currentColor" r="${u.pathname.includes('whale') ? 9 : 8}"/></svg>`,
-      { headers: { 'Content-Type': 'image/svg+xml' } },
-    );
-  });
+  const key = 'isolated-openrouter-fixture';
+  const settings = await (await req('/settings/svg-planner/key/openrouter', { key })).text();
+  assert.ok(!settings.includes(key));
+  assert.deepEqual(JSON.parse(settings).svgPlanner.keys, { groq: false, openrouter: true });
   let p: Project = await (
     await req('/projects', {
-      topic: 'Balinalar',
-      script: 'Karaya vuran balinalar neden ölür? Akciğerlere binen basınç artar.',
+      topic: 'Karaya vuran balinalar',
+      script:
+        'Balinanın derisi kurur. Ağırlık solunumu zorlaştırır. Suda kaldırma kuvveti etkilidir.',
     })
   ).json();
   const route = '/projects/' + p.id;
+  const gen = (b: Record<string, string>, rev = p.rev) => req(route + '/generate', b, rev);
+  assert.equal((await gen({ kind: 'svg-board' })).status, 409);
   p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
-  await req(route + '/generate', { kind: 'svg-board' }, p.rev);
+  await gen({ kind: 'svg-board' });
   p = await settle(route);
-  p = await (
-    await req(
-      route + '/board',
-      { scenes: p.scenes, styleGuide: p.styleGuide, approve: true },
-      p.rev,
-    )
-  ).json();
-  const ids = p.scenes.map((s) => s.id);
-  for (const id of ids)
-    p.assets[id] = {
-      clip: { file: 'qa.mp4', key: 'video' },
-      voice: { file: 'qa.wav', key: voiceKey(p, p.scenes.find((s) => s.id === id)!) },
+  assert.equal(p.job.state, 'failed');
+  assert.match(p.job.label, /503/);
+  assert.deepEqual(p.scenes, []);
+  mode = 'draw';
+  await gen({ kind: 'svg-board' });
+  p = await settle(route);
+  assert.equal(p.job.state, 'done', p.job.label);
+  const board = (scenes = p.scenes) =>
+    req(route + '/board', { scenes, styleGuide: p.styleGuide, approve: true }, p.rev);
+  const fake = structuredClone(p.scenes);
+  fake[1].vector!.title = 'Yerel Uydurma';
+  assert.equal((await board(fake)).status, 422);
+  p = await (await board()).json();
+  assert.ok(p.boardApproval);
+  const old = structuredClone(p.scenes);
+  const s = p.scenes[1];
+  assert.equal((await gen({ kind: 'image', scene: s.id })).status, 409);
+  for (const v of p.scenes) {
+    p.assets[v.id] = {
+      clip: { key: 'clip', file: 'clip.mp4' },
+      voice: { key: voiceKey(p, v), file: 'voice.wav' },
+      align: { key: 'aligned', file: 'a.json', method: 'whisper' },
+      words: [{ text: v.narration, start: 0, end: 1 }],
     };
+  }
   store.save(p);
-  const body = { scene: ids[1], keyword: 'skeleton', mode: 'auto' };
-  assert.equal((await req(route + '/scene-art', body, p.rev - 1)).status, 412);
-  assert.equal(
-    (await req(route + '/scene-art', { ...body, keyword: 'https://bad.invalid' }, p.rev)).status,
-    400,
-  );
-  const r = await req(route + '/scene-art', body, p.rev);
-  assert.equal(r.status, 200);
-  p = (await r.json()).project;
-  const plan = p.scenes[1].svgPlan;
-  assert.ok(plan && 'artwork' in plan);
-  assert.equal(plan.artwork?.name, 'tabler:skeleton');
-  assert.equal(plan.iconKeyword, 'skeleton');
+  const audio = structuredClone(p.assets);
+  const b = { kind: 'redraw-vector', scene: s.id, instruction: 'Belirgin kırmızı oklar çiz.' };
+  assert.equal((await gen(b, p.rev - 1)).status, 412);
+  mode = 'invalid';
+  await gen(b);
+  p = await settle(route);
+  assert.equal(p.job.state, 'failed');
+  assert.ok(p.boardApproval);
+  assert.deepEqual(p.scenes, old);
+  assert.deepEqual(p.assets, audio);
+  mode = 'draw';
+  await gen(b);
+  p = await settle(route);
+  assert.equal(p.job.state, 'done', p.job.label);
+  assert.equal(prompts.at(-1)?.yönlendirme, b.instruction);
+  assert.equal(prompts.length, 7);
   assert.equal(p.boardApproval, null);
-  assert.ok(ids.every((id) => !p.assets[id].clip && p.assets[id].voice?.file === 'qa.wav'));
-  const svg = await req(route + '/atlas/' + plan.artwork!.digest + '.svg');
-  assert.equal(svg.status, 200);
-  assert.match(svg.headers.get('content-security-policy') ?? '', /sandbox/);
-  assert.match(await svg.text(), /viewBox="0 0 24 24"/);
-  assert.equal(
-    (await req('/projects/' + randomUUID() + '/atlas/' + plan.artwork!.digest + '.svg')).status,
-    404,
+  assert.deepEqual(p.scenes[0], old[0]);
+  assert.deepEqual(p.scenes[2], old[2]);
+  const ref = p.scenes[1].vector!;
+  assert.notEqual(ref.digest, s.vector!.digest);
+  for (const [i, v] of p.scenes.entries()) {
+    const m = p.assets[v.id];
+    assert.deepEqual(m.voice, audio[v.id].voice);
+    assert.deepEqual(m.align, audio[v.id].align);
+    assert.deepEqual(m.words, audio[v.id].words);
+    assert.equal(!!m.clip, i === 2);
+  }
+  const file = await req(route + '/illustrations/' + ref.digest);
+  assert.equal(file.headers.get('content-type')?.includes('application/json'), true);
+  assert.equal((await file.json()).drawing.layers['layer-main'].tag, 'g');
+  assert.ok(!(await req('/projects/' + randomUUID() + '/illustrations/' + ref.digest)).ok);
+  assert.ok(
+    !(
+      await fetch(base + route + '/scene-art', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+    ).ok,
   );
+  p = await (await req(route + '/undo', {}, p.rev)).json();
+  assert.deepEqual(p.scenes, old);
+  assert.ok(p.boardApproval);
 });
