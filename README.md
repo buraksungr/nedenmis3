@@ -2,7 +2,7 @@
 
 Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu → senaryo onayı → storyboard onayı → sahne bazlı üretim → doğrulanmış MP4. Varsayılan profil **30 sn hedef, 1080 × 1920, 30 FPS, nostaljik 2D piksel sanatı, sabit kadraj ve yumuşak geçiş, Türkçe erkek anlatıcı**. Ses süreye uydurulmaz; kurgu gerçek anlatımı izler.
 
-[Windows x64 Setup · 1.2.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44480484749/artifacts/14508762526) · [Uçaklar neden yüksekten uçar? — 12 şablonlu sesli film](https://github.com/buraksungr/nedenmis3/actions/runs/44480484749/artifacts/14508543409) · [Test sonuçları ve QA videoları](docs/VALIDATION.md)
+[Windows x64 Setup · 1.3.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44493453587/artifacts/14513884021) · [Karaya vuran balinalar neden ölür? — canlı Iconify ile üretilen sesli Windows filmi](https://github.com/buraksungr/nedenmis3/actions/runs/44493453587/artifacts/14514132279) · [Doğrulama ve önceki sürümler](docs/VALIDATION.md)
 
 ## Windows’ta başla
 
@@ -22,10 +22,10 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 **Anahtarsız dışa aktarım:** **Yalnızca onayla** ile önce kendi ses dosyanı yükleyebilirsin. Ya da bir SVG sahnesinin ayrıntılarında **Eksik anlatımı otomatik seslendir** seçimini kaldır: kayıt yoksa o sahnede seçilen süre, tek katman ekran metni ve ambiyans kullanılır. Ses verisi olmayan bu cümlelerin JSON kaydı `timing: "scene-duration"` taşır. Whisper kurulu değilse sesli sahnelerde mevcut, uyarılı **tahmini cümle** yolu korunur; tahminlere sözcük vurgusu uygulanmaz.
 
-**Şablon planı:** `title` 2–4 tam sözcüktür; ekranda bir cümlenin başı kesilerek başlık yapılmaz. `icon` yalnız `cell | water | brain | molecule | blood | leaf | earth | flame | airplane | sun | snowflake | ant | eye | heart | atom | soundwave | shield | clock | globe | lightning` olabilir. `labels` şemanın içindeki kısa etiketlerdir; ikinci bir altyazı değildir. Alt alan zamanlanmış anlatım altyazısına ayrılmıştır. Etkin sözcük `#FACC15`, diğerleri beyazdır. Örnek `svgPlan`:
+**Şablon planı:** `title` 2–4 tam sözcüktür; ekranda bir cümlenin başı kesilerek başlık yapılmaz. `iconKeyword` İngilizce arama terimidir, 20 yerel ikonla sınırlı değildir. `icon` çevrimdışı yedek ikondur; başarılı aramada eklenen `artwork` ise projedeki doğrulanmış çizimin kaynağı, adı ve SHA-256 kimliğidir. `labels` şemanın içindeki kısa etiketlerdir; ikinci bir altyazı değildir. Alt alan zamanlanmış anlatım altyazısına ayrılmıştır. Etkin sözcük `#FACC15`, diğerleri beyazdır. “Akciğerlere binen basınç nefes almayı zorlaştırır.” için çizim aranırken kullanılan plan:
 
 ```json
-{"template":"FocusCalloutScene","title":"Beynin Susama Sinyali","icon":"brain","labels":["Sıvı dengesi","Susama merkezi"],"fromValue":0,"toValue":0,"weather":"none","accentColor":"#9ADBC1"}
+{"template":"FocusCalloutScene","title":"Akciğerlere Binen Basınç","iconKeyword":"lungs","artMode":"auto","icon":"cell","labels":["Akciğerlere binen basınç","Nefes alma"],"fromValue":0,"toValue":0,"weather":"none","accentColor":"#9ADBC1"}
 ```
 
 | Şablon | Şemanın içinde |
@@ -44,6 +44,8 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 | `TimelineScaleScene` | Üç etiketli nokta, ortak zaman/mesafe/yükseklik birimi veya ölçümsüz evre sırası. |
 
 Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Beş veya daha fazla sahnede en az beş farklı şablon kullanılır. Eksik, yinelenen veya yer tutucu etiketler yalnız ilgili alanda, sahnenin anlatımından tamamlanır. Birimi ve miktarı anlatımda olmayan bir yüzde/kat göstergesi otomatik seçilmez. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelin planına ham SVG, URL veya React kodu konamaz. Özel çizim, ayrı bir güvenlik denetiminden geçirilir.
+
+**1.2.0 balina projeni güncellemek için:** **Storyboard → SVG planı oluştur**. Başlıkları ve çizimleri incele; gerekirse kartta İngilizce kelimeyi değiştirip **İkon ara** seç. **Onayla ve üret** değişen görüntüleri işler; anlatım ve ses ayarları aynıysa kayıtlı ses ve hizalama kullanılır. Yalnız projeyi açmak onaylı eski planı değiştirmez.
 
 **1.1.x videonu güncellemek için:** **Videoyu üret** ile yeni klipleri oluştur. Eski onaylı plan diskte kendiliğinden değiştirilmez; eski `subtitle` videoya basılmaz. `A | B` biçimindeki geçerli eski etiketler şemada kalır. Eski plandaki tekrarlı şablonları da değiştirmek istersen **Storyboard → SVG planı oluştur**, incele ve yeniden onayla. Anlatım ve ses ayarları aynıysa mevcut ses ve hizalama korunur. Önceden dışa aktardığın MP4 değişmez.
 
@@ -146,5 +148,7 @@ Tarayıcı modunda veriler `.studio/` altındadır. `STUDIO_HOME` ile değiştir
 [Modelleri listeleme](https://ai.google.dev/api/models) · [Google Gen AI SDK 3.6.0 ve kararlı API seçimi](https://github.com/googleapis/js-genai/tree/v3.6.0#api-selection) · [Google’ın v1 generateContent REST tanımı](https://github.com/googleapis/googleapis/blob/6f8ddc394a90ea2c6a355afd2e9d21f56622df14/google/ai/generativelanguage/v1/generative_service.proto#L36-L52) · [Gemini TTS: Interactions API](https://ai.google.dev/api/interactions) · [Yapılandırılmış JSON](https://ai.google.dev/gemini-api/docs/structured-output) · [Pollinations görsel API sözleşmesi](https://github.com/pollinations/pollinations/blob/main/APIDOCS.md) · [TTS ve WAV/PCM biçimleri](https://ai.google.dev/gemini-api/docs/speech-generation) · [Fiyatlar ve ücretsiz erişim](https://ai.google.dev/gemini-api/docs/pricing) · [stable-ts hizalama](https://github.com/jianfch/stable-ts) · [Remotion lisansı](https://www.remotion.dev/docs/license). Model adları katalogdan seçilir; fiyat ve kota uygulama içine sabitlenmez. Üçüncü taraf bildirimleri `resources/NOTICE.txt` içindedir.
 
 Ek çevrimdışı denetim: `npm run test:ui` derlenmiş arayüzü, izole SQLite deposunu ve gerçek Chromium’u kullanır. Proje oluşturma, otomatik kayıt/yeniden açma, iki onay, çevrimdışı Pollinations hatasından manuel yüklemeye geçiş, anahtarlı üretimden dönen yerel resim ve anahtar yönetimi, yerel denetimler, mobil gezinme ve mevcut kontrol MP4’ünün oynatılmasını sınar. Önce `npm run build` ve `npm run test:render` çalıştırın. `npm run test:render -- --whisper --setup-python` **ayrı ve açıkça indirme gerektiren** akustik testtir: referans altyazıları üretime vermeden gerçek Whisper/stable-ts çalıştırır ve 800 ms sessizlik eklenmiş aynı kayıttaki sözcük zamanlarının akustik kaymayı izlediğini denetler. Yalnız bu test için SHA-256 doğrulamalı, sabitlenmiş Türkçe Piper/DFKI konuşma örneği indirilir (kaynak ve atıf `tests/fixtures/README.md`). Sonuçlar ayrı `out/acoustic-control/` dizinindedir.
+
+`npm run test:whale`, yeni bir projede **canlı anahtarsız Iconify** ve gerçek CPU Whisper kullanır. Seçilmiş SVG’lerin kaynağını, şablonların ekrana yazdığı metni ve son MP4’teki balina piksellerini denetler. TTS bu kabulde de senaryoya uygun, atıflı bir test kaydıdır.
 
 `npm run test:flight`, Windows CPU kabulünde aynı 12 sahneyi **tek üretim işiyle** Türkçe ses, gerçek Whisper zamanları, SRT/JSON ve MP4 olarak doğrular. Girdi senaryosu, test sesinin kaynağı ve yeniden çalıştırma adımları: [test kayıtları](tests/fixtures/README.md).
