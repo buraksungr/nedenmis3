@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createStudio } from '../server/app';
+import { voiceKey } from '../server/production';
 import { noNetwork } from './offline';
 import { blankScene, type Project } from '../shared/schema';
 async function app(t: any, token?: string, transport: typeof fetch = noNetwork) {
@@ -612,6 +613,7 @@ test('approved script → 503 SVG planner → editable fallback, strict review, 
     (
       await req('/settings/svg-planner', {
         provider: 'groq',
+        artworkPolicy: 'offline',
         groqFreeConfirmed: true,
         ollamaModel: 'qwen2.5:7b',
       })
@@ -669,4 +671,65 @@ test('approved script → 503 SVG planner → editable fallback, strict review, 
   assert.equal(p.boardApproval, null);
   assert.ok(p.scenes[0].svgPlan);
   assert.equal(p.scenes[1].visualMode, 'svg');
+});
+
+test('editable scene query resolves a project-local served SVG and invalidates only dependent video', async (t) => {
+  const { req, store, settle } = await app(t, undefined, async (url, opts) => {
+    const u = new URL(String(url));
+    assert.equal(u.origin, 'https://api.iconify.design');
+    assert.ok(!new Headers(opts?.headers).has('authorization'));
+    if (u.pathname === '/search')
+      return Response.json({ icons: ['tabler:' + u.searchParams.get('query')] });
+    return new Response(
+      `<svg viewBox="0 0 24 24"><circle fill="currentColor" r="${u.pathname.includes('whale') ? 9 : 8}"/></svg>`,
+      { headers: { 'Content-Type': 'image/svg+xml' } },
+    );
+  });
+  let p: Project = await (
+    await req('/projects', {
+      topic: 'Balinalar',
+      script: 'Karaya vuran balinalar neden ölür? Akciğerlere binen basınç artar.',
+    })
+  ).json();
+  const route = '/projects/' + p.id;
+  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+  await req(route + '/generate', { kind: 'svg-board' }, p.rev);
+  p = await settle(route);
+  p = await (
+    await req(
+      route + '/board',
+      { scenes: p.scenes, styleGuide: p.styleGuide, approve: true },
+      p.rev,
+    )
+  ).json();
+  const ids = p.scenes.map((s) => s.id);
+  for (const id of ids)
+    p.assets[id] = {
+      clip: { file: 'qa.mp4', key: 'video' },
+      voice: { file: 'qa.wav', key: voiceKey(p, p.scenes.find((s) => s.id === id)!) },
+    };
+  store.save(p);
+  const body = { scene: ids[1], keyword: 'skeleton', mode: 'auto' };
+  assert.equal((await req(route + '/scene-art', body, p.rev - 1)).status, 412);
+  assert.equal(
+    (await req(route + '/scene-art', { ...body, keyword: 'https://bad.invalid' }, p.rev)).status,
+    400,
+  );
+  const r = await req(route + '/scene-art', body, p.rev);
+  assert.equal(r.status, 200);
+  p = (await r.json()).project;
+  const plan = p.scenes[1].svgPlan;
+  assert.ok(plan && 'artwork' in plan);
+  assert.equal(plan.artwork?.name, 'tabler:skeleton');
+  assert.equal(plan.iconKeyword, 'skeleton');
+  assert.equal(p.boardApproval, null);
+  assert.ok(ids.every((id) => !p.assets[id].clip && p.assets[id].voice?.file === 'qa.wav'));
+  const svg = await req(route + '/atlas/' + plan.artwork!.digest + '.svg');
+  assert.equal(svg.status, 200);
+  assert.match(svg.headers.get('content-security-policy') ?? '', /sandbox/);
+  assert.match(await svg.text(), /viewBox="0 0 24 24"/);
+  assert.equal(
+    (await req('/projects/' + randomUUID() + '/atlas/' + plan.artwork!.digest + '.svg')).status,
+    404,
+  );
 });

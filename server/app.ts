@@ -1,10 +1,21 @@
+import { AtlasArt, readArtwork } from './atlas-art';
+import { keywordSchema, artMode } from '../shared/artwork';
+import { displayPlan } from '../shared/svg-story';
+import { svgPlanSchema } from '../shared/svg';
 import archiver from 'archiver';
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { validWords } from '../shared/captions';
-import { kinds, sceneSchema, wordSchema, type Task, type Project } from '../shared/schema';
+import {
+  kinds,
+  sceneSchema,
+  wordSchema,
+  normalize,
+  type Task,
+  type Project,
+} from '../shared/schema';
 import { speakers } from '../shared/speakers';
 import { Gemini } from './gemini';
 import { memoryVault, type Vault } from './vault';
@@ -66,6 +77,8 @@ export function createStudio(
       store,
       options.plannerVaults ?? { groq: memoryVault(), openrouter: memoryVault() },
       options.transport,
+      new AtlasArt(store, options.transport),
+      g,
     ),
     settings = () => ({
       ...g.settings(),
@@ -195,6 +208,48 @@ export function createStudio(
       store.save(p);
     }
     r.json(p);
+  });
+  app.get('/api/projects/:id/atlas/:digest.svg', (q, r) => {
+    const svg = readArtwork(store.dir(q.params.id), q.params.digest);
+    requireThat(svg, 'Çizim bulunamadı.', 404);
+    r.set('Content-Security-Policy', "default-src 'none'; sandbox").type('image/svg+xml').send(svg);
+  });
+  app.post('/api/projects/:id/scene-art', async (q, r) => {
+    idle();
+    const p = writable(q),
+      b = z.strictObject({ scene: uuid, keyword: keywordSchema, mode: artMode }).parse(q.body),
+      s = find(p, b.scene);
+    requireThat(
+      p.scriptApproval === scriptSig(p) &&
+        normalize(p.scenes.map((s) => s.narration).join(' ')) === normalize(p.script),
+      'Yalnız onaylı anlatım için çizim hazırlanabilir.',
+    );
+    requireThat(s.visualMode === 'svg' && s.svgPlan, 'Önce SVG sahnesini kaydet.');
+    busy = p.id;
+    try {
+      const old = structuredClone(p),
+        result = await planner.illustrate(
+          p,
+          {
+            ...displayPlan(s.svgPlan, s.narration, p.topic),
+            iconKeyword: b.keyword,
+            artMode: b.mode,
+          },
+          s.narration,
+        );
+      const plan = svgPlanSchema.parse(result.plan);
+      if (JSON.stringify(s.svgPlan) !== JSON.stringify(plan)) {
+        store.checkpoint(p);
+        s.svgPlan = plan;
+        clearFinal(p);
+        p.boardApproval = null;
+        invalidate(p, old);
+        store.save(p);
+      }
+      r.json({ project: p, message: result.reason });
+    } finally {
+      busy = null;
+    }
   });
   app.post('/api/projects/:id/board', (q, r) => {
     const p = writable(q);

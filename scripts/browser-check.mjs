@@ -22,6 +22,15 @@ const ctx = studio.createStudio(
   {
     transport: async (url, opts) => {
       const host = new URL(url).host;
+      if (host === 'api.iconify.design') {
+        const u = new URL(url);
+        if (u.pathname === '/search')
+          return Response.json({ icons: ['tabler:' + u.searchParams.get('query')] });
+        return new Response(
+          '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 2h20v20H2Z"/></svg>',
+          { headers: { 'Content-Type': 'image/svg+xml' } },
+        );
+      }
       if (host === 'openrouter.ai') {
         plannerCalls.push(host);
         return new Response(null, { status: 503 });
@@ -308,6 +317,14 @@ try {
   await templateSelect.waitFor(); // SVG editor is lazy-loaded.
   assert.equal(await templateSelect.locator('option').count(), 12);
   assert.equal(await card.getByLabel('Bilim ikonu').locator('option').count(), 20);
+  const keyword = card.getByLabel('Iconify anahtar kelimesi');
+  await keyword.fill('lungs');
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/scene-art') && r.ok()),
+    card.getByRole('button', { name: 'İkon ara', exact: true }).click(),
+  ]);
+  await card.locator('.svg-paper [data-atlas-source="iconify"] image').first().waitFor();
+  await card.getByText('Iconify · tabler:lungs', { exact: true }).first().waitFor();
   await templateSelect.selectOption('CycleLoopScene');
   await card.getByLabel('Aşama sayısı').selectOption('4');
   await card.getByLabel('Adım 4').fill('Yuvaya dönüş');

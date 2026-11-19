@@ -11,7 +11,9 @@ import {
   type SvgPlan,
   type Template,
 } from './svg';
-import { copyFor, hasSubject, lower, namedSequence, subjectFor, supportsIcon } from './svg-copy';
+import { copyFor, grounded, lower, namedSequence } from './svg-copy';
+import { concepts, needsCustom } from './visual-concepts';
+import { keywordSchema } from './artwork';
 import { measurements, type Measures } from './svg-measures';
 
 // The four qualitative views always have grounded, non-numeric copy available. A
@@ -73,21 +75,28 @@ function suitability(
   return scores;
 }
 const palette = ['#9ADBC1', '#F1BB79', '#8FCDE5', '#C5B8EB', '#D1D986'];
-export function diagramLabels(template: Template, text: string, topic = '', count?: number) {
-  return copyFor(template, text, topic, count).labels;
+export function diagramLabels(template: Template, text: string, _topic = '', count?: number) {
+  return copyFor(template, text, count).labels;
 }
 export function defaultSvg(
   text: string,
   index = 0,
-  topic = '',
+  _topic = '',
   preferred?: Template,
   count?: number,
 ): SvgPlan {
   const m = measurements(text),
-    scores = suitability(m, index, subjectFor(text, topic).icon);
+    concept = concepts(text)[0],
+    icon = concept?.icon ?? 'globe',
+    scores = suitability(m, index, icon);
   const template = preferred ?? [...templates].sort((a, b) => scores[b] - scores[a])[0];
+  const { title, labels } = copyFor(template, text, count);
   const p: SvgPlan = {
-    ...copyFor(template, text, topic, count),
+    title,
+    labels,
+    icon,
+    ...(concept ? { iconKeyword: concept.keyword } : {}),
+    artMode: needsCustom(text) ? 'custom' : 'auto',
     template,
     weather: /kar yağ|karlı|karla/.test(m.source)
       ? 'snow'
@@ -126,30 +135,27 @@ export function defaultSvg(
   }
   return p;
 }
-function repairCopy(seed: SvgPlan, draft: PlannerDraft, text: string, topic: string) {
+function repairCopy(seed: SvgPlan, draft: PlannerDraft, text: string, checkGrounding = true) {
   const [min, max] = catalogue[seed.template].slots,
-    raw = draft.labels ?? [];
-  const count = Math.max(min, Math.min(max, raw.length >= min ? raw.length : seed.labels.length));
-  // Reserve the valid fields first: filling slot 0 must not steal a valid slot 1.
-  const used = new Set<string>();
+    raw = draft.labels ?? [],
+    count = Math.max(min, Math.min(max, raw.length >= min ? raw.length : seed.labels.length));
+  const used = new Set<string>(),
+    ok = (v: string) => !checkGrounding || grounded(v, text);
   const slots = Array.from({ length: count }, (_, i) => {
     const v = labelSchema.safeParse(raw[i]).data;
-    if (!v || used.has(lower(v))) return undefined;
+    if (!v || !ok(v) || used.has(lower(v))) return;
     used.add(lower(v));
     return v;
   });
-  const defaults = diagramLabels(seed.template, text, topic, max),
-    c = subjectFor(text, topic);
-  const pool = [...defaults, ...c.pair, ...c.flow, seed.title];
-  const labels = slots.map((v, i) => {
-    if (v) return v;
-    const replacement = [defaults[i], ...pool].find(
-      (l) => l && labelSchema.safeParse(l).success && !used.has(lower(l)),
-    )!;
-    used.add(lower(replacement));
-    return replacement;
+  const { pool, labels: defaults } = copyFor(seed.template, text, count);
+  const labels = slots.map((s, i) => {
+    if (s) return s;
+    const v = [defaults[i], ...pool].find((l) => l && !used.has(lower(l))) ?? '';
+    used.add(lower(v));
+    return v;
   });
-  return { title: titleSchema.safeParse(draft.title).data ?? seed.title, labels };
+  const heading = titleSchema.safeParse(draft.title).data;
+  return { title: heading && ok(heading) ? heading : seed.title, labels };
 }
 // A read projection only; the original JSON is what signs a board and its history.
 export function displayPlan(stored: StoredSvgPlan, text: string, topic = ''): SvgPlan {
@@ -157,7 +163,7 @@ export function displayPlan(stored: StoredSvgPlan, text: string, topic = ''): Sv
     if (svgPlanSchema.safeParse(stored).success) return stored;
     // 1.1.1 thermometers had zero labels; older heading rules allowed incomplete copy.
     const seed = defaultSvg(text, 0, topic, stored.template);
-    return { ...stored, ...repairCopy(seed, stored, text, topic) };
+    return { ...stored, ...repairCopy(seed, stored, text, false) };
   }
   const old = legacySvgPlanSchema.parse(stored),
     seed = defaultSvg(text, 0, topic, old.template);
@@ -169,7 +175,7 @@ export function displayPlan(stored: StoredSvgPlan, text: string, topic = ''): Sv
     toValue: old.toValue,
     weather: old.weather,
     accentColor: old.accentColor,
-    ...repairCopy(seed, { title: old.title, labels }, text, topic),
+    ...repairCopy(seed, { title: old.title, labels }, text, false),
   };
 }
 function allocate(scores: Record<Template, number>[]): Template[] {
@@ -214,7 +220,7 @@ export function storyboardPlans(
 ): SvgPlan[] {
   const scores = rows.map((text, i) => {
     const p = preferences[i],
-      r = suitability(measurements(text), i, subjectFor(text, topic).icon, p);
+      r = suitability(measurements(text), i, concepts(text)[0]?.icon ?? 'globe', p);
     if (retainSaved && p && svgPlanSchema.safeParse(p).success) r[p.template as Template] = 90; // Previously reviewed by the user.
     return r;
   });
@@ -222,35 +228,44 @@ export function storyboardPlans(
     const p = preferences[i],
       text = rows[i],
       seed = defaultSvg(text, i, topic, t);
-    if (!p) return svgPlanSchema.parse(seed);
-    if (retainSaved && p.template === t) {
-      const saved = svgPlanSchema.safeParse(p);
-      if (saved.success) return saved.data;
-    }
-    const icon = icons.find((icon) => icon === p.icon);
-    const unrelated =
-      icon &&
-      !supportsIcon(text, icon) &&
-      (hasSubject(text) || (icon === 'leaf' && !supportsIcon(topic, icon)));
-    // Don't inherit botanical labels/title from an unrelated stock drawing.
-    const relevant = (v: string | null | undefined) =>
-      unrelated && v && supportsIcon(v, icon) ? undefined : v;
+    const finish = (v: SvgPlan) => {
+      const out = svgPlanSchema.safeParse(v);
+      if (!out.success)
+        throw Error(
+          `${i + 1}. sahnede başlık ve etiketler için yeterli anlatım yok. Cümleyi genişletin veya komşu sahneyle birleştirin.`,
+        );
+      return out.data;
+    };
+    if (!p) return finish(seed);
+    const saved = retainSaved && p.template === t ? svgPlanSchema.safeParse(p).data : undefined;
+    if (saved) return saved; // User-authored, not fresh model output. Never rewrite it after a provider error.
+    const evidence = concepts(text),
+      icon = icons.find((k) => k === p.icon);
+    const remote = keywordSchema.safeParse(p.iconKeyword).data;
+    const attested =
+      remote &&
+      ((p.keywordEvidence?.trim() && lower(text).includes(lower(p.keywordEvidence.trim()))) ||
+        evidence.some((c) => c.keyword === remote));
+    const keyword =
+      attested &&
+      (!evidence[0] ||
+        evidence[0].score < 9 ||
+        evidence.some((c) => c.keyword === remote && c.score >= evidence[0].score))
+        ? remote
+        : seed.iconKeyword;
     const copy = repairCopy(
       seed,
-      {
-        title: relevant(p.title),
-        labels:
-          !p.template || t === p.template ? p.labels?.map((l) => relevant(l) ?? null) : undefined,
-      },
+      { title: p.title, labels: !p.template || p.template === t ? p.labels : undefined },
       text,
-      topic,
     );
-    return svgPlanSchema.parse({
+    return finish({
       ...seed,
       ...copy,
-      icon: !unrelated && icon ? icon : seed.icon,
+      icon: icon && (!evidence.length || evidence.some((c) => c.icon === icon)) ? icon : seed.icon,
+      iconKeyword: keyword,
+      artMode: p.artMode ?? seed.artMode,
       accentColor: p.accentColor?.trim() || seed.accentColor,
-      weather: p.weather?.trim() || seed.weather,
+      weather: (p.weather?.trim() || seed.weather) as SvgPlan['weather'],
     });
   });
 }

@@ -69,6 +69,7 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
   const saved = s.svgPlanner,
     { setSettings, notify } = useStudio(),
     { busy, run } = useRun();
+  const [policy, setPolicy] = useState(saved.artworkPolicy);
   const [provider, setProvider] = useState<PlannerProvider>(saved.provider),
     [model, setModel] = useState(saved.ollamaModel),
     [free, setFree] = useState(saved.groqFreeConfirmed);
@@ -80,8 +81,8 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
         <Badge tone="green">{plannerLabels[saved.provider]}</Badge>
       </div>
       <p className="muted">
-        On iki çizim şablonu ve yirmi bilim ikonu bilgisayarında çalışır. Planlayıcı yalnızca
-        alanları doldurur; kod üretemez. İnternetsiz çalışmak için yerel şablonları seç.
+        On iki şablon yerel çizilir. Iconify yalnız İngilizce kavramla, anahtarsız aranır. Çizim
+        proje klasörüne kaydedilir; önizleme ve render yeniden indirmez.
       </p>
       <div className="form-stack spaced">
         <label>
@@ -94,8 +95,22 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
             ))}
           </select>
         </label>
+        <label>
+          Şema çizimi
+          <select value={policy} onChange={(e) => setPolicy(e.target.value as typeof policy)}>
+            <option value="hybrid">Iconify + izinli modelle özel SVG</option>
+            <option value="iconify">Yalnız Iconify ve yerel yedek</option>
+            <option value="offline">Çevrimdışı · önbellek ve yerel ikon</option>
+          </select>
+        </label>
+        <p className="help">
+          Özel çizim gerekirse yalnız sahne anlatımı seçtiğin modele gider. Yerel planlamada varsa
+          izinli Gemini metin modeli kullanılır; o modelin normal kota ve ücret izinleri geçerlidir.
+        </p>
         {provider === 'local' ? (
-          <p className="help">Anahtar, model indirme veya ağ bağlantısı gerekmez.</p>
+          <p className="help">
+            Başlık ve etiketler bilgisayarında çıkarılır. Şema çizimi üstteki seçimi kullanır.
+          </p>
         ) : provider === 'ollama' ? (
           <>
             <label>
@@ -163,6 +178,7 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
                 setSettings(
                   await post<Settings>('/settings/svg-planner', {
                     provider,
+                    artworkPolicy: policy,
                     ollamaModel: provider === 'ollama' ? model.trim() : saved.ollamaModel,
                     groqFreeConfirmed: free,
                   }),

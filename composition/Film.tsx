@@ -16,6 +16,8 @@ import { AnimatedPlate } from './ScientificPlate';
 export type FilmProps = {
   svg?: SvgPlan;
   nextSvg?: SvgPlan;
+  artHref?: string;
+  nextArtHref?: string;
   image: string;
   next: string | null;
   words: Word[];
@@ -35,6 +37,8 @@ const still: React.CSSProperties = {
 export function Film({
   svg,
   nextSvg,
+  artHref,
+  nextArtHref,
   image,
   next,
   words,
@@ -51,12 +55,16 @@ export function Film({
   const alpha = next || nextSvg ? dissolveAt(f, fps, durationInFrames) : 0;
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
-      {svg ? <AnimatedPlate plan={svg} /> : image && <Img src={image} style={still} />}
+      {svg ? (
+        <AnimatedPlate plan={svg} artHref={artHref} />
+      ) : (
+        image && <Img src={image} style={still} />
+      )}
       {/* Source-over on the opaque first photo gives (1-alpha)*old + alpha*new. */}
       {alpha > 0 &&
         (nextSvg ? (
           <AbsoluteFill style={{ opacity: alpha }}>
-            <AnimatedPlate plan={nextSvg} opening />
+            <AnimatedPlate plan={nextSvg} artHref={nextArtHref} opening />
           </AbsoluteFill>
         ) : (
           next && <Img src={next} style={{ ...still, opacity: alpha }} />

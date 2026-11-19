@@ -1,3 +1,4 @@
+import { createContext, useContext, useState } from 'react';
 import { Easing, interpolate } from 'remotion';
 import type { SvgPlan } from '../shared/svg';
 import { ScienceGlyph } from './ScienceGlyph';
@@ -89,6 +90,30 @@ export function Mark({
     </text>
   );
 }
+// A source can only originate from the local guarded media route (editor) or a
+// revalidated, in-memory SVG data URI (export). Never interpolate provider XML into DOM.
+export const ArtLayer = createContext<{ href?: string; frame: number }>({ frame: 0 });
+export function PlateGlyph({ plan }: { plan: SvgPlan }) {
+  const { href, frame } = useContext(ArtLayer),
+    [failed, setFailed] = useState('');
+  if (!href || failed === href) return <ScienceGlyph icon={plan.icon} accent={plan.accentColor} />;
+  const pulse = 1 + 0.036 * Math.sin(frame / 17),
+    dy = 2.7 * Math.sin(frame / 23);
+  return (
+    <g
+      transform={`translate(50 ${50 + dy}) scale(${pulse}) translate(-50 -50)`}
+      data-atlas-source={plan.artwork?.source}
+    >
+      <image
+        href={href}
+        width="100"
+        height="100"
+        preserveAspectRatio="xMidYMid meet"
+        onError={() => setFailed(href)}
+      />
+    </g>
+  );
+}
 export function Specimen({
   plan,
   x,
@@ -102,7 +127,7 @@ export function Specimen({
 }) {
   return (
     <g transform={`translate(${x - size / 2} ${y - size / 2}) scale(${size / 100})`}>
-      <ScienceGlyph icon={plan.icon} accent={plan.accentColor} />
+      <PlateGlyph plan={plan} />
     </g>
   );
 }

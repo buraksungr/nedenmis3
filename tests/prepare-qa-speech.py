@@ -12,7 +12,7 @@ from pathlib import Path
 
 import sherpa_onnx
 
-story = 'flight' if '--flight' in sys.argv else 'thirst'
+story = 'whale' if '--whale' in sys.argv else 'flight' if '--flight' in sys.argv else 'thirst'
 root = Path(f'out/{story}-speech')
 root.mkdir(parents=True, exist_ok=True)
 name = 'vits-piper-tr_TR-dfki-medium'

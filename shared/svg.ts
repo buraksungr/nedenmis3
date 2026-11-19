@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { artRefSchema, keywordSchema, artMode, artworkPolicy } from './artwork';
 
 // The entire language accepted by the drawing engine. No markup, URLs, style objects or code slots.
 const originalTemplates = [
@@ -171,7 +172,13 @@ export const labelSchema = z
     'Konuya özgü, en fazla dört sözcüklük bir etiket gir.',
   );
 const unit = z.enum([...ratioUnits, ...scaleUnits]);
+const artFields = {
+  iconKeyword: keywordSchema.optional(),
+  artMode: artMode.optional(),
+  artwork: artRefSchema.optional(),
+};
 const base = {
+  ...artFields,
   ...style,
   template: z.enum(templates),
   icon: z.enum(icons),
@@ -190,6 +197,9 @@ export type SvgPlan = z.infer<typeof planBase>;
 // identifiers, markup as geometry, or objects in place of plain editorial text.
 const blank = z.string().trim().length(0);
 export const plannerDraftSchema = z.strictObject({
+  iconKeyword: keywordSchema.or(blank).nullish(),
+  keywordEvidence: z.string().max(100).nullish(),
+  artMode: artMode.optional(),
   template: base.template.or(blank).nullish(),
   icon: base.icon.or(blank).nullish(),
   weather: style.weather.or(blank).nullish(),
@@ -271,6 +281,7 @@ export const plannerLabels: Record<PlannerProvider, string> = {
 };
 export const plannerConfigSchema = z.strictObject({
   provider: z.enum(plannerProviders),
+  artworkPolicy: artworkPolicy.default('hybrid'),
   ollamaModel: z
     .string()
     .trim()

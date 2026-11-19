@@ -1,566 +1,256 @@
-import { catalogue, labelSchema, type ScienceIcon, type Template } from './svg';
-
-export type Subject = {
-  icon: ScienceIcon;
-  title: string;
-  pair: [string, string];
-  flow: [string, string, string];
-};
-type Entry = [RegExp, Subject];
-const entry = (
-  test: RegExp,
-  icon: ScienceIcon,
-  title: string,
-  pair: Subject['pair'],
-  flow: Subject['flow'],
-): Entry => [test, { icon, title, pair, flow }];
-const subjects: Entry[] = [
-  // Prefer specific mechanisms and anatomy to incidental words such as “hava” or “su”.
-  entry(
-    /epidermis|dermis|deri altı/,
-    'shield',
-    'Derinin Katmanları',
-    ['Deri yüzeyi', 'Deri altı'],
-    ['Epidermis', 'Dermis', 'Deri altı'],
-  ),
-  entry(
-    /manto|yer kabuğu|iç çekirdek/,
-    'earth',
-    'Dünyanın İç Yapısı',
-    ['Yer kabuğu', 'Yer çekirdeği'],
-    ['Yer kabuğu', 'Manto', 'Çekirdek'],
-  ),
-  entry(
-    /humus|ana kaya|killi|kumlu/,
-    'earth',
-    'Toprağın Yapısı',
-    ['Organik madde', 'Mineral taneleri'],
-    ['Toprak yüzeyi', 'Alt toprak', 'Ana kaya'],
-  ),
-  entry(
-    /kanadın|kanat kesit|kanat profili/,
-    'airplane',
-    'Kanadın Kesiti',
-    ['Üst yüzey', 'Alt yüzey'],
-    ['Hücum kenarı', 'Kanat yüzeyi', 'Firar kenarı'],
-  ),
-  entry(
-    /jet motor|kompresör|türbin/,
-    'airplane',
-    'Jet Motorunun İşleyişi',
-    ['Hava girişi', 'Gaz çıkışı'],
-    ['Havanın sıkıştırılması', 'Yakıtın yanması', 'Gazın çıkışı'],
-  ),
-  entry(
-    /kalkış.*iniş|iniş.*kalkış/,
-    'airplane',
-    'Uçuşun Evreleri',
-    ['Kalkış', 'İniş'],
-    ['Kalkış', 'Seyir', 'İniş'],
-  ),
-  entry(
-    /kabin|basınçlandır/,
-    'shield',
-    'Kabinde Hava Basıncı',
-    ['Kabin basıncı', 'Yolcuların solunumu'],
-    ['Hava beslemesi', 'Basıncın ayarlanması', 'Kabin havası'],
-  ),
-  entry(
-    /sürükleme|yakıt tasarruf|hava direnci/,
-    'airplane',
-    'Havanın Direnci',
-    ['Seyrek hava', 'Azalan sürükleme'],
-    ['Havanın seyrelmesi', 'Direncin azalması', 'Yakıt tasarrufu'],
-  ),
-  entry(
-    /hava.*(?:seyrek|yoğun)|seyrek.*hava/,
-    'molecule',
-    'Havanın Yoğunluğu',
-    ['Yoğun hava', 'Seyrek hava'],
-    ['Alçak irtifa', 'Yükselme', 'Seyrek hava'],
-  ),
-  entry(
-    /oksijen/,
-    'molecule',
-    'Havadaki Oksijen',
-    ['Oksijen', 'Hava karışımı'],
-    ['Hava karışımı', 'Solunan oksijen', 'Gaz alışverişi'],
-  ),
-  entry(
-    /troposfer|stratosfer|mezosfer|atmosfer.*katman/,
-    'globe',
-    'Atmosferin Katmanları',
-    ['Alt atmosfer', 'Üst atmosfer'],
-    ['Troposfer', 'Stratosfer', 'Mezosfer'],
-  ),
-  entry(
-    /kontrol kulesi|radyo sinyal|radyo dalga/,
-    'soundwave',
-    'Radyoyla Haberleşme',
-    ['Verici anten', 'Alıcı anten'],
-    ['Radyo vericisi', 'Dalganın yayılması', 'Alıcı anten'],
-  ),
-  entry(
-    /uçak|uçağ|uçuş|havacılık|seyir irtifa|pilot/,
-    'airplane',
-    'Uçakların Seyir Yüksekliği',
-    ['Yolcu uçağı', 'Seyir irtifası'],
-    ['Pistten kalkış', 'Tırmanış', 'Seyir uçuşu'],
-  ),
-  entry(
-    /mesafe|kilometre|yol boyunca/,
-    'globe',
-    'Mesafe Ölçeği',
-    ['Yolun başı', 'Varış noktası'],
-    ['Çıkış noktası', 'Ara durak', 'Varış noktası'],
-  ),
-  entry(
-    /böbre[kğ]|idrar/,
-    'water',
-    'Böbreklerin Su Dengesi',
-    ['Çözünmüş tuz', 'Atılan su'],
-    ['Kanın süzülmesi', 'Suyun geri emilimi', 'İdrarla atılım'],
-  ),
-  entry(
-    /tuzlu su|deniz suyu|deniz suyunu/,
-    'water',
-    'Deniz Suyundaki Tuz',
-    ['Deniz suyu', 'Çözünmüş tuz'],
-    ['Tuz alımı', 'Yoğunluk artışı', 'Su ihtiyacı'],
-  ),
-  entry(
-    /karınca/,
-    'ant',
-    'Karıncaların Yaşamı',
-    ['İşçi karınca', 'Yuva girişi'],
-    ['Yuvadan çıkış', 'Besin arayışı', 'Yuvaya dönüş'],
-  ),
-  entry(
-    /retina|göz(?!lem)|görme|merce[kğ]/,
-    'eye',
-    'Gözün Işık Algısı',
-    ['Göz merceği', 'Retina'],
-    ['Işığın girişi', 'Mercekte odaklanma', 'Retinada algılama'],
-  ),
-  entry(
-    /kalp|kalb|nabız/,
-    'heart',
-    'Kalbin Ritmi',
-    ['Kalp kası', 'Kan akışı'],
-    ['Kalbin dolması', 'Kasılma', 'Kanın pompalanması'],
-  ),
-  entry(
-    /atom|elektron|proton|nötron/,
-    'atom',
-    'Atomun Yapısı',
-    ['Atom çekirdeği', 'Elektron bulutu'],
-    ['Atom çekirdeği', 'Elektronlar', 'Enerji düzeyleri'],
-  ),
-  entry(
-    /ses dalga|ses tel|titreşim|frekans|yankı|akustik|işitme/,
-    'soundwave',
-    'Sesin Yayılması',
-    ['Titreşim kaynağı', 'Sesin alıcısı'],
-    ['Titreşim', 'Havada yayılma', 'Sesin algılanması'],
-  ),
-  entry(
-    /şimşek|yıldırım|elektrik yük|elektrik akım/,
-    'lightning',
-    'Elektrik Yükleri',
-    ['Yük ayrımı', 'Elektrik boşalması'],
-    ['Yük birikimi', 'Alan oluşumu', 'Boşalma'],
-  ),
-  entry(
-    /bağışıklık|koruyucu|savunma|kalkan/,
-    'shield',
-    'Koruyucu Yapılar',
-    ['Koruyucu tabaka', 'Korunan doku'],
-    ['Temas', 'Koruyucu engel', 'Doku yanıtı'],
-  ),
-  entry(
-    /kar kristal|kar tanesi|buz kristal|donma|karlı|kar yağ/,
-    'snowflake',
-    'Buz Kristalleri',
-    ['Su molekülü', 'Kristal örgü'],
-    ['Soğuma', 'Kristalleşme', 'Buz oluşumu'],
-  ),
-  entry(
-    /güneş|gün ışığı|ışınım/,
-    'sun',
-    'Güneşin Işınları',
-    ['Güneş', 'Yeryüzü'],
-    ['Güneş ışığı', 'Işığın yayılması', 'Yüzeye ulaşma'],
-  ),
-  entry(
-    /zaman|saat|saniye|dakika|takvim/,
-    'clock',
-    'Zamanın Ölçümü',
-    ['Geçen süre', 'Zaman aralığı'],
-    ['İlk ölçüm', 'Geçen süre', 'Son ölçüm'],
-  ),
-  entry(
-    /yerküre|enlem|boylam|ekvator|kutuplar/,
-    'globe',
-    'Yerkürenin Yapısı',
-    ['Ekvator', 'Kutuplar'],
-    ['Ekvator', 'Orta enlemler', 'Kutuplar'],
-  ),
-  [
-    /hücre|ozmo[sz]|osmo[sz]|zarından/,
-    {
-      icon: 'cell',
-      title: 'Hücrede Su Dengesi',
-      pair: ['Hücre içi sıvı', 'Hücre dışı sıvı'],
-      flow: ['Yoğunluk farkı', 'Zardan su geçişi', 'Sıvı dengesi'],
-    },
-  ],
-  [
-    /beyin|beyn|hipotalamus|sinir|nöron/,
-    {
-      icon: 'brain',
-      title: 'Beynin Sinyalleri',
-      pair: ['Duyu sinyali', 'Beynin yanıtı'],
-      flow: ['Uyarının algılanması', 'Sinir iletimi', 'Beynin yanıtı'],
-    },
-  ],
-  [
-    /ağız|ağz|damak|tükürük/,
-    {
-      icon: 'water',
-      title: 'Ağızda Kalan Tat',
-      pair: ['Tatlı lokma', 'Bir yudum su'],
-      flow: ['Tatlı lokma', 'Damakta kalan tat', 'Su içme isteği'],
-    },
-  ],
-  [
-    /(?:^| )kan(?:da|a|ın|ı| dolaş| şeker)|damar|alyuvar|plazma/,
-    {
-      icon: 'blood',
-      title: 'Kan Dolaşımı',
-      pair: ['Kan plazması', 'Damar duvarı'],
-      flow: ['Bağırsakta emilim', 'Kana geçiş', 'Damarlarla taşınma'],
-    },
-  ],
-  [
-    /şeker|glikoz|glukoz|sindirim|molekül|kimya/,
-    {
-      icon: 'molecule',
-      title: 'Moleküllerin Yapısı',
-      pair: ['Molekül', 'Atomlar'],
-      flow: ['Atomlar', 'Kimyasal bağlar', 'Molekül'],
-    },
-  ],
-  [
-    /buharlaş|yoğuş|su döngü/,
-    {
-      icon: 'water',
-      title: 'Suyun Yolculuğu',
-      pair: ['Su buharı', 'Su damlası'],
-      flow: ['Buharlaşma', 'Yoğuşma', 'Yağış'],
-    },
-  ],
-  [
-    /susama|susa[dr]|susuz|sıvı|su iç|içtiğimiz su|yağmur|damla|deniz|okyanus|(?:^| )su(?: |yu|ya|da|yun)/,
-    {
-      icon: 'water',
-      title: 'Suyun Hareketi',
-      pair: ['Su damlası', 'Su yüzeyi'],
-      flow: ['Su damlası', 'Yüzeyde akış', 'Su birikimi'],
-    },
-  ],
-  [
-    /yapra[kğ]|bitki|kök|fotosentez|orman/,
-    {
-      icon: 'leaf',
-      title: 'Bitkinin Yapısı',
-      pair: ['Yaprak ayası', 'Ana damar'],
-      flow: ['Kökten emilim', 'Gövdede taşınma', 'Yaprağa ulaşım'],
-    },
-  ],
-  [
-    /sıcak|termometre|derece|°c|enerji|ateş|alev|ısın|ısı /,
-    {
-      icon: 'flame',
-      title: 'Isı Değişimi',
-      pair: ['Isı kaynağı', 'Isınan ortam'],
-      flow: ['Isı kaynağı', 'Isı aktarımı', 'Sıcaklık değişimi'],
-    },
-  ],
-  [
-    /topra[kğ]|katman|yeralt|yüzey|yuva|dünya|gezegen|kaya|karlı|kar yağ/,
-    {
-      icon: 'earth',
-      title: 'Yüzeyin Altında',
-      pair: ['Yeryüzü', 'Toprak katmanı'],
-      flow: ['Yüzey', 'Üst katman', 'Derin katman'],
-    },
-  ],
-];
-export const lower = (s: string) => s.toLocaleLowerCase('tr').normalize('NFC');
-export const upperFirst = (s: string) => s.slice(0, 1).toLocaleUpperCase('tr') + s.slice(1);
+/** Extractive editing: every content word is traced to this shot, never to the topic,
+ * a previous shot, or a bank of finished titles. Prefer whole Turkish noun groups. */
+import { catalogue, labelSchema, titleSchema, type Template } from './svg';
+import { concepts, lower, root, words } from './visual-concepts';
+export { lower } from './visual-concepts';
+const cap = (s: string) => s.slice(0, 1).toLocaleUpperCase('tr') + s.slice(1);
 const stop =
-  /^(?:ve|ile|için|neden|nasıl|gibi|daha|fakat|önce|sonra|çünkü|bir|bu|olan|olarak|hemen|bile|çok|ise|kadar)$/u;
-export function keywords(text: string) {
-  return [
-    ...new Set(
-      (lower(text).match(/[\p{L}][\p{L}\p{M}’'-]*/gu) ?? []).filter(
-        (w) => w.length > 2 && w.length <= 22 && !stop.test(w),
-      ),
-    ),
-  ];
+  /^(?:ve|veya|ya|da|de|ile|için|ise|bir|bu|şu|o|gibi|çünkü|böylece|neden|nasıl|önce|sonra|ardından|kadar|daha|çok|bile|ancak|fakat|ama|bazen|yaklaşık|her|hem|en|diye|iken|ise|olarak|onun|yüzden|üstelik|kısmı|biri)$/u;
+const adjective =
+  /^(?:devasa|büyük|küçük|hızlı|yavaş|sıcak|soğuk|yüksek|alçak|yeni|uzun|kısa|yoğun|seyrek|alt|üst|iç|dış|aynı|kendi|güçlü|önemli|zor|derin)$/u;
+const gen = (w: string) => /(?:nın|nin|nun|nün|[ıiuü]n)$/u.test(w);
+const participle = (w: string) =>
+  /(?:binen|vuran|kalan|olan|gelen|geçen|inen|artan|azalan|taşıyan|bulunan|oluşan|yayan|çözünen|çözünmüş|atan)$/u.test(
+    w,
+  );
+const closed = (w: string) =>
+  /(?:iyor|ıyor|uyor|üyor|ebilir|abilir|leşir|laşır|leşti|laştı|lanır|lenir|dır|dir|dur|dür|tır|tir|tur|tür|arlar|erler|alır|verir|çıkar|eder|olur|artar|azalır|destekler|zorlaştırır|biner|çeker|düşer|iner|korur|kaybeder|kurur|taşır|sağlar|oluşur|dönüşür|uçar|ölür|düşünün|görürüz|isteriz)$/u.test(
+    w,
+  );
+const plain = (w: string) => (w === 'dna' ? 'DNA' : w);
+const titleCase = (s: string) =>
+  s
+    .split(' ')
+    .map((w) => (w === 've' ? w : cap(plain(w))))
+    .join(' ');
+const nominal = (w: string) =>
+  w.includes("'")
+    ? w.split("'")[0]
+    : w.replace(/(?:dir|dır|dur|dür)$/u, '').replace(/(ma|me)y[ıi]$/u, '$1');
+function groundedWord(w: string, ws: string[]) {
+  const r = root(w);
+  return ws.some(
+    (s) =>
+      s === w || root(s) === r || nominal(s) === w || s.replace(/([ıiuü])n[ıiuüae]$/u, '$1') === w,
+  );
 }
-export function subjectFor(text: string, topic: string): Subject {
-  const source = lower(text),
-    match = (s: string) => subjects.find(([r]) => r.test(s))?.[1];
-  const base = match(source) ?? match(lower(topic));
-  if (base) {
-    if (base.icon === 'blood' && /şeker|gl[iu]koz|yoğun|çözünmüş/.test(source))
-      return {
-        ...base,
-        title: /yoğun|çözünmüş/.test(source) ? 'Kandaki Yoğunluk Artışı' : 'Glikozun Kana Geçişi',
-        pair: [
-          'Kan plazması',
-          /şeker|gl[iu]koz/.test(source) ? 'Çözünmüş glikoz' : 'Çözünmüş madde',
-        ],
-        flow: ['Sindirim', 'Glikoz emilimi', 'Kana geçiş'],
-      };
-    if (base.icon === 'brain' && /sus|sıvı|su iç/.test(source + ' ' + lower(topic)))
-      return {
-        ...base,
-        title: 'Beynin Susama Sinyali',
-        pair: ['Sıvı dengesi', 'Susama merkezi'],
-        flow: ['Yoğunluk değişimi', 'Beyinde algılama', 'Susama hissi'],
-      };
-    if (base.icon === 'molecule' && /şeker|gl[iu]koz|tatlı/.test(source))
-      return {
-        ...base,
-        title: 'Şekerin Yolculuğu',
-        pair: ['Şeker molekülü', 'Çözünmüş şeker'],
-        flow: ['Şekerin sindirimi', 'Bağırsakta emilim', 'Kana geçiş'],
-      };
-    if (
-      base.icon === 'water' &&
-      !/ağız|ağz|böbre|tuz/.test(source) &&
-      /susuz|susama|su iç|sıvı denge|içtiğimiz su/.test(source)
-    )
-      return {
-        ...base,
-        title: /tatlı|şeker/.test(source) ? 'Tatlı ve Susama' : 'Vücudun Su Dengesi',
-        pair: ['Susama hissi', 'Bir yudum su'],
-        flow: ['Susama sinyali', 'Su içme', 'Sıvı dengesi'],
-      };
-    return base;
-  }
-  const [a, b, c] = keywords(text + ' ' + topic),
-    key = upperFirst(a ?? 'Bilim'),
-    second = b ? upperFirst(b) : key + ' incelemesi';
-  return {
-    icon: 'globe',
-    title: `Mercek Altında ${key}`,
-    pair: [key, second],
-    flow: [key, second, c ? upperFirst(c) : `${key} etkisi`],
-  };
+export function grounded(value: string, text: string) {
+  const src = words(lower(text)),
+    tokens = words(lower(value));
+  return tokens.length > 0 && tokens.every((w) => groundedWord(w, src));
 }
-
-export function supportsIcon(text: string, icon: ScienceIcon) {
-  return subjects.some(([r, c]) => c.icon === icon && r.test(lower(text)));
-}
-export function hasSubject(text: string) {
-  return subjects.some(([r]) => r.test(lower(text)));
-}
-
-// Named sequences keep their meaning when the narrator uses inflections (and are
-// not truncated excerpts of the sentence). Only include a fourth stop when present.
-const cycles: [RegExp, string][][] = [
-  [
-    [/buharlaş/, 'Buharlaşma'],
-    [/yoğuş|yoğunlaş/, 'Yoğuşma'],
-    [/yağış|yağmur/, 'Yağış'],
-    [/birik|akış|toplan/, 'Suyun toplanması'],
-  ],
-  [
-    [/kalkış|kalkar/, 'Kalkış'],
-    [/tırman/, 'Tırmanış'],
-    [/seyir/, 'Seyir'],
-    [/iniş|iner/, 'İniş'],
-  ],
-  [
-    [/ilkbahar/, 'İlkbahar'],
-    [/\byaz/, 'Yaz'],
-    [/sonbahar/, 'Sonbahar'],
-    [/kış/, 'Kış'],
-  ],
-  [
-    [/yumurta/, 'Yumurta'],
-    [/larva/, 'Larva'],
-    [/pupa/, 'Pupa'],
-    [/ergin|yetişkin/, 'Ergin birey'],
-  ],
-];
-const strata: [RegExp, string][][] = [
-  [
-    [/termosfer/, 'Termosfer'],
-    [/mezosfer/, 'Mezosfer'],
-    [/stratosfer/, 'Stratosfer'],
-    [/troposfer/, 'Troposfer'],
-  ],
-  [
-    [/kabuk|kabuğ/, 'Yer kabuğu'],
-    [/manto/, 'Manto'],
-    [/dış çekirdek/, 'Dış çekirdek'],
-    [/iç çekirdek/, 'İç çekirdek'],
-  ],
-  [
-    [/humus/, 'Humus'],
-    [/üst toprak/, 'Üst toprak'],
-    [/alt toprak|killi/, 'Alt toprak'],
-    [/ana kaya|anakaya/, 'Ana kaya'],
-  ],
-  [
-    [/epidermis/, 'Epidermis'],
-    [/(?<!\p{L})dermis/u, 'Dermis'],
-    [/hipodermis|deri altı/, 'Deri altı'],
-  ],
-];
+// Decode list grammar, not a table of canonical science labels. Spatial clauses
+// ordered bottom → top are reversed for a plate drawn from the top down.
 export function namedSequence(text: string, kind: 'cycle' | 'layers') {
-  return (kind === 'cycle' ? cycles : strata)
-    .map((group) => group.filter(([r]) => r.test(lower(text))).map(([, name]) => name))
-    .find((a) => a.length >= 3);
-}
-function clauses(text: string) {
-  // Keep whole short clauses, not the first N words of a long sentence.
-  return text
-    .replace(/[.!?;:]+$/u, '')
-    .split(/\s*[,;:→]\s*|\s+(?:ve sonra|ardından|daha sonra|sonra|bu yüzden|böylece|oysa|ise)\s+/iu)
-    .map((s) => upperFirst(s.trim()))
-    .filter((s) => s.length > 1 && s.length <= 36 && s.split(/\s+/).length <= 4);
-}
-export function copyFor(template: Template, text: string, topic: string, requested?: number) {
-  const c = subjectFor(text, topic),
-    s = lower(text),
-    [min, max] = catalogue[template].slots;
-  let title = c.title,
-    labels: string[] = [...c.pair];
-  switch (template) {
-    case 'TitleHookScene':
-      labels = [c.pair[0]];
-      break;
-    case 'ProcessFlowScene':
-      labels = [...c.flow];
-      break;
-    case 'CycleLoopScene': {
-      const seq = namedSequence(text, 'cycle');
-      title = /buharlaş|yoğuş/.test(s)
-        ? 'Suyun Döngüsü'
-        : /mevsim|sonbahar/.test(s)
-          ? 'Mevsimlerin Döngüsü'
-          : c.title;
-      labels = seq ?? (clauses(text).length >= 3 ? clauses(text) : [...c.flow]);
-      break;
+  const src = lower(text);
+  if (kind === 'layers') {
+    const spatial = src.match(
+      /(\p{L}+) (üstünde|altında) (\p{L}+)[,;] (?:onun )?\2 (?:de |da )?(\p{L}+)/u,
+    );
+    if (spatial) {
+      const rows = [root(spatial[1]), spatial[3], spatial[4]];
+      return (spatial[2] === 'üstünde' ? rows.reverse() : rows).map(cap);
     }
-    case 'LayerStackScene':
-      labels =
-        namedSequence(text, 'layers') ?? (clauses(text).length >= 3 ? clauses(text) : [...c.flow]);
-      break;
-    case 'RatioGaugeScene':
-      if (/ağırlı|ağırlığ|ağır|kütle/.test(s)) {
-        title = 'Ağırlık Oranı';
-        labels = ['Vücut ağırlığı'];
-      } else if (/oksijen/.test(s)) {
-        title = 'Havadaki Oksijen Oranı';
-        labels = ['Oksijen'];
-      } else if (/(?:^| )su(?:$|\b|yu|da|dur|dan)/u.test(s)) {
-        title = 'Suyun Payı';
-        labels = ['Su'];
-      } else {
-        const n = keywords(text.replace(/(?:yüzde|%)[\s\d.,]+/giu, ' ')).find(
-          (w) => !/^oran|yüzde|katı$/u.test(w),
-        );
-        labels = [n ? upperFirst(n) : c.pair[0]];
-      }
-      break;
-    case 'ThermometerGaugeScene':
-      title = /topra[kğ]/.test(s)
-        ? 'Toprağın Sıcaklığı'
-        : /hava|kıyı|yukar|irtifa/.test(s)
-          ? 'Havanın Sıcaklığı'
-          : 'Sıcaklık Değişimi';
-      labels = [
-        /topra[kğ]/.test(s)
-          ? 'Toprak sıcaklığı'
-          : /hava|kıyı|yukar|irtifa/.test(s)
-            ? 'Hava sıcaklığı'
-            : /su |suyun/.test(s)
-              ? 'Su sıcaklığı'
-              : 'Ölçülen sıcaklık',
-        'Sıcaklık aralığı',
-      ];
-      break;
-    case 'WavePulseScene':
-      if (/radyo|anten/.test(s))
-        labels = [
-          /pilot|uçak/.test(s) ? 'Uçak anteni' : 'Verici anten',
-          /kule/.test(s) ? 'Kontrol kulesi' : 'Alıcı anten',
-        ];
-      else if (/güneş|ışık/.test(s))
-        labels = [
-          /güneş/.test(s) ? 'Güneş' : 'Işık kaynağı',
-          /göz|retina/.test(s) ? 'Retina' : 'Aydınlanan yüzey',
-        ];
-      else if (/ses|titreşim/.test(s))
-        labels = [
-          /ses tel/.test(s) ? 'Ses telleri' : 'Titreşim kaynağı',
-          /kulak/.test(s) ? 'Kulak' : 'Sesin alıcısı',
-        ];
-      break;
-    case 'SplitCauseEffectScene': {
-      const pair = clauses(text);
-      if (pair.length === 2) labels = pair;
-      if (c.icon === 'cell' && /yoğun|çözünmüş/.test(s))
-        labels = ['Yoğunluk farkı', 'Hücreden su çıkışı'];
-      if (/sürükleme|hava direnci/.test(s)) {
-        if (/seyrel|seyrek/.test(s)) labels = ['Havanın seyrelmesi', 'Azalan sürükleme'];
-        else if (/yakıt/.test(s)) labels = ['Azalan hava direnci', 'Yakıt tasarrufu'];
-      }
-      break;
-    }
-    case 'TimelineScaleScene':
-      if (/irtifa|tırman|yüksekli|deniz seviyesinden/.test(s)) {
-        title = 'Yükseklik Ölçeği';
-        labels = [
-          /deniz sevi/.test(s) ? 'Deniz seviyesi' : 'Alçak irtifa',
-          'Ara irtifa',
-          'Üst irtifa',
-        ];
-      } else labels = clauses(text).length >= 3 ? clauses(text) : [...c.flow];
-      break;
-    case 'CrossSectionScene':
-      if (c.icon === 'cell') labels = ['Hücre dışı sıvı', 'Hücre içi sıvı'];
-      if (c.icon === 'leaf' || c.icon === 'ant')
-        labels = ['Toprak yüzeyi', c.icon === 'ant' ? 'Yuva odası' : 'Kök bölgesi'];
-      break;
   }
-  const count = Math.max(min, Math.min(max, requested ?? labels.length));
-  // Build a distinct reservoir for partial rows. Never synthesize “Etiket 3”.
-  const pool = [
-    ...labels,
-    ...c.pair,
-    ...c.flow,
-    ...clauses(text),
-    ...keywords(text + ' ' + topic).map(upperFirst),
-    title,
+  const parts = src.split(/\s*[,;]\s*|\s+(?:ve|sonra|ardından)\s+/u);
+  if (parts.length < 3 || parts.length > 4) return;
+  // A list of subjects, not a list of arbitrary clauses. The predicate follows the last item.
+  if (!parts.slice(0, -1).every((p) => words(p).length >= 1 && words(p).length <= 2)) return;
+  if (kind === 'cycle' && !/döngü|çevrim|yinelen|tekrar|evre|aşama/u.test(src)) return;
+  if (kind === 'layers' && !/katman|tabaka|üst|alt|kabuk|kabuğ|çekirdek/u.test(src)) return;
+  const last = words(parts.at(-1)!)
+    .slice(0, /^(?:iç|dış|alt|üst|ana|yer) /u.test(parts.at(-1)!) ? 2 : 1)
+    .join(' ');
+  const out = [...parts.slice(0, -1), last].map(cap);
+  return out.every((l) => labelSchema.safeParse(l).success) ? out : undefined;
+}
+type Span = { s: string; start: number; end: number; score: number };
+function extract(text: string) {
+  const tokens = Array.from(lower(text).matchAll(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu));
+  const spans: Span[] = [],
+    key = concepts(text)[0],
+    literal = lower(text);
+  for (let i = 0; i < tokens.length; i++) {
+    const a = tokens[i][0];
+    if (stop.test(a)) continue;
+    for (let j = i; j < Math.min(tokens.length, i + 4); j++) {
+      const w = tokens[j][0];
+      if (
+        (stop.test(w) && !(w === 've' && j === i + 1)) ||
+        (j > i &&
+          (tokens[j].index! > tokens[j - 1].index! + tokens[j - 1][0].length + 1 ||
+            !/^\s+$/u.test(
+              literal.slice(tokens[j - 1].index! + tokens[j - 1][0].length, tokens[j].index),
+            )))
+      )
+        break;
+      const t = tokens.slice(i, j + 1).map((x) => x[0]),
+        len = t.length,
+        prev = t.at(-2) ?? '';
+      // Nominal predicates (oksijendir → oksijen) are not additional vocabulary.
+      let phrase = t.map((x, k) => plain(k === len - 1 ? nominal(x) : x)).join(' ');
+      if (!phrase || -1 !== t.slice(0, -1).findIndex(closed)) break;
+      let score = (len === 1 ? 1 : len === 2 ? 7 : len === 3 ? 5 : 2) - i * 0.012;
+      if (adjective.test(a) && len > 1) score += 4;
+      if (gen(a) && len > 1 && /[ıiuü]$/u.test(w)) score += 7;
+      if (participle(prev)) score += 6;
+      if (/(?:s[ıiuü]|[ğçc][ıiuü])$/u.test(w) && len >= 2) score += 4;
+      if (t.some((v, k) => k > 0 && participle(v) && k < len - 1)) score += 6;
+      if (
+        adjective.test(w) ||
+        participle(w) ||
+        gen(w) ||
+        /^(?:karada|karaya|denizde|burada|üzerinde|üzerine|altında|halinde|arasında|birçok)$/u.test(
+          w,
+        )
+      )
+        score -= 11;
+      if (len > 1 && /^(?:karada|denizde|burada|yükseklerde|alçakta)$/u.test(a)) score -= 5;
+      if (len > 1 && t.slice(1, -1).some((v) => gen(v))) score -= 5;
+      if ((/[dt][ae]$|[dt][ae]n$/u.test(w) || w === 'biri') && len > 1) score -= 4;
+      if (len > 1 && /(?:dığında|diğinde|duğunda|düğünde|ınca|ince|unca|ünce)$/u.test(a))
+        score -= 6;
+      if (closed(w)) score -= nominal(w) !== w ? 1 : 7;
+      if (j === tokens.length - 1 && len > 1 && !participle(prev) && !gen(a) && !adjective.test(a))
+        score -= 2;
+      if (len > 1 && /\d/u.test(phrase)) score -= 3;
+      if (t.includes('ve'))
+        score += len === 3 && prev === 've' && !closed(w) && !adjective.test(w) ? 4 : -15;
+      if (
+        w === 've' ||
+        /^(?:altında|üstünde|halinde|zamanında|süre|yukarıda|eksi|artı|yirmi|kısmı)$/u.test(w)
+      )
+        score -= 6;
+      if (/^(?:altında|üstünde|halinde|yukarıda|zamanında|kısmı)$/u.test(a)) score -= 6;
+      const pos = /(?:[ıiuü]n[ıiuü]|[ıiuü]n[ae]|s[ıiuü]n[dt][ae](?:n)?)$/u.test(w);
+      if (key?.mention && phrase.includes(key.mention)) score += key.score * 0.48;
+      if (
+        len >= 2 &&
+        t.some(
+          (v, k) => k > 0 && /(?:[ıiuü]ğı|[ıiuü]ği|[ae]ti|[dt][ıiuü]|m[ıiuü]|s[ıiuü])$/u.test(v),
+        )
+      )
+        score += 1.2;
+      // Reject partial numeric and genitive groups when a stronger right-hand head follows.
+      const next = tokens[j + 1]?.[0];
+      if (
+        next &&
+        j + 1 < tokens.length &&
+        /^\s+$/u.test(literal.slice(tokens[j].index! + w.length, tokens[j + 1].index))
+      ) {
+        if (
+          (gen(a) || adjective.test(a)) &&
+          /[ıiuü](?:n[aeıiuü])?$/u.test(next) &&
+          !closed(next) &&
+          !gen(next) &&
+          !stop.test(next)
+        )
+          score -= 5;
+        if (/^(?:on|yirmi|otuz|kırk|elli|altmış|yetmiş|seksen|doksan|yüz)$/u.test(w)) score -= 6;
+      }
+      if (pos && len >= 2 && gen(a)) score -= 2;
+      // Remove only case after an explicit possessive ending, never guess a new noun.
+      if (len >= 2) phrase = phrase.replace(/([ıiuü])n[ıiuüae]$/u, '$1');
+      spans.push({ s: phrase, start: i, end: j, score });
+    }
+  }
+  // The shortest utterances can be used intact; never fill the deficit with unrelated words.
+  const all = words(lower(text));
+  if (all.length >= 2 && all.length <= 4)
+    spans.push({ s: all.join(' '), start: 0, end: all.length - 1, score: 0 });
+  return spans.sort((a, b) => b.score - a.score);
+}
+export function copyFor(template: Template, text: string, count?: number) {
+  const [min, max] = catalogue[template].slots,
+    spans = extract(text);
+  const top = spans.find((p) => titleSchema.safeParse(titleCase(p.s)).success);
+  let title = top ? titleCase(top.s) : '';
+  const named =
+    template === 'LayerStackScene'
+      ? namedSequence(text, 'layers')
+      : template === 'CycleLoopScene'
+        ? namedSequence(text, 'cycle')
+        : undefined;
+  const slots = Math.max(min, Math.min(max, count ?? named?.length ?? min));
+  const taken: Span[] = [];
+  for (const p of spans) {
+    if (
+      !labelSchema.safeParse(p.s).success ||
+      (!p.s.includes(' ') && (adjective.test(p.s) || participle(p.s)))
+    )
+      continue;
+    if (!taken.some((other) => p.start <= other.end && p.end >= other.start)) taken.push(p);
+    if (taken.length >= slots) break;
+  }
+  taken.sort((a, b) => a.start - b.start);
+  const keyword = concepts(text)[0];
+  const ratioSubject =
+    template === 'RatioGaugeScene' && keyword
+      ? words(lower(text)).find((w) => concepts(nominal(w))[0]?.keyword === keyword.keyword)
+      : undefined;
+  // Anchor axes, endpoints and steps to the clauses that actually describe them.
+  const ordered: string[] = [];
+  if (template === 'RatioGaugeScene') {
+    const subject = text.split(/yaklaşık|yüzde|%|[0-9]/iu)[0],
+      group = words(lower(subject)).filter((w) => !stop.test(w));
+    if (group.length >= 2) {
+      const head = group.slice(-2);
+      if (gen(head[1])) head[1] = root(head[1]);
+      const h = titleCase(head.join(' '));
+      if (titleSchema.safeParse(h).success && grounded(h, text)) title = h;
+    }
+  }
+  const split =
+    template === 'TimelineScaleScene'
+      ? /\bönce\b|önce |sonra |ardından /u
+      : template === 'ThermometerGaugeScene'
+        ? / iken |,| ancak | oysa /u
+        : template === 'SplitCauseEffectScene'
+          ? / bu yüzden | böylece | sonucunda | bu nedenle /u
+          : template === 'ProcessFlowScene'
+            ? / önce |, sonra | sonra | ve /u
+            : undefined;
+  if (split) {
+    const parts = lower(text)
+      .split(split)
+      .map((v) => v.trim())
+      .filter(Boolean);
+    if (parts.length === slots)
+      for (const v of parts) {
+        const p = extract(v).find((p) => labelSchema.safeParse(p.s).success);
+        if (p) ordered.push(p.s);
+      }
+  }
+  const candidates = [
+    ...(named ?? []),
+    ...(ratioSubject ? [nominal(ratioSubject)] : []),
+    ...ordered,
+    ...taken.map((p) => p.s),
+    ...spans.map((p) => p.s),
   ];
   const seen = new Set<string>();
-  return {
-    title,
-    icon: c.icon,
-    labels: pool
-      .filter((label) => {
-        const k = lower(label);
-        if (seen.has(k) || !labelSchema.safeParse(label).success) return false;
-        seen.add(k);
-        return true;
-      })
-      .slice(0, count),
-  };
+  const pool = candidates
+    .map((s) => cap(s))
+    .filter((s) => {
+      if (seen.has(lower(s)) || !labelSchema.safeParse(s).success) return false;
+      seen.add(lower(s));
+      return true;
+    });
+  if (template === 'TitleHookScene') {
+    const member = spans.find(
+      (p) =>
+        !p.s.includes(' ') &&
+        top?.s.split(' ').includes(p.s) &&
+        keyword &&
+        p.s.includes(keyword.mention) &&
+        labelSchema.safeParse(p.s).success,
+    );
+    if (member) {
+      const l = cap(member.s);
+      pool.splice(0, pool.length, l, ...pool.filter((v) => v !== l));
+    }
+  }
+  const labels = pool.slice(0, slots);
+  while (labels.length < slots) labels.push(''); // invalid editor draft, never approved or exported
+  return { title, labels, pool };
 }

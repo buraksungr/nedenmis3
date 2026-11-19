@@ -9,6 +9,8 @@ import {
   TextBlock,
   Mark,
   Specimen,
+  ArtLayer,
+  PlateGlyph,
   type DiagramProps,
 } from './plate-kit';
 import {
@@ -21,7 +23,6 @@ import {
   TimelineScaleScene,
 } from './AtlasDiagrams';
 import React from 'react';
-import { ScienceGlyph } from './ScienceGlyph';
 import { interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import { templateNames, templates, type SvgPlan, type Template } from '../shared/svg';
 
@@ -67,6 +68,20 @@ function TissueSection({ plan, frame }: DiagramProps) {
   );
 }
 export function CrossSectionScene({ plan, frame, progress }: DiagramProps) {
+  if (
+    plan.artwork &&
+    !['airplane', 'blood', 'cell', 'leaf', 'earth', 'ant'].includes(plan.iconKeyword ?? '')
+  )
+    return (
+      <g>
+        <rect x="36" y="305" width="468" height="350" rx="8" fill="#1C3731" stroke={rule} />
+        <path d="M48 481H492" stroke={plan.accentColor} strokeDasharray="5 7" />
+        <Specimen plan={plan} x={269} y={480} size={168} />
+        <TextBlock x={56} y={352} text={plan.labels[0]} maxWidth={420} />
+        <TextBlock x={56} y={622} text={plan.labels[1]} maxWidth={420} />
+      </g>
+    );
+
   if (plan.icon === 'cell' || plan.icon === 'blood')
     return <TissueSection plan={plan} frame={frame} progress={progress} />;
   if (plan.icon === 'airplane')
@@ -235,7 +250,7 @@ export function FocusCalloutScene({ plan, frame, progress }: DiagramProps) {
         opacity={0.85 - 0.5 * pulse}
       />
       <g transform="translate(193 406) scale(1.44)">
-        <ScienceGlyph icon={plan.icon} accent={a} />
+        <PlateGlyph plan={plan} />
       </g>
       {[
         [one, 46, 332, 'M74 350H160L219 429', 'M217 419l2 10-11-3'],
@@ -373,7 +388,9 @@ export function ScientificPlate({
   plan,
   frame,
   frames,
+  artHref,
 }: {
+  artHref?: string;
   plan: SvgPlan;
   frame: number;
   frames: number;
@@ -385,39 +402,64 @@ export function ScientificPlate({
     extrapolateLeft: 'clamp',
   });
   return (
-    <svg
-      viewBox="0 0 540 960"
-      width="100%"
-      height="100%"
-      preserveAspectRatio="xMidYMid meet"
-      role="img"
-      aria-label={plan.title}
-      style={{ display: 'block', background: dark, fontFamily: 'Arial, sans-serif' }}
-    >
-      <rect width="540" height="960" fill={dark} />
-      <path d="M36 65H504" stroke={rule} />
-      <rect x="36" y="33" width="9" height="9" fill={plan.accentColor} />
-      <Mark x={55} y={42}>
-        NEDENMİŞ / BİLİM ATLASI
-      </Mark>
-      <Specimen plan={plan} x={385} y={38} size={35} />
-      <Mark x={416} y={42}>
-        LEVHA {String(id).padStart(2, '0')}
-      </Mark>
-      <Mark x={36} y={110} color={plan.accentColor}>
-        {templateNames[plan.template].toLocaleUpperCase('tr')}
-      </Mark>
-      {plan.template !== 'TitleHookScene' && (
-        <TextBlock x={34} y={163} text={plan.title} maxWidth={470} size={34} weight={650} />
-      )}
-      <Drawing plan={plan} frame={frame} progress={progress} />
-      {/* The lower safe area belongs exclusively to Film's timed caption track. */}
-    </svg>
+    <ArtLayer.Provider value={{ href: artHref, frame }}>
+      <svg
+        viewBox="0 0 540 960"
+        width="100%"
+        height="100%"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label={plan.title}
+        style={{ display: 'block', background: dark, fontFamily: 'Arial, sans-serif' }}
+      >
+        <rect width="540" height="960" fill={dark} />
+        <path d="M36 65H504" stroke={rule} />
+        <rect x="36" y="33" width="9" height="9" fill={plan.accentColor} />
+        <Mark x={55} y={42}>
+          NEDENMİŞ / BİLİM ATLASI
+        </Mark>
+        <Specimen plan={plan} x={385} y={38} size={35} />
+        <Mark x={416} y={42}>
+          LEVHA {String(id).padStart(2, '0')}
+        </Mark>
+        <Mark x={36} y={110} color={plan.accentColor}>
+          {templateNames[plan.template].toLocaleUpperCase('tr')}
+        </Mark>
+        {plan.template !== 'TitleHookScene' && (
+          <TextBlock x={34} y={163} text={plan.title} maxWidth={470} size={34} weight={650} />
+        )}
+        {artHref &&
+          ![
+            'FocusCalloutScene',
+            'TitleHookScene',
+            'SplitCauseEffectScene',
+            'CycleLoopScene',
+            'CrossSectionScene',
+          ].includes(plan.template) && <Specimen plan={plan} x={440} y={252} size={76} />}
+        <Drawing plan={plan} frame={frame} progress={progress} />
+        {/* The lower safe area belongs exclusively to Film's timed caption track. */}
+      </svg>
+    </ArtLayer.Provider>
   );
 }
 // An incoming diagram dissolves to its opening frame, exactly matching its own clip's first frame.
-export function AnimatedPlate({ plan, opening = false }: { plan: SvgPlan; opening?: boolean }) {
+export function AnimatedPlate({
+  plan,
+  artHref,
+  opening = false,
+}: {
+  plan: SvgPlan;
+  artHref?: string;
+  opening?: boolean;
+}) {
   const frame = useCurrentFrame(),
     { durationInFrames } = useVideoConfig();
-  return <ScientificPlate plan={plan} frame={opening ? 0 : frame} frames={durationInFrames} />;
+  return (
+    <ScientificPlate
+      plan={plan}
+      artHref={artHref}
+      frame={opening ? 0 : frame}
+      frames={durationInFrames}
+    />
+  );
 }

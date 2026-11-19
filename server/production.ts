@@ -1,3 +1,4 @@
+import { readArtwork } from './atlas-art';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -361,12 +362,20 @@ export class Production {
       sentenceCaptions = silent || m.align?.method === 'estimated';
     // Incoming diagrams always start at frame zero. Separate the diagram and active-word revisions from the static photo and timing inputs.
     const adjacent = next && !nextSvg ? p.assets[next.id]?.image : undefined;
+    const data = (plan: typeof svg) => {
+      const art = plan?.artwork && readArtwork(this.store.dir(p.id), plan.artwork.digest);
+      return art ? 'data:image/svg+xml;base64,' + Buffer.from(art).toString('base64') : undefined;
+    };
+    const artHref = data(svg),
+      nextArtHref = data(nextSvg);
     const key = hash(
       'film-5-static-crossfade',
-      svg ? ['atlas-svg-v3', svg] : m.image!.file,
+      svg ? ['atlas-svg-v3', svg, ...(svg.artwork ? [!!artHref] : [])] : m.image!.file,
       words,
       frames,
-      nextSvg ? ['atlas-svg-v3', nextSvg] : adjacent?.file,
+      nextSvg
+        ? ['atlas-svg-v3', nextSvg, ...(nextSvg.artwork ? [!!nextArtHref] : [])]
+        : adjacent?.file,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : p.highlight ? ['active-word-amber-v1'] : []),
@@ -379,8 +388,8 @@ export class Production {
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
-      ...(svg ? { svg } : {}),
-      ...(nextSvg ? { nextSvg } : {}),
+      ...(svg ? { svg, artHref } : {}),
+      ...(nextSvg ? { nextSvg, nextArtHref } : {}),
       image: svg ? '' : url(m.image!),
       next: adjacent ? url(adjacent) : null,
       words,

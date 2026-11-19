@@ -6,7 +6,7 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 
 ## Windows’ta başla
 
-1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.2.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
+1. **Windows desktop installer** iş akışının başarılı çalıştırmasından `Nedenmis-Studio-Windows-x64` paketini indirip aç. İçindeki `Nedenmis-Studio-1.3.0-Setup.exe` kurulumunu çalıştır. İmzalama sertifikası sağlanmadığı için Windows yayıncıyı doğrulayamaz; yalnızca güvendiğin derlemeyi kur.
 2. Masaüstü kısayolundan aç. İlk kurulumda **Yerel servisler** kontrolünü çalıştır. FFmpeg, FFprobe ve Remotion kompozisyonu paketlenir. Render için güncel Microsoft Edge veya Google Chrome yeterlidir; ayrıca Chromium indirilmez, NVIDIA/CUDA gerekmez.
 3. **Kesin sözcük zamanları için isteğe bağlı:** **Whisper ortamını kur** işlemi için [Python 3.11 x64](https://www.python.org/downloads/release/python-3119/) ve Python Launcher gereklidir. Bu işlem ayrı bir sanal ortama CPU PyTorch, Whisper ve stable-ts kurar, çok dilli `base` ağırlıklarını indirip doğrular. İnternet ve yaklaşık 2 GB boş alan ayır. Büyük modeller kurucuda yoktur.
 4. **Anahtarsız SVG kullanacaksan 6. adıma geç.** Gemini kullanacaksan **Ayarlar → API ve modeller** bölümünde senaryo, storyboard metni ve TTS için Google AI Studio anahtarını gir, **Anahtarı kaydet**, **Bağlantıyı test et**. Anahtarı sohbete, kaynak koda veya `.env` dosyasına koyma.
@@ -14,9 +14,9 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 6. **Yeni Video** ile konunu gir. Var olan anlatımın varsa içe aktar. Senaryoyu düzenle/onayla, ardından sahneleri incele. **Onayla ve üret** üretimi başlatır. Eksik yapılandırmayı giderdikten sonra **Videoyu üret** kaydedilen aşamaları kullanır.
 7. **Video Önizleme** bölümünde gerçek çıktıyı oynat, sahneye git, MP4/SRT/JSON indir. Ayarlama gerektiren sahneyi yenile. Önceki duruma **Geri al** ile dön.
 
-### Bilim atlası ve tek tıkla sesli üretim · 1.2.0
+### Bilim atlası ve tek tıkla sesli üretim · 1.3.0
 
-**Anahtarsız başlamak için:** Yeni Video → **Kendi senaryomu kullanacağım**. Senaryo ekranında **Storyboard biçimi → Kod Tabanlı SVG Animasyon** seç ve onayla. Varsayılan **Yerel şablonlar** internet kullanmaz. Var olan bir storyboard’da **SVG planı oluştur** tüm sahneleri planlar; yalnız tek bir sahneyi değiştirmek için karttaki **Sahne türü → SVG Animasyon** seçilir. **Fotoğraf** seçeneğine döndüğünde değişmemiş yerel fotoğraf yeniden kullanılır.
+**Anahtarsız başlamak için:** Yeni Video → **Kendi senaryomu kullanacağım**. Senaryo ekranında **Storyboard biçimi → Kod Tabanlı SVG Animasyon** seç ve onayla. Varsayılan **Yerel şablonlar** başlık ve etiketleri cihazında, yalnız ilgili sahnenin anlatımından çıkarır. Çizim kaynağı ayrı seçilir. Var olan bir storyboard’da **SVG planı oluştur** tüm sahneleri planlar; yalnız tek bir sahneyi değiştirmek için karttaki **Sahne türü → SVG Animasyon** seçilir. **Fotoğraf** seçeneğine döndüğünde değişmemiş yerel fotoğraf yeniden kullanılır.
 
 **Sesli MP4:** Senaryoyu ve storyboard’u onayla. **Üretim Merkezi → Videoyu üret** (veya **Onayla ve üret**) eksik anlatımı **seçtiğin konuşmacı, yönerge ve tempoyla** seslendirir, Whisper ile sesin üzerine hizalar, sonra klipleri ve MP4’ü üretir. Kayıtlı geçerli anlatım ve zamanlar yeniden istenmez. TTS için seçilmiş ve izin verilmiş bir model yoksa üretim durur; sessiz bir MP4’ü başarı diye sunmaz. Seslendirme veya hizalama düğmelerini tek tek kullanmak zorunda değilsin.
 
@@ -43,17 +43,19 @@ Yerel öncelikli, Türkçe bir Windows belgesel prodüksiyon stüdyosu. Konu →
 | `SplitCauseEffectScene` | Nedeni ve etkisini gösteren iki etiketli panel. |
 | `TimelineScaleScene` | Üç etiketli nokta, ortak zaman/mesafe/yükseklik birimi veya ölçümsüz evre sırası. |
 
-Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Beş veya daha fazla sahnede en az beş farklı şablon kullanılır. Eksik, yinelenen veya yer tutucu etiketler yalnız ilgili alanda, sahnenin anlatımından tamamlanır. Birimi ve miktarı anlatımda olmayan bir yüzde/kat göstergesi otomatik seçilmez. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelden React kodu veya SVG işaretlemesi alınmaz.
+Yerel ve isteğe bağlı model planları sahne sırasını dikkate alır; art arda aynı şablon atanmaz. Beş veya daha fazla sahnede en az beş farklı şablon kullanılır. Eksik, yinelenen veya yer tutucu etiketler yalnız ilgili alanda, sahnenin anlatımından tamamlanır. Birimi ve miktarı anlatımda olmayan bir yüzde/kat göstergesi otomatik seçilmez. Sırf çeşitlilik için bir vücut sahnesine °C ölçeği konmaz. Storyboard’da şablonu, başlığı, ikonu ve etiketleri elle değiştirebilirsin. Modelin planına ham SVG, URL veya React kodu konamaz. Özel çizim, ayrı bir güvenlik denetiminden geçirilir.
 
 **1.1.x videonu güncellemek için:** **Videoyu üret** ile yeni klipleri oluştur. Eski onaylı plan diskte kendiliğinden değiştirilmez; eski `subtitle` videoya basılmaz. `A | B` biçimindeki geçerli eski etiketler şemada kalır. Eski plandaki tekrarlı şablonları da değiştirmek istersen **Storyboard → SVG planı oluştur**, incele ve yeniden onayla. Anlatım ve ses ayarları aynıysa mevcut ses ve hizalama korunur. Önceden dışa aktardığın MP4 değişmez.
 
-**Ayarlar → SVG planlayıcı** sadece bu JSON planının kaynağını değiştirir:
+**Çizim kaynağı:** **Ayarlar → SVG planlayıcı → Şema çizimi**. Varsayılan hibrit modda İngilizce kavram (ör. `whale`, `lungs`, `skeleton`) için ücretsiz ve anahtarsız Iconify aranır. Bulunamazsa veya özel bir ilişki çizimi gerekirse, yalnız izinli metin modelinden statik SVG istenir. Güvenli çizim bulunamazsa yerel ikon kalır. **Çevrimdışı** mod çizim için hiç istek yapmaz. Storyboard kartında **Iconify anahtar kelimesi → İkon ara** ile çizimi değiştir, sonra yeniden onayla. Önizleme ve MP4 aynı proje dosyasını kullanır. Çizimler ve lisansları proje yedeğine dahildir; seslendirmeyi yeniden üretmek gerekmez. [Önbellek, güvenlik ve lisanslar](docs/ATLAS.md).
+
+**Ayarlar → SVG planlayıcı → Planlama kaynağı** seçenekleri:
 - **Yerel şablonlar:** API ve model olmadan, onaylı anlatımdan düzenlenebilir plan. Sayısal değerleri onaydan önce kontrol et.
 - **Groq:** Kendi ücretsiz hesabını doğrula ve anahtarını kaydet. Sunucudan `api.groq.com/openai/v1/chat/completions` kullanılır. Faturalandırma katmanı uzaktan doğrulanamaz; ücretli hesap kullanma.
 - **OpenRouter:** Kendi anahtarınla yalnız `openrouter/free` kullanılır. Kota dolarsa ücretli modele geçilmez.
 - **Ollama:** Stüdyonun çalıştığı bilgisayarda Ollama’yı başlat ve kurulu yerel modelin adını yaz. Sunucu `127.0.0.1:11434/api/show` ile modeli kontrol eder, ardından `/v1/chat/completions` kullanır. Model indirilmez, bulut modeli kullanılmaz. Tarayıcı önizlemesinde bu adres tarayıcının değil, sunucunun bilgisayarıdır.
 
-Uzak planlayıcıya yalnız onaylı sahne anlatımları gönderilir. Anahtar yoksa, süre aşılırsa, 503/kota hatası gelirse veya nesneler şemayı karşılamazsa başka servise istek yapılmaz. Neden storyboard’da görünür; geçerli mevcut şablonlar veya yerel varsayılanlar düzenlemeye açık kalır. Şablon ya da sahne türü değişikliği yeni onay gerektirir. Eski projelerde tür belirtilmemiş sahneler fotoğraf olarak açılır.
+Uzak planlayıcıya yalnız onaylı sahne anlatımları gönderilir. Anahtar yoksa, süre aşılırsa, 503/kota hatası gelirse veya nesneler şemayı karşılamazsa başka bir metin modeline geçilmez. Neden storyboard’da görünür; geçerli mevcut şablonlar veya yerel varsayılanlar düzenlemeye açık kalır. Şablon ya da sahne türü değişikliği yeni onay gerektirir. Eski projelerde tür belirtilmemiş sahneler fotoğraf olarak açılır.
 
 ### Storyboard görselleri · Pollinations (1.0.7)
 

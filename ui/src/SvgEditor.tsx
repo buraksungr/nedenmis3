@@ -1,3 +1,4 @@
+import { keywordSchema } from '../../shared/artwork';
 import { useEffect, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { ScientificPlate } from '../../composition/ScientificPlate';
@@ -54,13 +55,19 @@ export function SvgEditor({
   narration,
   topic,
   onChange,
+  artHref,
+  lookup,
 }: {
+  artHref?: string;
+  lookup: (keyword: string, mode: 'auto' | 'custom') => Promise<unknown>;
   plan: SvgPlan;
   seconds: number;
   narration: string;
   topic: string;
   onChange: (v: SvgPlan) => void;
 }) {
+  const [keyword, setKeyword] = useState(plan.iconKeyword ?? '');
+  useEffect(() => setKeyword(plan.iconKeyword ?? ''), [plan.iconKeyword, narration]);
   const [frame, setFrame] = useState(0),
     [playing, setPlaying] = useState(false),
     frames = Math.max(2, Math.round(seconds * 30));
@@ -88,7 +95,12 @@ export function SvgEditor({
     <div className="svg-editor">
       <div className="svg-monitor">
         <div className="svg-paper">
-          <ScientificPlate plan={plan} frames={frames} frame={Math.min(frame, frames - 1)} />
+          <ScientificPlate
+            plan={plan}
+            artHref={artHref}
+            frames={frames}
+            frame={Math.min(frame, frames - 1)}
+          />
         </div>
         <div className="actions">
           <Button
@@ -123,6 +135,9 @@ export function SvgEditor({
               const seed = defaultSvg(narration, 0, topic, template);
               onChange({
                 ...seed,
+                iconKeyword: plan.iconKeyword,
+                artMode: plan.artMode,
+                artwork: plan.artwork,
                 title: plan.title,
                 icon: plan.icon,
                 weather: plan.weather,
@@ -141,7 +156,13 @@ export function SvgEditor({
           Bilim ikonu
           <select
             value={plan.icon}
-            onChange={(e) => edit({ icon: e.target.value as SvgPlan['icon'] })}
+            onChange={(e) =>
+              edit({
+                icon: e.target.value as SvgPlan['icon'],
+                artMode: 'local',
+                artwork: undefined,
+              })
+            }
           >
             {icons.map((i) => (
               <option key={i} value={i}>
@@ -150,6 +171,36 @@ export function SvgEditor({
             ))}
           </select>
         </label>
+        <label>
+          Iconify anahtar kelimesi
+          <input
+            value={keyword}
+            maxLength={48}
+            placeholder="Örn. whale, lungs"
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+        </label>
+        <div>
+          <p className="help">
+            {plan.artwork
+              ? `${plan.artwork.source === 'iconify' ? 'Iconify' : 'Özel çizim'} · ${plan.artwork.name}`
+              : '20 yerel ikondan yedek çizim'}
+          </p>
+          <div className="actions">
+            <Button
+              disabled={!keywordSchema.safeParse(keyword).success}
+              onClick={() => void lookup(keyword, 'auto')}
+            >
+              İkon ara
+            </Button>
+            <Button
+              disabled={!keywordSchema.safeParse(keyword).success}
+              onClick={() => void lookup(keyword, 'custom')}
+            >
+              Özel çizim iste
+            </Button>
+          </div>
+        </div>
         <label>
           Vurgu rengi
           <input

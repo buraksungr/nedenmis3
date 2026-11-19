@@ -1,3 +1,4 @@
+import { grounded } from '../shared/svg-copy';
 import thirst from './fixtures/thirst.json';
 import flight from './fixtures/flight.json';
 import assert from 'node:assert/strict';
@@ -76,7 +77,7 @@ test('strict JSON Schema branches require meaningful headings and every template
     { ...valid, fromValue: null },
   ])
     assert.equal(svgPlanSchema.safeParse(invalid).success, false);
-  assert.ok(svgPlanSchema.safeParse(defaultSvg('🍃'.repeat(120))).success);
+  assert.throws(() => storyboardPlans(['🍃'.repeat(120)], 'Bir başka konu'), /yeterli anlatım/); // Impossible to make a grounded heading.
 });
 test('local planning keeps approved narration verbatim, needs neither keys nor transport', async (t) => {
   let calls = 0;
@@ -116,8 +117,8 @@ test('OpenAI-compatible planners target only their selected host and validate th
           message: {
             content: JSON.stringify({
               scenes: [
-                { ...valid, title: 'Karlı Toprak' },
-                { ...valid, title: 'Toprağın Sıcaklığı' },
+                { ...valid, title: 'Toprak Yüzeyi' },
+                { ...valid, title: 'Sıcaklık Çıkar' },
               ],
             }),
           },
@@ -132,7 +133,7 @@ test('OpenAI-compatible planners target only their selected host and validate th
     assert.equal(r.warning, '');
     assert.deepEqual(
       r.scenes.map((s) => s.svgPlan.title),
-      ['Karlı Toprak', 'Toprağın Sıcaklığı'],
+      ['Toprak Yüzeyi', 'Sıcaklık Çıkar'],
     );
   }
   assert.deepEqual(
@@ -312,7 +313,7 @@ test('1.1.0 plans retain original signed data; old prose never becomes a second 
   const resolved = displayPlan(old, 'Beyin susama sinyali verir.');
   assert.ok(svgPlanSchema.safeParse(resolved).success);
   assert.equal(resolved.icon, 'brain');
-  assert.equal(resolved.title, 'Beynin Susama Sinyali');
+  assert.ok(grounded(resolved.title, 'Beyin susama sinyali verir.'));
   assert.equal(JSON.stringify(old), saved);
   assert.ok(!JSON.stringify(resolved).includes('yarım anlatım'));
   const custom = displayPlan(
@@ -361,7 +362,7 @@ test('model holes are repaired per field, not by discarding the scene or the oth
     {
       template: 'CycleLoopScene',
       icon: null,
-      title: 'Uçuşun Dört Evresi',
+      title: 'İniş Döngüsü',
       labels: [null, 'Yükselme', 'Etiket 3', 'İniş'],
     },
     { template: 'RatioGaugeScene', title: null, labels: null, unit: '×', toValue: 999 },
@@ -387,14 +388,14 @@ test('model holes are repaired per field, not by discarding the scene or the oth
   assert.equal(warning, '');
   const [hook, cycle, ratio, stack] = scenes.map((s) => svgPlanSchema.parse(s.svgPlan));
   assert.equal(hook.accentColor, '#123456');
-  assert.deepEqual(hook.labels, ['Uçuş rotası']);
-  assert.equal(hook.title, 'Uçakların Seyir Yüksekliği');
+  assert.ok(!hook.labels.includes('Uçuş rotası'));
+  assert.ok([hook.title, ...hook.labels].every((s) => grounded(s, flight[0])));
   assert.equal(cycle.title, drafts[1].title);
   assert.equal(cycle.icon, 'airplane');
-  assert.deepEqual(cycle.labels, ['Kalkış', 'Yükselme', 'Seyir', 'İniş']);
+  assert.deepEqual(cycle.labels, ['Kalkış', 'Tırmanış', 'Seyir', 'İniş']);
   assert.deepEqual([ratio.toValue, ratio.unit, ...ratio.labels], [21, '%', 'Oksijen']);
-  assert.equal(stack.title, 'Atmosferin Katmanları');
-  assert.deepEqual(stack.labels, ['Üst atmosfer', 'Stratosfer', 'Troposfer']);
+  assert.ok(grounded(stack.title, flight[2]));
+  assert.deepEqual(stack.labels, ['Mezosfer', 'Stratosfer', 'Troposfer']);
 });
 test('short and homogeneous boards honor adjacency and the distinct-template budget, even with repetitive model hints', () => {
   for (const len of [1, 2, 4, 5, 6, 12, 24])
@@ -473,9 +474,7 @@ test('an approved 1.1.1 thermometer is projected without rewriting its signed co
   assert.equal(svgPlanSchema.safeParse(old).success, false);
   const p = displayPlan(old, 'Toprakta iki sıcaklık ölçüldü.');
   assert.ok(svgPlanSchema.safeParse(p).success);
-  assert.deepEqual(
-    [p.fromValue, p.toValue, ...p.labels],
-    [-5, 4, 'Toprak sıcaklığı', 'Sıcaklık aralığı'],
-  );
+  assert.deepEqual([p.fromValue, p.toValue], [-5, 4]);
+  assert.ok(p.labels.every((s) => grounded(s, 'Toprakta iki sıcaklık ölçüldü.')));
   assert.equal(JSON.stringify(old), before);
 });

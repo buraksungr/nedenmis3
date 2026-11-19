@@ -1,3 +1,4 @@
+import { artUrl } from '../../shared/artwork';
 import {
   ArrowDown,
   ArrowRight,
@@ -211,17 +212,26 @@ export function ScriptEditor({ p }: { p: Project }) {
             </span>
           </div>
           {!p.scenes.length && (
-            <label className="small-label">
-              Storyboard biçimi
-              <select
-                value={boardType}
-                disabled={locked}
-                onChange={(e) => setBoardType(e.target.value)}
-              >
-                <option value="photo">Fotoğraf · Gemini ile planla</option>
-                <option value="svg">Kod Tabanlı SVG Animasyon · görsel API gerekmez</option>
-              </select>
-            </label>
+            <>
+              <label className="small-label">
+                Storyboard biçimi
+                <select
+                  value={boardType}
+                  disabled={locked}
+                  onChange={(e) => setBoardType(e.target.value)}
+                >
+                  <option value="photo">Fotoğraf · Gemini ile planla</option>
+                  <option value="svg">Kod Tabanlı SVG Animasyon · anahtarsız Iconify</option>
+                </select>
+              </label>
+              {boardType === 'svg' && (
+                <p className="help">
+                  Şema çizimi ayarına göre Iconify’a İngilizce kavram, özel çizim gerekirse izin
+                  verdiğin metin modeline sahne anlatımı gönderilir. Çevrimdışı çizimi Ayarlar’dan
+                  seçebilirsin.
+                </p>
+              )}
+            </>
           )}
           <div className="actions between">
             <Button
@@ -425,9 +435,11 @@ export function BoardEditor({ p }: { p: Project }) {
             </div>
             <p>
               {templates.length} bilim şablonu ve {icons.length} ikon arasından anlatıma göre bir
-              plan hazırlanır. Her sahneyi ayrıca düzenleyebilirsin. Videoyu üretirken eksik
-              seslendirme ve hizalama otomatik hazırlanır. Anahtarsız çalışmak için kendi sesini
-              yükleyebilir veya sahnede otomatik sesi kapatabilirsin.
+              plan hazırlanır. Hibrit modda Iconify’a yalnız İngilizce arama sözcüğü gider;
+              gerekirse izinli metin modeli özel çizim hazırlar. Her sahneyi ayrıca
+              düzenleyebilirsin. Videoyu üretirken eksik seslendirme ve hizalama otomatik
+              hazırlanır. Anahtarsız çalışmak için kendi sesini yükleyebilir veya sahnede otomatik
+              sesi kapatabilirsin.
             </p>
             <div className="actions">
               <Button
@@ -537,7 +549,11 @@ export function BoardEditor({ p }: { p: Project }) {
                   <SceneThumbnail p={p} s={s} />
                   <div className="grow">
                     <b>{templateNames[s.svgPlan.template]}</b>
-                    <p className="help">Yerel SVG · görsel indirilmez</p>
+                    <p className="help">
+                      {'artwork' in s.svgPlan && s.svgPlan.artwork
+                        ? `${s.svgPlan.artwork.source === 'iconify' ? 'Iconify' : 'Özel SVG'} · ${s.svgPlan.artwork.name}`
+                        : 'Yerel yedek ikon'}
+                    </p>
                   </div>
                   <Button onClick={() => setOpen(open === s.id ? null : s.id)}>
                     Şablon ayrıntıları
@@ -584,6 +600,23 @@ export function BoardEditor({ p }: { p: Project }) {
                   {s.visualMode === 'svg' && s.svgPlan && (
                     <Suspense fallback={<p>Şablon yükleniyor…</p>}>
                       <SvgEditor
+                        artHref={artUrl(
+                          p.id,
+                          'artwork' in s.svgPlan ? s.svgPlan.artwork : undefined,
+                        )}
+                        lookup={(keyword, mode) =>
+                          run(async () => {
+                            await d.flush();
+                            const r = await post<{ project: Project; message: string }>(
+                              `/projects/${p.id}/scene-art`,
+                              { scene: s.id, keyword, mode },
+                              { 'If-Match': String(d.rev.current) },
+                            );
+                            setP(r.project);
+                            await refresh();
+                            notify(r.message);
+                          })
+                        }
                         narration={s.narration}
                         topic={p.topic}
                         plan={
@@ -779,6 +812,7 @@ function SceneThumbnail({ p, s }: { p: Project; s: Scene }) {
       <div className="station-art svg-thumb">
         <Suspense fallback={null}>
           <AtlasPreview
+            artHref={artUrl(p.id, 'artwork' in s.svgPlan ? s.svgPlan.artwork : undefined)}
             plan={displayPlan(s.svgPlan, s.narration, p.topic)}
             frame={20}
             frames={60}

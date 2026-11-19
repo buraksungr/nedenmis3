@@ -4,6 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import thirst from './fixtures/thirst.json';
 import flight from './fixtures/flight.json';
+import whale from './fixtures/whale.json';
+import { AtlasArt, readArtwork } from '../server/atlas-art';
+import { safeSvg } from '../server/safe-svg';
+import { grounded } from '../shared/svg-copy';
+import { createHash } from 'node:crypto';
+import { hookPixels } from './atlas-pixels';
 import { validWords } from '../shared/captions';
 import { svgPlanSchema, templates } from '../shared/svg';
 import { SvgPlanner } from '../server/svg-planner';
@@ -15,13 +21,20 @@ import { exec, python, probe, verifyVideo } from '../server/media';
 import { testImages } from './offline';
 
 async function main() {
-  const isFlight = process.argv.includes('--flight');
-  const lines = isFlight ? flight : thirst,
-    story = isFlight ? 'flight' : 'thirst',
-    filename = isFlight ? 'ucuslar-ve-irtifa' : 'tatli-ve-susama',
-    topic = isFlight
-      ? 'Uçaklar neden yüksekten uçar?'
-      : 'Tatlı yediğimizde neden hemen su içmek isteriz?';
+  const isFlight = process.argv.includes('--flight'),
+    isWhale = process.argv.includes('--whale');
+  const lines = isWhale ? whale : isFlight ? flight : thirst,
+    story = isWhale ? 'whale' : isFlight ? 'flight' : 'thirst',
+    filename = isWhale
+      ? 'karaya-vuran-balinalar'
+      : isFlight
+        ? 'ucuslar-ve-irtifa'
+        : 'tatli-ve-susama',
+    topic = isWhale
+      ? 'Karaya vuran balinalar neden ölür?'
+      : isFlight
+        ? 'Uçaklar neden yüksekten uçar?'
+        : 'Tatlı yediğimizde neden hemen su içmek isteriz?';
   const root = path.resolve('out/acoustic-control'),
     out = path.resolve(`out/${story}-control`),
     audio = path.resolve(`out/${story}-speech`),
@@ -66,12 +79,53 @@ async function main() {
       engine = new Production(store, g, paths, images);
     const p = store.create(makeProject(topic, lines.join(' ')));
     p.scriptApproval = scriptSig(p);
+    // The whale control deliberately does NOT use a network fixture or pre-populated
+    // Iconify cache. Save actual response hashes and compare the on-disk sanitized bytes.
+    const trace: {
+        url: string;
+        status: number;
+        sha256: string;
+        length: number;
+        ids?: string[];
+        themed?: string;
+      }[] = [],
+      errors: string[] = [];
+    const live: typeof fetch = async (url, opts) => {
+      const u = new URL(String(url));
+      assert.equal(u.origin, 'https://api.iconify.design');
+      assert.ok(!new Headers(opts?.headers).has('authorization'));
+      try {
+        const r = await fetch(url, opts),
+          bytes = Buffer.from(await r.clone().arrayBuffer());
+        let themed: string | undefined;
+        const sum = (v: Buffer | string) => createHash('sha256').update(v).digest('hex');
+        if (u.pathname.endsWith('.svg') && r.ok)
+          try {
+            themed = sum(safeSvg(bytes.toString('utf8')));
+          } catch {
+            /* record rejected geometry too */
+          }
+        trace.push({
+          url: r.url,
+          status: r.status,
+          sha256: sum(bytes),
+          length: bytes.length,
+          ids: r.ok && u.pathname === '/search' ? JSON.parse(bytes.toString()).icons : undefined,
+          themed,
+        });
+        return r;
+      } catch (e) {
+        errors.push(String(url) + ': ' + String(e));
+        throw e;
+      }
+    };
     const planner = new SvgPlanner(
       store,
       { groq: memoryVault(), openrouter: memoryVault() },
       async () => {
-        throw Error('Expected offline planning');
+        throw Error('Expected offline text planning');
       },
+      isWhale ? new AtlasArt(store, live) : undefined,
     );
     const plan = await planner.plan(p);
     assert.equal(plan.warning, '');
@@ -93,6 +147,61 @@ async function main() {
         'The unmodified automatic flight plan must cover the whole atlas',
       );
     else assert.ok(plans.every((s) => s.icon !== 'leaf' && s.template !== 'ThermometerGaugeScene'));
+    if (isWhale) {
+      const diagnostic = JSON.stringify({
+        trace: trace.map((r) => [r.url, r.status, r.ids?.slice(0, 6)]),
+        errors,
+      });
+      for (const [i, keyword] of [
+        [0, 'whale'],
+        [2, 'weight'],
+        [3, 'lungs'],
+        [4, 'skeleton'],
+      ] as const) {
+        const plan = plans[i];
+        assert.equal(plan.iconKeyword, keyword);
+        const ref = plan.artwork;
+        assert.ok(
+          ref?.source === 'iconify',
+          `${keyword} was NOT fetched from live Iconify: ${diagnostic}`,
+        );
+        assert.ok(
+          trace.some(
+            (r) =>
+              new URL(r.url).searchParams.get('query') === keyword && r.ids?.includes(ref.name),
+          ),
+        );
+        assert.ok(
+          trace.some(
+            (r) =>
+              r.status === 200 &&
+              r.url === `https://api.iconify.design/${ref.name.replace(':', '/')}.svg` &&
+              r.themed === ref.digest,
+          ),
+        );
+        assert.ok(readArtwork(store.dir(p.id), ref.digest));
+      }
+      for (const [i, v] of plans.entries()) {
+        assert.ok(
+          [v.title, ...v.labels].every((l) => grounded(l, lines[i])),
+          JSON.stringify(v),
+        );
+        assert.doesNotMatch(
+          [v.title, ...v.labels].join(' '),
+          /suyun hareketi|su birikimi|yüzeyde akış|mercek altında/iu,
+        );
+      }
+      const n = trace.length;
+      for (const [i, v] of plans.entries())
+        if (v.artwork) {
+          const again = await planner.illustrate(p, v, lines[i]);
+          assert.deepEqual(again.plan.artwork, v.artwork);
+        }
+      assert.equal(trace.length, n, 'Cached art triggered a live search');
+      console.log(
+        `Verified live Iconify search, SVG response and cache hashes: ${plans.flatMap((p) => p.artwork?.name ?? []).join(', ')}`,
+      );
+    }
     // No key cannot quietly turn an intended documentary into an unvoiced MP4.
     await assert.rejects(engine.render(p, 'all'), /Seslendirme/);
     assert.equal(store.get(p.id).final, undefined);
@@ -141,6 +250,24 @@ async function main() {
     const frames = scenes.reduce((n, s) => n + s.frames, 0),
       final = engine.file(p, p.final.file);
     await verifyVideo(final, frames, true);
+    const pixels = isWhale
+      ? await hookPixels(
+          out,
+          final,
+          plans[0],
+          readArtwork(store.dir(p.id), plans[0].artwork!.digest)!,
+          scenes[0].frames,
+        )
+      : undefined;
+    if (isWhale) {
+      fs.cpSync(path.join(store.dir(p.id), 'media', 'atlas'), path.join(out, 'drawings'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(out, 'iconify.json'),
+        JSON.stringify({ trace, errors, pixels }, null, 2),
+      );
+    }
     const subtitles = JSON.parse(fs.readFileSync(engine.file(p, p.subtitleFiles.json), 'utf8'));
     if (strict) {
       assert.equal(
@@ -175,6 +302,7 @@ async function main() {
         {
           source,
           topic,
+          pixels,
           templates: [...distinct],
           provider: 'Offline Gemini TTS response fixture, no external generation or paid requests',
           ttsRequests: calls.length,
@@ -189,7 +317,7 @@ async function main() {
     );
     if (strict && process.env.GITHUB_ACTIONS)
       console.log(
-        `::notice title=Verified ${story} film::${scenes.length} scenes; ${distinct.size} different automatically selected templates; ${frames} frames at 30 FPS; ${subtitles.words.length} Whisper word times; ${calls.length} fixture TTS calls; ${imageCalls} image calls; cached second export.`,
+        `::notice title=Verified ${story} film::${scenes.length} scenes; ${distinct.size} different automatically selected templates; ${frames} frames at 30 FPS; ${subtitles.words.length} Whisper word times; ${calls.length} fixture TTS calls; ${imageCalls} image calls; cached second export.${pixels ? ` Decoded whale ROI mean error: ${pixels.toIconify.toFixed(2)} to live SVG vs ${pixels.toLocal.toFixed(2)} to local icon.` : ''}`,
       );
     console.log(
       `Validated ${scenes.length} narrated ${story} scenes, ${frames} frames at 30 FPS (${(frames / 30).toFixed(2)}s). TTS fixture calls: ${calls.length}, image calls: ${imageCalls}. Alignment: ${scenes.map((s) => s.method).join(', ')}. MP4: ${path.join(out, filename + '.mp4')}`,
