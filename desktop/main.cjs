@@ -22,7 +22,7 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
-      const { createStudio, parseIllustration } = require('../build/server.cjs');
+      const { createStudio, parseRig, parseStage } = require('../build/server.cjs');
       const state = app.getPath('userData');
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
       // Local OS association lookup; does not open the URL or contact the network.
@@ -55,7 +55,6 @@ if (!app.requestSingleInstanceLock()) {
         };
       }
       const vault = vaultFor('gemini'),
-        pollinationsVault = vaultFor('pollinations'),
         plannerVaults = { groq: vaultFor('groq'), openrouter: vaultFor('openrouter') };
       const token = randomBytes(32).toString('hex'),
         studio = createStudio(
@@ -65,7 +64,7 @@ if (!app.requestSingleInstanceLock()) {
             composition: path.join(resources, app.isPackaged ? 'composition' : 'build/composition'),
             defaultBrowser,
           },
-          { vault, pollinationsVault, plannerVaults, desktopToken: token },
+          { vault, plannerVaults, desktopToken: token },
         );
       stopActive = studio.stopActive;
       studio.app.use((_q, r, n) => {
@@ -122,7 +121,6 @@ if (!app.requestSingleInstanceLock()) {
         const geminiProbe = randomBytes(26).toString('hex');
         for (const [name, candidate, key] of [
           ['gemini', vault, geminiProbe],
-          ['pollinations', pollinationsVault, randomBytes(26).toString('hex')],
           ['groq', plannerVaults.groq, randomBytes(26).toString('hex')],
           ['openrouter', plannerVaults.openrouter, randomBytes(26).toString('hex')],
         ]) {
@@ -133,21 +131,33 @@ if (!app.requestSingleInstanceLock()) {
           )
             throw new Error('Credential encryption round trip failed: ' + name);
         }
-        pollinationsVault.clear();
-        if (pollinationsVault.has() || vault.get() !== geminiProbe)
+        plannerVaults.openrouter.clear();
+        if (plannerVaults.openrouter.has() || vault.get() !== geminiProbe)
           throw new Error('Credential stores are not isolated');
         plannerVaults.groq.clear();
-        plannerVaults.openrouter.clear();
         vault.clear();
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,
         );
-        const flat = parseIllustration(
-          '<svg viewBox="0 0 1080 1350"><g id="layer-bg"><rect width="1080" height="1350" fill="#456789"/></g><g id="layer-main"/><g id="layer-fx"/></svg>',
-          { title: 'Yerel Denetim', narration: '' },
+        const rig = parseRig(
+          '<svg viewBox="0 0 40 30"><defs><g id="subject-main"><path d="M0 8 Q15 0 28 9 L11 20Z" fill="#fca"/><circle cx="20" cy="9" r="3"/></g></defs></svg>',
         );
-        if (flat.drawing.layers['layer-bg'].children.length < 2)
-          throw new Error('Packaged background completion unavailable');
+        const flat = parseStage(
+          '<svg viewBox="0 0 200 320"><rect width="200" height="320" fill="#456789"/>' +
+            [0, 1]
+              .map(
+                (i) =>
+                  `<use x="${i * 70}" y="80" href="#subject-main" data-anim="move" data-dx="35"/>`,
+              )
+              .join('') +
+            [0, 1, 2]
+              .map((i) => `<circle cx="${15 + i * 45}" cy="20" r="4" data-anim="fall"/>`)
+              .join('') +
+            '</svg>',
+          rig.root,
+        );
+        if (flat.actors !== 2 || flat.objects !== 5)
+          throw Error('Installed object compositor input failed validation');
         if (!loaded) throw new Error('Installed renderer or SQLite unavailable');
         const r = await fetch(origin + '/api/settings/checks', {
           method: 'POST',
@@ -167,9 +177,9 @@ if (!app.requestSingleInstanceLock()) {
               installed: app.isPackaged,
               renderer: true,
               sqlite: true,
-              flatVectorCompletion: true,
+              fixedMotionStage: { actors: flat.actors, objects: flat.objects },
               secureStorage: true,
-              pollinationsSecureStorage: true,
+              plannerSecureStorage: true,
               checks,
             },
             null,

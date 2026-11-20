@@ -6,7 +6,6 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { Gemini, wav } from '../server/gemini';
 import { memoryVault } from '../server/vault';
-import { testImages } from './offline';
 import { invalidate } from '../server/invalidate';
 import { framesForVoice, imageKey, Production, voiceKey } from '../server/production';
 import {
@@ -292,23 +291,18 @@ test('damaged image import and unavailable TTS preserve previously verified asse
     p = store.create(draft());
   p.scriptApproval = scriptSig(p);
   approveBoard(p);
-  const engine = new Production(
-    store,
-    new Gemini(store, memoryVault()),
-    {
-      root: store.root,
-      pythonDir: 'python',
-      composition: 'build/composition',
-    },
-    testImages(store),
-  );
+  const engine = new Production(store, new Gemini(store, memoryVault()), {
+    root: store.root,
+    pythonDir: 'python',
+    composition: 'build/composition',
+  });
   await engine.import(p, 'image', fs.readFileSync('ui/public/art/ants.jpg'), p.scenes[0]);
   const a = structuredClone(p.assets[p.scenes[0].id].image);
   await assert.rejects(() => engine.import(p, 'image', Buffer.from('not an image'), p.scenes[0]));
-  await assert.rejects(() => engine.asset(p, p.scenes[0], 'voice', true));
+  await assert.rejects(() => engine.voice(p, p.scenes[0], true));
   assert.deepEqual(p.assets[p.scenes[0].id].image, a);
   assert.ok(fs.existsSync(engine.file(p, a!.file)));
-  await engine.asset(p, p.scenes[0], 'image', false);
+  assert.equal(engine.usable(p, a, a!.key), true);
   assert.deepEqual(p.assets[p.scenes[0].id].image, a);
 });
 

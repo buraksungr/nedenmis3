@@ -1,6 +1,6 @@
 # Tam ekran özel vektör sahnesi (1.4+)
 
-> Bu belge eski atlas/katmanlı SVG biçimini açıklar. 1.5.0’da yeni projelerin varsayılan görsel motoru [sağlayıcı tabanlı sinematik 2D illüstrasyondur](../README.md#sinematik-bilim-illüstrasyonları--150).
+> **Arşiv (1.4/1.4.1):** Aşağıdaki planlama/katman hareketi açıklaması bu eski sürümlere aittir. 1.6 yeni sahneleri [nesne motoruyla](MOTION.md) çizer. Eski katmanlı çizimler açılışta dönüştürülmez; yeniden render’da toplu katman hareketi uygulanmaz.
 
 
 **Çizim ve başlık.** “SVG planı oluştur” onaylı metni sahnelere ayırır; metin zaten sahnelere bölünmüşse kimlikleri, sırayı ve anlatımları korur. Seçili OpenRouter (`openrouter/free`) veya izinli Gemini **metin** modelinden her sahne için `{title, fx, svg}` istenir. Modele konu, sahne sırası ve o sahnenin anlatımı verilir; ses, zaman dosyası, proje yolu veya diğer sağlayıcının anahtarı gönderilmez. Başlık 2–3 sözcükten oluşur; yerel metin çıkarımı veya şablon seçimi yoktur. Bilimsel doğruluğunu ve Türkçe anlam bütünlüğünü onaydan önce gözden geçirin.

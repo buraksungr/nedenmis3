@@ -69,9 +69,9 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
       </div>
       <div className="form-stack spaced">
         <p>
-          Metin modeli belgeselin ana öznesini, İngilizce sahne istemlerini ve kısa Türkçe
-          başlıkları belirler. İllüstrasyonu Pollinations üretir. Kayıtlı sahneler çevrimdışı
-          oynatılır.
+          Metin modeli ortak SVG öznesini bir kez çizer. Her sahnenin yerleşimini, ayrı nesne
+          hareketlerini ve kısa Türkçe başlığını planlar. Kamera sabittir; çizilen sahneler
+          çevrimdışı işlenir.
         </p>
         <label>
           Planlama kaynağı

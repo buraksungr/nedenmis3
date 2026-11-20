@@ -10,7 +10,6 @@ import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
 import { framesForVoice, Production } from '../server/production';
 import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
-import { testImages } from './offline';
 import { ff, verifyVideo } from '../server/media';
 
 /** Export using the real batch, clip, transition and audio paths. Both cloud transports are tripwires. */
@@ -27,8 +26,7 @@ export async function svgRenderControl(out: string) {
     requests++;
     throw new Error('No network in atlas control');
   };
-  const images = testImages(store, offline),
-    prod = new Production(store, new Gemini(store, memoryVault(), offline), paths, images);
+  const prod = new Production(store, new Gemini(store, memoryVault(), offline), paths);
   const plans: SvgPlan[] = legacyFlight as SvgPlan[];
   assert.deepEqual(new Set(plans.map((s) => s.template)), new Set(templates));
   const scenes: Scene[] = plans.map((plan, i) => ({
@@ -62,9 +60,7 @@ export async function svgRenderControl(out: string) {
     await prod.import(p, 'voice', fs.readFileSync('tests/fixtures/forest.wav'), photo);
     const photoFile = p.assets[photo.id].image!.file;
     // Manual photo waiting must never include an SVG shot. Run with auto-fill on, too.
-    images.setAutoFill(false);
     assert.equal(prod.waitingForImages(p), undefined);
-    images.setAutoFill(true);
     assert.equal(await prod.render(p, 'all'), undefined);
     assert.ok(p.final && p.subtitleFiles);
     assert.equal(requests, 0);

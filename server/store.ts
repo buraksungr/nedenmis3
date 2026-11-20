@@ -1,3 +1,4 @@
+import { rigSchema, motionRefSchema } from '../shared/object-motion';
 import { subjectSchema, cinematicPlan } from '../shared/cinema';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -47,6 +48,7 @@ export const boardSig = (p: Project) =>
     scriptSig(p),
     p.scenes,
     p.styleGuide,
+    ...(p.scenes.some((s) => s.visualMode === 'motion-svg') ? [p.subjectRig] : []),
     ...(p.scenes.some((s) => s.visualMode === 'illustration') ? [p.cinema] : []),
   );
 export function approved(p: Project) {
@@ -63,19 +65,25 @@ export function approveBoard(p: Project) {
       p.scenes.every(
         (s) =>
           s.narration &&
-          (s.visualMode === 'illustration'
-            ? p.cinema?.scriptHash === p.scriptApproval &&
-              subjectSchema.safeParse(p.cinema?.subject).success &&
-              cinematicPlan.safeParse(s.cinema).success &&
-              s.cinema?.context === shotContext(p.cinema!.subject, s.narration)
-            : s.visualMode === 'svg'
-              ? s.vector
-                ? !s.svgPlan &&
-                  vectorSchema.safeParse(s.vector).success &&
-                  s.vector.narrationHash === hash(normalize(s.narration))
-                : svgPlanSchema.safeParse(s.svgPlan).success ||
-                  legacySvgPlanSchema.safeParse(s.svgPlan).success
-              : s.description),
+          (s.visualMode === 'motion-svg'
+            ? rigSchema.safeParse(p.subjectRig).success &&
+              p.subjectRig?.scriptHash === p.scriptApproval &&
+              motionRefSchema.safeParse(s.choreography).success &&
+              s.choreography?.rigDigest === p.subjectRig!.digest &&
+              s.choreography.narrationHash === hash(normalize(s.narration))
+            : s.visualMode === 'illustration'
+              ? p.cinema?.scriptHash === p.scriptApproval &&
+                subjectSchema.safeParse(p.cinema?.subject).success &&
+                cinematicPlan.safeParse(s.cinema).success &&
+                s.cinema?.context === shotContext(p.cinema!.subject, s.narration)
+              : s.visualMode === 'svg'
+                ? s.vector
+                  ? !s.svgPlan &&
+                    vectorSchema.safeParse(s.vector).success &&
+                    s.vector.narrationHash === hash(normalize(s.narration))
+                  : svgPlanSchema.safeParse(s.svgPlan).success ||
+                    legacySvgPlanSchema.safeParse(s.svgPlan).success
+                : s.description),
       ),
     'Her sahne için güncel anlatım ve görsel plan gerekli. Eksik illüstrasyon planını tamamlayın.',
   );
@@ -92,6 +100,7 @@ export function approveBoard(p: Project) {
 export function changeScript(p: Project, text: string) {
   if (normalize(text) !== normalize(p.script)) {
     delete p.vectorWork;
+    delete p.motionWork;
     p.scriptApproval = null;
     p.boardApproval = null;
     clearFinal(p);
@@ -122,7 +131,7 @@ export function makeProject(topic: string, script = '', instructions = ''): Proj
     boardApproval: null,
     scenes: [],
     styleGuide:
-      '2D vektör bilim illüstrasyonu. Koyu lacivert ve petrol yeşili ortam, sıcak ışık vurguları ve tutarlı ana özne.',
+      'Sabit kameralı 2D bilim belgeseli. Ortak SVG özne şablonu, anlamlı nesne hareketleri ve yalın bir çevre.',
     voice: defaultSpeaker,
     voiceStyle: 'Sakin, merak uyandıran, doğal bir Türkçe belgesel anlatımı.',
     pace: 'Doğal',

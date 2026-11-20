@@ -1,3 +1,4 @@
+import { animKinds } from '../shared/object-motion';
 import { SaxesParser } from 'saxes';
 import { SVGPathData } from 'svg-pathdata';
 import { layers, type Drawing, type Geometry, type Layer } from '../shared/vector';
@@ -68,12 +69,13 @@ export const serialize = (n: Geometry): string =>
     .sort()
     .map((k) => ` ${k}="${esc(n.attrs[k])}"`)
     .join('')}>${esc(n.text ?? '')}${n.children.map(serialize).join('')}</${n.tag}>`;
-/** Parse to a small, inert display list. A gradient paint server is the ONLY
- * reference type; it must resolve inside this illustration. Never render raw XML. */
-export function parseIllustration(
+// A shared XML/geometry allowlist. The motion dialect adds only one fixed, non-recursive
+// local <use> target and bounded numeric choreography; it never enables SMIL, CSS or scripts.
+export function parseGeometry(
   xml: string,
+  mode: 'layers' | 'rig' | 'objects',
   editorial?: { title: string; narration: string },
-): { drawing: Drawing; canonical: string } {
+) {
   if (Buffer.byteLength(xml) > MAX_XML || /<!\s*(?:DOCTYPE|ENTITY)/i.test(xml))
     bad('SVG boyutu veya belge türü geçersiz.');
   const p = new SaxesParser({ xmlns: true }),
@@ -94,18 +96,20 @@ export function parseIllustration(
       a: Record<string, string> = {};
     if (++nodes > 1200 || stack.length > 16 || t.prefix || (t.uri && t.uri !== ns))
       bad('Desteklenmeyen SVG yapısı.');
+    const object = mode !== 'layers',
+      use = mode === 'objects' && tag === 'use';
     const allowed = !parent
       ? tag === 'svg'
       : parent.tag === 'svg'
-        ? ['defs', 'g'].includes(tag)
+        ? tag === 'defs' ||
+          (mode !== 'rig' && (tag === 'g' || (object && (shapes.has(tag) || use))))
         : parent.tag === 'defs'
-          ? gradients.has(tag)
+          ? gradients.has(tag) || (mode === 'rig' && tag === 'g')
           : gradients.has(parent.tag)
             ? tag === 'stop'
-            : parent.tag === 'g'
-              ? shapes.has(tag) || tag === 'g' || tag === 'text'
-              : false;
-    if (!allowed) bad('Yalnız statik geometri, yerel gradyan ve üç sahne katmanı kullanılabilir.');
+            : parent.tag === 'g' &&
+              (shapes.has(tag) || tag === 'g' || use || (!object && tag === 'text'));
+    if (!allowed) bad('Desteklenmeyen SVG öğesi: ' + tag);
     for (const [k, { value: v }] of Object.entries(t.attributes)) {
       if (k === 'xmlns' && tag === 'svg' && v === ns) continue;
       if (tag === 'svg') {
@@ -123,6 +127,32 @@ export function parseIllustration(
           continue;
         }
         bad('İzin verilmeyen SVG kök özniteliği.');
+      }
+      if (use && k === 'href' && v === '#subject-main') {
+        a.href = v;
+        continue;
+      }
+      if (object && (shapes.has(tag) || tag === 'g' || use) && k.startsWith('data-')) {
+        if (k === 'data-anim') {
+          if (!animKinds.some((vv) => vv === v)) bad('Bilinmeyen nesne hareketi.');
+        } else {
+          const ranges: Record<string, [number, number]> = {
+            'data-dx': [-8000, 8000],
+            'data-dy': [-8000, 8000],
+            'data-duration': [0.08, 120],
+            'data-delay': [0, 120],
+            'data-phase': [0, 1],
+            'data-pivot-x': [-10000, 10000],
+            'data-pivot-y': [-10000, 10000],
+            'data-angle': [-180, 180],
+          };
+          if (!Object.hasOwn(ranges, k)) bad('Bilinmeyen hareket parametresi.');
+          const n = num(v),
+            [lo, hi] = ranges[k];
+          if (n < lo || n > hi) bad('Hareket parametresi sınır dışında: ' + k);
+        }
+        a[k] = v;
+        continue;
       }
       if (k === 'id') {
         if (!/^[A-Za-z][A-Za-z0-9_-]{0,48}$/.test(v) || ids.has(v))
@@ -195,9 +225,14 @@ export function parseIllustration(
         bad('İzin verilmeyen SVG özniteliği.');
       a[k] = v;
     }
+    if (use && a.href !== '#subject-main') bad('Yalnız yerel #subject-main örneklenebilir.');
+    if (mode === 'objects' && a.id === 'subject-main')
+      bad('Ortak özneyi sahnede yeniden tanımlama.');
+    if (mode === 'rig' && parent?.tag === 'defs' && tag === 'g' && a.id !== 'subject-main')
+      bad('defs içinde yalnız subject-main grubu olabilir.');
     const n: Geometry = { tag, attrs: a, children: [] };
     if (!parent) {
-      a.viewBox ??= `0 0 ${a.width ?? 1080} ${a.height ?? 1350}`;
+      a.viewBox ??= `0 0 ${a.width ?? (mode === 'rig' ? 300 : 1080)} ${a.height ?? (mode === 'rig' ? 180 : mode === 'layers' ? 1350 : 1920)}`;
       if (
         nums(a.viewBox)
           .slice(2)
@@ -206,7 +241,7 @@ export function parseIllustration(
         bad('Geçersiz tuval boyutu.');
       root = n;
     } else parent.children.push(n);
-    if (parent?.tag === 'svg' && tag === 'g') {
+    if (mode === 'layers' && parent?.tag === 'svg' && tag === 'g') {
       if (!layers.includes(a.id as Layer)) bad('Kökte layer-bg, layer-main ve layer-fx gerekli.');
       layer = a.id as Layer;
     }
@@ -246,7 +281,15 @@ export function parseIllustration(
   const defs = root.children.filter((n) => n.tag === 'defs').flatMap((n) => n.children);
   if (defs.length > 32) bad('Gradyan sayısı sınır dışında.');
   for (const ref of refs)
-    if (!defs.some((g) => g.attrs.id === ref)) bad('Kullanılan gradyan tanımsız.');
+    if (!defs.some((g) => gradients.has(g.tag) && g.attrs.id === ref))
+      bad('Kullanılan gradyan tanımsız.');
+  return { root, defs, counts, nodes };
+}
+export function parseIllustration(
+  xml: string,
+  editorial?: { title: string; narration: string },
+): { drawing: Drawing; canonical: string } {
+  const { root, defs, counts, nodes } = parseGeometry(xml, 'layers', editorial);
   if (layers.some((id) => !root!.children.some((n) => n.tag === 'g' && n.attrs.id === id)))
     bad('layer-bg, layer-main ve layer-fx grupları gerekli.');
   const box = root.attrs.viewBox;

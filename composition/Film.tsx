@@ -1,4 +1,6 @@
-import { CinematicPlate, ShotTitle, type Shot } from './CinematicPlate';
+import { ShotTitle } from './ShotTitle';
+import { ObjectScene } from './ObjectScene';
+import type { ObjectFrame } from '../shared/object-motion';
 import React from 'react';
 import {
   AbsoluteFill,
@@ -17,8 +19,10 @@ import { AnimatedPlate } from './ScientificPlate';
 import { AnimatedVector } from './VectorScene';
 import type { VectorFrame } from '../shared/vector';
 export type FilmProps = {
-  shot?: Shot;
-  nextShot?: Shot;
+  objects?: ObjectFrame;
+  nextObjects?: ObjectFrame;
+  title?: string;
+  nextTitle?: string;
   vector?: VectorFrame;
   nextVector?: VectorFrame;
   svg?: SvgPlan;
@@ -33,7 +37,7 @@ export type FilmProps = {
   subtitleSize: number;
   highlight: boolean;
 };
-// Legacy photographs remain static. Only the explicit cinematic wrapper moves an image.
+// Old raster assets can still be read locally, always at identity.
 const still: React.CSSProperties = {
   position: 'absolute',
   inset: 0,
@@ -42,8 +46,10 @@ const still: React.CSSProperties = {
   objectFit: 'cover',
 };
 export function Film({
-  shot,
-  nextShot,
+  objects,
+  nextObjects,
+  title,
+  nextTitle,
   svg,
   nextSvg,
   vector,
@@ -63,13 +69,12 @@ export function Film({
   const cap = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
     (g) => t >= g[0].start && t < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
   );
-  const alpha = next || nextSvg || nextVector ? dissolveAt(f, fps, durationInFrames) : 0;
+  const alpha =
+    next || nextSvg || nextVector || nextObjects ? dissolveAt(f, fps, durationInFrames) : 0;
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
-      {shot ? (
-        <CinematicPlate shot={shot} frame={f} frames={durationInFrames}>
-          <Img src={image} style={still} />
-        </CinematicPlate>
+      {objects ? (
+        <ObjectScene scene={objects} frame={f} fps={fps} />
       ) : vector ? (
         <AnimatedVector scene={vector} />
       ) : svg ? (
@@ -79,11 +84,9 @@ export function Film({
       )}
       {/* Source-over on the opaque first photo gives (1-alpha)*old + alpha*new. */}
       {alpha > 0 &&
-        (nextShot && next ? (
+        (nextObjects ? (
           <AbsoluteFill style={{ opacity: alpha }}>
-            <CinematicPlate shot={nextShot} frame={0} frames={durationInFrames}>
-              <Img src={next} style={still} />
-            </CinematicPlate>
+            <ObjectScene scene={nextObjects} frame={0} fps={fps} />
           </AbsoluteFill>
         ) : nextVector ? (
           <AbsoluteFill style={{ opacity: alpha }}>
@@ -97,10 +100,10 @@ export function Film({
           next && <Img src={next} style={{ ...still, opacity: alpha }} />
         ))}
       {/* One still, safe-area heading. Fade through zero rather than stacking two titles. */}
-      {alpha < 0.5 && shot ? (
-        <ShotTitle title={shot.title} opacity={1 - 2 * alpha} />
-      ) : alpha >= 0.5 && nextShot ? (
-        <ShotTitle title={nextShot.title} opacity={2 * alpha - 1} />
+      {alpha < 0.5 && title ? (
+        <ShotTitle title={title} opacity={1 - 2 * alpha} />
+      ) : alpha >= 0.5 && nextTitle ? (
+        <ShotTitle title={nextTitle} opacity={2 * alpha - 1} />
       ) : null}
       {cap && (
         <div

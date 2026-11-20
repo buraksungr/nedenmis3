@@ -1,7 +1,9 @@
+import { motionFrame } from './motion-files';
+import { isSvgScene } from '../shared/schema';
 import { STYLE_LOCK, NEGATIVE_LOCK } from '../shared/cinema';
 import { checkpoint, operation } from './operation';
 import { readArtwork } from './atlas-art';
-import { randomUUID, randomInt } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FilmProps } from '../composition/Film';
@@ -28,7 +30,6 @@ import {
 import { readWhisper, sentenceEstimates, verifiedAlignment } from './alignment';
 import { inputFormat } from './import-formats';
 import { Gemini } from './gemini';
-import { Pollinations, ImageUnavailable } from './pollinations';
 import {
   audioDuration,
   checks,
@@ -46,7 +47,7 @@ import { legacyPlate } from '../shared/legacy-atlas';
 import { verifiedFrame } from './vector-files';
 import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
-export type Step = 'all' | 'image' | 'voice' | 'align' | 'clip';
+export type Step = 'all' | 'voice' | 'align' | 'clip';
 export const imageKey = (p: Project, s: Scene) =>
   s.visualMode === 'illustration'
     ? hash('science-image-v1', p.cinema?.subject, s.cinema?.brief, STYLE_LOCK, NEGATIVE_LOCK)
@@ -59,7 +60,6 @@ export class Production {
     private store: Store,
     private g: Gemini,
     private paths: Paths,
-    private images: Pollinations,
     private readonly runWhisper = readWhisper,
   ) {}
   file(p: Project, rel: string) {
@@ -107,16 +107,13 @@ export class Production {
     kind: 'image' | 'voice' | 'music' | 'sfx',
     data: Buffer,
     s?: Scene,
-    origin:
-      | { source: 'import' | 'pollinations'; illustration?: Asset['illustration'] }
-      | { source: 'gemini'; model: string } = {
+    origin: { source: 'import' } | { source: 'gemini'; model: string } = {
       source: 'import',
     },
   ) {
     checkpoint();
     approved(p);
-    if (kind === 'image')
-      requireThat(s?.visualMode !== 'svg', 'Fotoğraf yüklemek için sahne türünü değiştirin.');
+    if (kind === 'image') requireThat(s && !isSvgScene(s), 'SVG sahnesi fotoğraf kabul etmez.');
     const tmp = this.temp(p, 'input'),
       out = this.temp(p, kind === 'image' ? 'jpg' : 'wav');
     const format = inputFormat(data, kind === 'image');
@@ -139,12 +136,6 @@ export class Production {
             'İllüstrasyon yanıtı çok küçük.',
             422,
           );
-          if (origin.source === 'pollinations')
-            requireThat(
-              Math.abs(dimensions.width / dimensions.height - 9 / 16) < 0.08,
-              'Sağlayıcı dikey 9:16 kadraj göndermedi.',
-              422,
-            );
         }
         await ff([
           ...input,
@@ -166,13 +157,7 @@ export class Production {
         );
         const m = (p.assets[s!.id] ??= {});
         m.image = {
-          ...this.publish(
-            p,
-            out,
-            origin.source === 'pollinations' ? 'media/storyboard' : 'images',
-            'jpg',
-            imageKey(p, s!),
-          ),
+          ...this.publish(p, out, 'images', 'jpg', imageKey(p, s!)),
           ...origin,
         };
         const prev = p.scenes[p.scenes.findIndex((x) => x.id === s!.id) - 1];
@@ -248,64 +233,18 @@ export class Production {
       422,
     );
   }
-  async asset(
-    p: Project,
-    s: Scene,
-    kind: 'image' | 'voice',
-    force: boolean,
-    revisedBrief?: string,
-  ) {
+  async voice(p: Project, s: Scene, force: boolean) {
     checkpoint();
     approved(p);
-    if (kind === 'image') requireThat(s.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
-    const m = (p.assets[s.id] ??= {}),
-      k = kind === 'image' ? imageKey(p, s) : voiceKey(p, s);
-    if (!force && this.usable(p, m[kind], k)) return this.verifyCached(p, m[kind]!, kind);
-    this.tick(
-      p,
-      kind === 'image'
-        ? s.visualMode === 'illustration'
-          ? `İllüstrasyon indiriliyor · ${p.scenes.findIndex((x) => x.id === s.id) + 1}/${p.scenes.length}`
-          : 'Pollinations sahne görseli hazırlanıyor'
-        : 'Türkçe seslendirme üretiliyor',
-      kind,
-      s.id,
-    );
-    if (kind === 'image') {
-      let art: Asset['illustration'];
-      if (s.visualMode === 'illustration') {
-        requireThat(s.cinema && p.cinema, 'İllüstrasyon planı eksik.');
-        const prior = m.image?.key === k ? m.image.illustration : undefined;
-        art = {
-          brief: revisedBrief ?? prior?.brief ?? s.cinema.brief,
-          seed: force
-            ? randomInt(0x7fffffff)
-            : (prior?.seed ?? parseInt(hash(p.id, p.cinema.subject).slice(0, 7), 16)),
-        };
-      }
-      const data = art
-        ? await this.images.illustration(p.cinema!.subject, art.brief, art.seed)
-        : await this.images.image(s.prompt.trim() || s.description);
-      checkpoint();
-      // Reuse the verified, single-frame import path. Do not publish or invalidate
-      // any prior image, clip, or export until the downloaded bytes decode locally.
-      try {
-        await this.import(p, 'image', data, s, {
-          source: 'pollinations',
-          ...(art ? { illustration: art } : {}),
-        });
-      } catch (e) {
-        if (e instanceof Issue && e.status === 422)
-          throw new ImageUnavailable('İndirilen görsel doğrulanamadı. ' + e.message);
-        throw e;
-      }
-    } else {
-      const data = await this.g.voice(s.narration, p.voice, `${p.voiceStyle} Tempo: ${p.pace}.`);
-      await this.import(p, 'voice', data, s, {
-        source: 'gemini',
-        model: this.g.raw().models.tts.model,
-      });
-    }
+    const m = (p.assets[s.id] ??= {});
+    if (!force && this.usable(p, m.voice, voiceKey(p, s)))
+      return this.verifyCached(p, m.voice!, 'voice');
+    this.tick(p, 'Türkçe seslendirme üretiliyor', 'voice', s.id);
+    const data = await this.g.voice(s.narration, p.voice, `${p.voiceStyle} Tempo: ${p.pace}.`);
+    await this.import(p, 'voice', data, s, {
+      source: 'gemini',
+      model: this.g.raw().models.tts.model,
+    });
   }
   private alignmentKey(voice: Asset, s: Scene, estimated: boolean) {
     return estimated
@@ -417,12 +356,18 @@ export class Production {
       v?.visualMode === 'svg' && v.vector
         ? verifiedFrame(this.store.dir(p.id), v.vector, v.narration)
         : undefined;
+    const readMotion = (v?: Scene) =>
+      v?.visualMode === 'motion-svg'
+        ? motionFrame(this.store.dir(p.id), p.subjectRig, v.choreography, v.narration)
+        : undefined;
+    const objects = readMotion(s),
+      nextObjects = readMotion(next);
     const vector = vectorFor(s),
       nextVector = vectorFor(next);
     const svg = diagram(s),
       nextSvg = diagram(next);
     requireThat(
-      (vector || svg || this.usable(p, m.image, imageKey(p, s))) &&
+      (objects || vector || svg || this.usable(p, m.image, imageKey(p, s))) &&
         (silent || this.usable(p, m.voice, voiceKey(p, s))),
       'Güncel sahne görseli ve seslendirme gerekiyor.',
     );
@@ -433,35 +378,38 @@ export class Production {
     const words = sceneCaptions(s, m),
       sentenceCaptions = silent || m.align?.method === 'estimated';
     // Incoming diagrams always start at frame zero. Separate the diagram and active-word revisions from the static photo and timing inputs.
-    const adjacent = next && !nextSvg && !nextVector ? p.assets[next.id]?.image : undefined;
+    const adjacent =
+      next && !nextSvg && !nextVector && !nextObjects ? p.assets[next.id]?.image : undefined;
     const data = (plan: typeof svg) => {
       const art = plan?.artwork && readArtwork(this.store.dir(p.id), plan.artwork.digest);
       return art ? 'data:image/svg+xml;base64,' + Buffer.from(art).toString('base64') : undefined;
     };
     const artHref = data(svg),
       nextArtHref = data(nextSvg);
-    const index = p.scenes.findIndex((v) => v.id === s.id);
-    const shot =
-      s.visualMode === 'illustration' && s.cinema ? { index, title: s.cinema.title } : undefined;
-    const nextShot =
-      next?.visualMode === 'illustration' && next.cinema
-        ? { index: index + 1, title: next.cinema.title }
-        : undefined;
+    const title =
+        objects?.ref.title ?? (s.visualMode === 'illustration' ? s.cinema?.title : undefined),
+      nextTitle =
+        nextObjects?.ref.title ??
+        (next?.visualMode === 'illustration' ? next.cinema?.title : undefined);
     const key = hash(
       'film-5-static-crossfade',
-      ...(shot || nextShot ? ['cinematic-plate-v1', shot, nextShot] : []),
-      vector
-        ? ['vector-film-v1', vector.ref]
-        : svg
-          ? ['atlas-svg-v3', svg, ...(svg.artwork ? [!!artHref] : [])]
-          : m.image!.file,
+      ...(title || nextTitle ? ['fixed-object-stage-v1', title, nextTitle] : []),
+      objects
+        ? objects.ref
+        : vector
+          ? ['vector-fixed-archive-v2', vector.ref]
+          : svg
+            ? ['atlas-svg-v3', svg, ...(svg.artwork ? [!!artHref] : [])]
+            : m.image!.file,
       words,
       frames,
-      nextVector
-        ? ['vector-film-v1', nextVector.ref]
-        : nextSvg
-          ? ['atlas-svg-v3', nextSvg, ...(nextSvg.artwork ? [!!nextArtHref] : [])]
-          : adjacent?.file,
+      nextObjects
+        ? nextObjects.ref
+        : nextVector
+          ? ['vector-fixed-archive-v2', nextVector.ref]
+          : nextSvg
+            ? ['atlas-svg-v3', nextSvg, ...(nextSvg.artwork ? [!!nextArtHref] : [])]
+            : adjacent?.file,
       p.subtitleSize,
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : p.highlight ? ['active-word-amber-v1'] : []),
@@ -474,13 +422,15 @@ export class Production {
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
-      ...(shot ? { shot } : {}),
-      ...(nextShot ? { nextShot } : {}),
+      title,
+      nextTitle,
+      objects,
+      nextObjects,
       ...(vector ? { vector } : {}),
       ...(nextVector ? { nextVector } : {}),
       ...(svg ? { svg, artHref } : {}),
       ...(nextSvg ? { nextSvg, nextArtHref } : {}),
-      image: vector || svg ? '' : url(m.image!),
+      image: objects || vector || svg ? '' : url(m.image!),
       next: adjacent ? url(adjacent) : null,
       words,
       frames,
@@ -522,7 +472,7 @@ export class Production {
   // A placeholder is a UI state, never an image asset or a renderable frame.
   waitingForImages(p: Project): Task | undefined {
     const count = p.scenes.filter(
-      (s) => s.visualMode !== 'svg' && !this.usable(p, p.assets[s.id]?.image, imageKey(p, s)),
+      (s) => !isSvgScene(s) && !this.usable(p, p.assets[s.id]?.image, imageKey(p, s)),
     ).length;
     if (count)
       return {
@@ -532,17 +482,8 @@ export class Production {
         at: now(),
       };
   }
-  async illustrations(p: Project) {
-    approved(p);
-    const scenes = p.scenes.filter((s) => s.visualMode === 'illustration');
-    requireThat(scenes.length, 'İllüstrasyon planı gerekli.');
-    for (const s of scenes) {
-      checkpoint();
-      await this.asset(p, s, 'image', false);
-    }
-  }
   private async batchVoice(p: Project, s: Scene) {
-    if (!useExistingVoiceOnly(s)) return this.asset(p, s, 'voice', false);
+    if (!useExistingVoiceOnly(s)) return this.voice(p, s, false);
     // Explicit offline opt-out. Never replace a lost recording with a paid request in this mode.
     const voice = p.assets[s.id]?.voice;
     if (voice) {
@@ -555,12 +496,15 @@ export class Production {
     approved(p);
     const scenes = target ? p.scenes.filter((s) => s.id === target) : p.scenes;
     requireThat(scenes.length, 'Sahne bulunamadı.');
-    const manual = !this.images.autoFill();
-    const waiting = kind === 'all' && manual ? this.waitingForImages(p) : undefined;
+    const waiting = kind === 'all' ? this.waitingForImages(p) : undefined;
     let whisperUnavailable: string | undefined;
     if (kind === 'all') {
       // Preflight only the services needed for this phase. Awaiting manual images
       // requires narration, not image credentials, a renderer or a Whisper model.
+      // Verify saved display lists before spending a voice request on a board with missing art.
+      for (const s of scenes)
+        if (s.visualMode === 'motion-svg')
+          motionFrame(this.store.dir(p.id), p.subjectRig, s.choreography, s.narration);
       let needWhisper = false;
       for (const s of scenes) {
         const m = p.assets[s.id];
@@ -591,29 +535,10 @@ export class Production {
       return { ...waiting, at: now() };
     }
     for (const s of scenes) {
-      if (kind === 'all' && manual && s.visualMode !== 'svg') {
-        // A lost file after preflight must not trigger a GET when batch generation is off.
+      if (kind === 'all' && !isSvgScene(s))
         await this.verifyCached(p, p.assets[s.id].image!, 'image');
-      } else if ((kind === 'all' && s.visualMode !== 'svg') || kind === 'image') {
-        try {
-          await this.asset(p, s, 'image', kind === 'image');
-        } catch (e) {
-          if (!(e instanceof ImageUnavailable)) throw e;
-          const label = `Sahne ${p.scenes.indexOf(s) + 1} · ${e.message} Görsel yükleyebilir veya bu sahneyi yeniden deneyebilirsin.`;
-          // Never retry a potentially billable GET or switch host on failure.
-          // An unsuccessful explicit replacement leaves the existing image usable.
-          if (this.usable(p, p.assets[s.id]?.image, imageKey(p, s))) throw new Issue(502, label);
-          return {
-            state: 'waiting',
-            kind: 'manual-images',
-            scene: s.id,
-            label,
-            at: now(),
-          } satisfies Task;
-        }
-      }
       if (kind === 'all') await this.batchVoice(p, s);
-      if (kind === 'voice') await this.asset(p, s, 'voice', true);
+      if (kind === 'voice') await this.voice(p, s, true);
       if ((kind === 'all' && !unvoicedSvg(s, p.assets[s.id])) || kind === 'align')
         await this.align(p, s, kind === 'align', whisperUnavailable);
     }

@@ -3,7 +3,7 @@ import { blankScene, normalize, type Project, type Scene } from '../shared/schem
 import { requireThat } from './store';
 // Segmentation and identifiers belong to the application, not the LLM. In particular,
 // failed planning must not rewrite approved narration or orphan an existing recording.
-export function skeleton(p: Project, mode: 'svg' | 'illustration'): Scene[] {
+export function skeleton(p: Project, mode: 'svg' | 'motion-svg'): Scene[] {
   if (
     p.scenes.length &&
     normalize(p.scenes.map((s) => s.narration).join(' ')) === normalize(p.script) &&

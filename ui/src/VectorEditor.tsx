@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, Pause, Paintbrush } from 'lucide-react';
+import { Paintbrush } from 'lucide-react';
 import { VectorScene } from '../../composition/VectorScene';
 import type { VectorFrame, VectorRef } from '../../shared/vector';
 import { api, Button } from './lib';
@@ -44,44 +44,13 @@ export function VectorEditor({
   redraw: (hint: string) => void;
   locked: boolean;
 }) {
-  const [hint, setHint] = useState(''),
-    [frame, setFrame] = useState(0),
-    [playing, play] = useState(false);
-  useEffect(() => {
-    if (!playing) return;
-    const at = performance.now(),
-      start = frame,
-      id = window.setInterval(
-        () => setFrame((start + Math.floor((performance.now() - at) * 0.03)) % 180),
-        33,
-      );
-    return () => clearInterval(id);
-  }, [playing]);
+  const [hint, setHint] = useState('');
   return (
     <div className="vector-editor">
       {art && (
         <div className="vector-monitor">
           <div className="svg-paper">
-            <VectorPreview project={project} art={art} frame={frame} />
-          </div>
-          <div className="actions">
-            <Button
-              aria-label={playing ? 'Hareketi duraklat' : 'Hareketi önizle'}
-              onClick={() => play(!playing)}
-            >
-              {playing ? <Pause size={15} /> : <Play size={15} />}
-            </Button>
-            <input
-              aria-label="Vektör önizleme karesi"
-              type="range"
-              min="0"
-              max="179"
-              value={frame}
-              onChange={(e) => {
-                play(false);
-                setFrame(+e.target.value);
-              }}
-            />
+            <VectorPreview project={project} art={art} frame={0} />
           </div>
         </div>
       )}
@@ -89,7 +58,7 @@ export function VectorEditor({
         <strong>{art?.title ?? 'Özel vektör çizimi'}</strong>
         <p className="help">
           {art
-            ? `${art.provider === 'gemini' ? 'Gemini' : 'OpenRouter'} · ${art.model} · üç hareketli katman`
+            ? `${art.provider === 'gemini' ? 'Gemini' : 'OpenRouter'} · ${art.model} · arşiv çizimi · sabit kadraj`
             : 'Yeni çizim doğrulanana kadar varsa önceki görüntü korunur.'}
         </p>
         <label>

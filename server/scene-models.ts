@@ -12,6 +12,7 @@ async function responseText(r: Response) {
     throw new Issue(
       502,
       `OpenRouter HTTP ${r.status}. İstek tekrarlanmadı; kayıtlı sahneler korunuyor.`,
+      r.status >= 500 ? 'temporary-response' : 'failed',
     );
   }
   const reader = r.body.getReader(),

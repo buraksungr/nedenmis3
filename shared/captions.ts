@@ -1,3 +1,4 @@
+import { isSvgScene } from './schema';
 import type { Media, TimedText, Word, Scene } from './schema';
 export const captionEntries = (m?: Media): TimedText[] =>
   m?.edits ?? (m?.align?.method === 'estimated' ? m.align.sentences : m?.words) ?? [];
@@ -90,7 +91,7 @@ export function sentenceEstimates(text: string, duration: number): TimedText[] {
 }
 
 export const useExistingVoiceOnly = (s: Scene) =>
-  s.visualMode === 'svg' && s.svgVoiceMode === 'existing-only';
+  isSvgScene(s) && s.svgVoiceMode === 'existing-only';
 export const unvoicedSvg = (s: Scene, m?: Media) => useExistingVoiceOnly(s) && !m?.voice;
 export const sceneSeconds = (s: Scene, m?: Media) =>
   unvoicedSvg(s, m) ? s.seconds : (m?.voice?.duration ?? 0);

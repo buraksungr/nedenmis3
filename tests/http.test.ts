@@ -1,16 +1,5 @@
-import {
-  lines as antLines,
-  topic as antTopic,
-  shots as antShots,
-  subject as antSubject,
-  direction as antDirection,
-  closer,
-  planned,
-  imageRequest,
-  antImage,
-  shotFile,
-} from './ant-fixtures';
-import { sample, completion } from './vector-test-data';
+import { rigReply, stageReply } from './ant-motion-art';
+import { completion } from './vector-test-data';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -82,6 +71,14 @@ test('HTTP workflow: stale writes rejected; both reviews required, then missing 
     prompt: 'Karınca yuvası',
     description: 'Yerin altındaki yuva',
   };
+  // An existing schema-v1 manual board may still be opened and approved; no new raster board can be authored.
+  assert.equal(
+    (await req(route + '/board', { styleGuide: p.styleGuide, scenes: [s], approve: true }, p.rev))
+      .status,
+    422,
+  );
+  p.scenes = [s];
+  store.save(p);
   p = await (
     await req(route + '/board', { styleGuide: p.styleGuide, scenes: [s], approve: true }, p.rev)
   ).json();
@@ -165,189 +162,112 @@ test('preview writes work under the iframe proxy without opening cross-site acce
   );
 });
 
-test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS without any image service', async (t) => {
-  const lines = [
-    'Kış geldi.',
-    'Karıncalar yavaşladı.',
-    'Yuvaya çekildiler.',
-    'Toprak onları korur.',
-    'İlkbaharda geri dönerler.',
-  ];
-  const text = lines.join(' '),
-    wav = fs.readFileSync('tests/fixtures/forest.wav').toString('base64');
-  const calls: { model: string; voice?: string; line?: string }[] = [];
-  const host = 'https://generativelanguage.googleapis.com';
-  const api = `${host}/v1beta`;
-  const textModel = 'gemini-2.5-flash';
-  const { req, settle, g, base } = await app(t, undefined, async (url, opts) => {
-    assert.equal(new Headers(opts?.headers).get('x-goog-api-key'), 'offline-test-credential');
-    if (
-      opts?.method === 'GET' &&
-      [`${api}/models?pageSize=1000`, `${host}/v1/models?pageSize=1000`].includes(String(url))
-    )
+test('Gemini generateContent script, rig and independent object plans, then selected speaker through the real voice route', async (t) => {
+  const lines = ['Kış yaklaşıyor.', 'İşçiler yuvaya dönüyor.'],
+    text = lines.join(' '),
+    model = 'gemini-2.5-flash',
+    tts = 'gemini-test-tts',
+    calls: string[] = [];
+  const { req, settle } = await app(t, undefined, async (url, o) => {
+    assert.equal(new URL(String(url)).host, 'generativelanguage.googleapis.com');
+    assert.equal(new Headers(o?.headers).get('x-goog-api-key'), 'offline-test-credential');
+    if (o?.method === 'GET')
       return Response.json({
-        models: [textModel, 'gemini-test-tts'].map((id) => ({
-          name: `models/${id}`,
+        models: [model, tts].map((m) => ({
+          name: 'models/' + m,
           supportedGenerationMethods: ['generateContent'],
         })),
       });
-    const b = JSON.parse(String(opts?.body));
-    if (
-      opts?.method === 'POST' &&
-      url === `${b.generationConfig ? api : host + '/v1'}/models/${textModel}:generateContent`
-    ) {
-      const prompt = b.contents[0].parts[0].text;
-      assert.match(prompt, /Karıncalar kışın nerede\?/);
-      const config = b.generationConfig;
-      if (config) {
-        assert.equal(config.responseMimeType, 'application/json');
-        const schema = config.responseJsonSchema;
-        assert.deepEqual(schema.required, ['styleGuide', 'scenes']);
-        assert.equal(schema.properties.scenes.minItems, 5);
-        assert.equal(schema.properties.scenes.items.properties.narration.type, 'string');
-        assert.equal(schema.properties.scenes.items.properties.animation, undefined);
-        assert.equal(schema.properties.scenes.items.properties.camera, undefined);
-        assert.doesNotMatch(JSON.stringify(schema), /"(?:minLength|maxLength)"/);
-      }
-      assert.deepEqual(b, {
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        ...(config ? { generationConfig: config } : {}),
-      });
-      calls.push({ model: textModel });
-      const output = config
-        ? JSON.stringify({
-            styleGuide: 'Sinematik doğa çizimi',
-            scenes: lines.map((n) => ({
-              ...blankScene(randomUUID()),
-              narration: n,
-              description: n,
-              animation: 'Kamera yaklaşır.',
-            })),
-          })
-        : text;
+    const body = JSON.parse(String(o?.body));
+    if (String(url).endsWith(':generateContent')) {
+      const prompt = body.contents[0].parts[0].text,
+        schema = body.generationConfig?.responseJsonSchema;
+      let output = text;
+      if (schema) {
+        assert.equal(body.generationConfig.responseMimeType, 'application/json');
+        const q = JSON.parse(prompt.split('Sahne verisi:\n').at(-1));
+        calls.push(q.sahne ? 'scene' + q.sahne : 'rig');
+        assert.deepEqual(schema.required, q.sahne ? ['title', 'svg'] : ['subject', 'svg']);
+        output = JSON.stringify(q.sahne ? stageReply(q.sahne - 1) : rigReply());
+      } else calls.push('script');
       return Response.json({
         candidates: [
           {
             finishReason: 'STOP',
             content: {
-              role: 'model',
               parts: [
-                { thought: true, text: 'Not part of the narration.' },
-                { text: output.slice(0, 7) },
-                { text: output.slice(7) },
+                { thought: true, text: 'not narration' },
+                { text: output.slice(0, 8) },
+                { text: output.slice(8) },
               ],
             },
           },
-          {
-            finishReason: 'STOP',
-            content: { parts: [{ text: 'Alternative; not part of the selected candidate.' }] },
-          },
         ],
       });
     }
-    if (opts?.method === 'POST' && url === `${api}/interactions` && b.model === 'gemini-test-tts') {
-      calls.push({
-        model: b.model,
-        voice: b.generation_config.speech_config[0].voice,
-        line: b.input[0].content[0].text,
-      });
-      return Response.json({
-        status: 'completed',
-        steps: [
-          { type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/wav', data: wav }] },
-        ],
-      });
-    }
-    return Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 });
+    assert.ok(String(url).endsWith('/interactions'));
+    calls.push(body.generation_config.speech_config[0].voice + ':' + body.input[0].content[0].text);
+    return Response.json({
+      status: 'completed',
+      steps: [
+        {
+          type: 'model_output',
+          content: [
+            {
+              type: 'audio',
+              mime_type: 'audio/wav',
+              data: fs.readFileSync('tests/fixtures/forest.wav').toString('base64'),
+            },
+          ],
+        },
+      ],
+    });
   });
-
-  // No key or catalog is needed to disable images or choose a default speaker.
+  assert.equal((await req('/settings/pollinations')).status, 404);
   assert.equal((await req('/settings/model', { kind: 'image', consent: 'blocked' })).status, 400);
-  assert.equal((await req('/settings/pollinations', { autoFill: false })).status, 200);
-  assert.equal((await req('/settings/speaker', { speaker: 'not-a-voice' })).status, 400);
-  assert.equal((await req('/settings/speaker', { speaker: 'Puck' })).status, 200);
+  assert.equal((await req('/settings/speaker', { speaker: 'unknown' })).status, 400);
   await req('/settings/key', { key: 'offline-test-credential' });
-  const settings = await (await req('/settings/test', {})).json();
-  assert.equal(settings.defaultSpeaker, 'Puck');
-  assert.equal(settings.models.image, undefined);
-  assert.deepEqual(settings.pollinations, { hasKey: false, autoFill: false, storage: 'session' });
-  for (const [kind, model] of [
-    ['text', textModel],
-    ['tts', 'gemini-test-tts'],
+  await req('/settings/test', {});
+  for (const [kind, m] of [
+    ['text', model],
+    ['tts', tts],
   ])
-    assert.equal((await req('/settings/model', { kind, model, consent: 'free' })).status, 200);
-  const created: Project = await (
-    await req('/projects', { topic: 'Karıncalar kışın nerede?' })
-  ).json();
-  const route = `/projects/${created.id}`;
+    assert.equal((await req('/settings/model', { kind, model: m, consent: 'free' })).status, 200);
+  await req('/settings/speaker', { speaker: 'Puck' });
+  const v = await (await req('/projects', { topic: 'Karıncalar kışın nerede?' })).json(),
+    route = '/projects/' + v.id;
   let p = await settle(route);
-  assert.equal(p.job.state, 'done', p.job.label);
-  assert.equal(p.voice, 'Puck');
   assert.equal(p.script, text);
-  await req('/settings/speaker', { speaker: 'Kore' }); // applies to existing unvoiced drafts, too
+  assert.equal(p.voice, 'Puck');
+  await req('/settings/speaker', { speaker: 'Kore' });
   p = await (await req(route + '/script', { text, approve: true }, p.rev)).json();
-  assert.equal((await req(route + '/generate', { kind: 'photo-board' }, p.rev)).status, 202);
+  assert.equal((await req(route + '/generate', { kind: 'photo-board' }, p.rev)).status, 400);
+  await req(route + '/generate', { kind: 'board' }, p.rev);
   p = await settle(route);
   assert.equal(p.job.state, 'done', p.job.label);
-  assert.equal(p.scenes.length, lines.length);
+  assert.ok(p.subjectRig);
   assert.deepEqual(p.assets, {});
-  assert.equal((await req(route + '/generate', { kind: 'all' }, p.rev)).status, 409);
-  assert.equal((await req(route + '/preferences', { voice: 'unknown' }, p.rev)).status, 400);
+  assert.deepEqual(
+    p.scenes.map((s) => s.narration),
+    lines,
+  );
   p = await (
     await req(
       route + '/board',
-      { scenes: p.scenes, styleGuide: p.styleGuide, approve: true },
+      { styleGuide: p.styleGuide, scenes: p.scenes, approve: true },
       p.rev,
     )
   ).json();
-  assert.ok(p.boardApproval); // empty image prompts are valid in manual mode
-  const all = async () => {
-    assert.equal((await req(route + '/generate', { kind: 'all' }, p.rev)).status, 202);
-    return settle(route);
-  };
-  p = await all();
-  assert.equal(p.job.state, 'waiting', p.job.label);
-  assert.equal(p.job.kind, 'manual-images');
-  assert.match(p.job.label, /5 sahne/);
-  assert.equal(p.final, undefined);
-  const voices = p.scenes.map((s) => p.assets[s.id].voice!.file);
-  assert.deepEqual(
-    calls.map((c) => c.model),
-    [textModel, textModel, ...lines.map(() => 'gemini-test-tts')],
-  );
-  assert.deepEqual(
-    calls.slice(2).map((c) => [c.voice, c.line]),
-    lines.map((line) => ['Kore', line]),
-  );
-  for (const m of Object.values(p.assets)) assert.ok(!m.image && !m.clip && !m.align);
-  const first = p.scenes[0].id;
-  const upload = await fetch(`${base}${route}/import/image?scene=${first}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream', 'If-Match': String(p.rev) },
-    body: fs.readFileSync('ui/public/art/ants.jpg'),
-  });
-  assert.equal(upload.status, 200);
-  p = await upload.json();
-  assert.match(p.job.label, /4 sahne/);
-  await req('/settings/speaker', { speaker: 'Leda' }); // never invalidate published narration via a global default
-  p = await all();
-  assert.equal(p.voice, 'Kore');
-  assert.equal(calls.length, 7);
-  assert.deepEqual(
-    p.scenes.map((s) => p.assets[s.id].voice?.file),
-    voices,
-  );
-  assert.equal(p.assets[first].image?.source, 'import');
-  p = await (await req(route + '/preferences', { voice: 'Zephyr' }, p.rev)).json();
-  assert.ok(p.assets[first].image && !p.assets[first].voice);
-  assert.equal(
-    (await req(route + '/generate', { kind: 'voice', scene: first }, p.rev)).status,
-    202,
-  );
-  p = await settle(route);
-  assert.equal(p.job.state, 'done');
-  assert.equal(calls.at(-1)?.voice, 'Zephyr');
-  assert.ok(!('image' in g.raw().services));
+  assert.ok(p.boardApproval);
+  for (const s of p.scenes) {
+    await req(route + '/generate', { kind: 'voice', scene: s.id }, p.rev);
+    p = await settle(route);
+    assert.equal(p.job.state, 'done', p.job.label);
+    assert.ok(p.assets[s.id]?.voice && !p.assets[s.id]?.image);
+  }
+  await req('/settings/speaker', { speaker: 'Leda' });
+  assert.equal((await (await req(route)).json()).voice, 'Kore');
+  assert.deepEqual(calls, ['script', 'rig', 'scene1', 'scene2', ...lines.map((s) => 'Kore:' + s)]);
 });
 
 test('a listed text model can still return 404: preserve the draft, show the actual model, never retry or switch automatically', async (t) => {
@@ -468,148 +388,6 @@ test('persistent script HTTP 503 stops the background job after four real SDK re
   for (const label of ['(1/3)', '(2/3)', '(3/3)']) assert.ok(log.includes(label));
 });
 
-test('storyboard uses one key-selected Pollinations route, publishes locally, and allows upload after either route fails', async (t) => {
-  const prompt = 'Kış / göl? %20 & ışık#🍃',
-    suffix = ', nostalgic 2D pixel art style, highly detailed, nature documentary aesthetic';
-  const gemini = 'isolated-gemini-secret',
-    key = 'sk_pollinations-first-secret',
-    rotated = 'sk_pollinations-rotated-secret';
-  const calls: {
-    url: string;
-    method: string | undefined;
-    auth: string | null;
-    google: string | null;
-    redirect: RequestRedirect | undefined;
-  }[] = [];
-  let mode: 'image' | 'unavailable' | 'invalid' = 'unavailable';
-  const { req, settle, base, store, prod, g } = await app(t, undefined, async (url, options) => {
-    const h = new Headers(options?.headers);
-    calls.push({
-      url: String(url),
-      method: options?.method,
-      auth: h.get('authorization'),
-      google: h.get('x-goog-api-key'),
-      redirect: options?.redirect,
-    });
-    if (mode === 'unavailable') return new Response(rotated, { status: 503 });
-    // JPEG magic is not enough: this must fail the local decode/size check.
-    const bytes =
-      mode === 'image'
-        ? fs.readFileSync('ui/public/art/ocean.jpg')
-        : Buffer.from([255, 216, 255, 0, 1]);
-    return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': 'image/jpeg' } });
-  });
-  g.key(gemini);
-  const originalGemini = g.raw();
-  let p: Project = await (
-    await req('/projects', { topic: 'Kış belgeseli', script: 'Kuşlar gölde dinlenir.' })
-  ).json();
-  const route = '/projects/' + p.id;
-  const s = {
-    ...blankScene(randomUUID()),
-    description: 'Gölde dinlenen kuşlar',
-    narration: p.script,
-    prompt,
-  };
-  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
-  p = await (await req(route + '/board', { scenes: [s], styleGuide: p.styleGuide }, p.rev)).json();
-  assert.equal((await req(route + '/generate', { kind: 'image', scene: s.id }, p.rev)).status, 409);
-  p = await (
-    await req(route + '/board', { scenes: [s], styleGuide: p.styleGuide, approve: true }, p.rev)
-  ).json();
-  assert.equal(calls.length, 0);
-  const gen = async () => {
-    assert.equal(
-      (await req(route + '/generate', { kind: 'image', scene: s.id }, p.rev)).status,
-      202,
-    );
-    p = await settle(route);
-  };
-  const saveKey = async (secret: string) => {
-    const r = await req('/settings/pollinations/key', { key: secret });
-    assert.equal(r.status, 200);
-    const body = await r.text();
-    assert.ok(![key, rotated, gemini].some((x) => body.includes(x)));
-    assert.deepEqual(JSON.parse(body).pollinations, {
-      autoFill: true,
-      hasKey: true,
-      storage: 'session',
-    });
-    assert.deepEqual(g.raw(), originalGemini);
-  };
-  await gen();
-  assert.equal(p.job.state, 'waiting');
-  assert.match(p.job.label, /HTTP 503.*Görsel yükle/);
-  assert.equal(p.assets[s.id]?.image, undefined);
-  const upload = await fetch(base + route + '/import/image?scene=' + s.id, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream', 'If-Match': String(p.rev) },
-    body: fs.readFileSync('ui/public/art/ants.jpg'),
-  });
-  assert.equal(upload.status, 200);
-  p = await upload.json();
-  const imported = p.assets[s.id].image!;
-  assert.equal(imported.source, 'import');
-  await saveKey(key);
-  mode = 'image';
-  await gen();
-  assert.equal(p.job.state, 'done', p.job.label);
-  const img = p.assets[s.id].image!;
-  assert.equal(img.source, 'pollinations');
-  assert.match(img.file, /^media\/storyboard\/[\da-f-]{36}\.jpg$/);
-  const disk = fs.readFileSync(prod.file(p, img.file));
-  assert.deepEqual(store.get(p.id).assets[s.id].image, img);
-  const mediaResponse = await fetch(base + route + '/media/' + img.file.slice('media/'.length));
-  assert.equal(mediaResponse.status, 200);
-  assert.match(mediaResponse.headers.get('content-type') || '', /image\/jpeg/);
-  assert.deepEqual(Buffer.from(await mediaResponse.arrayBuffer()), disk);
-  assert.equal(
-    p.cover,
-    route.replace('/projects', '/api/projects') + '/media/' + img.file.slice('media/'.length),
-  );
-  await saveKey(rotated);
-  mode = 'invalid';
-  await gen();
-  assert.equal(p.job.state, 'failed');
-  assert.match(p.job.label, /Görsel yükle/);
-  assert.deepEqual(p.assets[s.id].image, img);
-  assert.deepEqual(fs.readFileSync(prod.file(p, img.file)), disk);
-  assert.ok(fs.existsSync(prod.file(p, imported.file)));
-  const del = await fetch(base + '/settings/pollinations/key', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-  });
-  assert.equal(del.status, 200);
-  assert.equal((await del.json()).pollinations.hasKey, false);
-  assert.deepEqual(g.raw(), originalGemini);
-  await prod.asset(p, s, 'image', false);
-  assert.equal(calls.length, 3); // successful local asset reused regardless of route
-  mode = 'image';
-  await gen();
-  assert.equal(p.job.state, 'done', p.job.label);
-  assert.deepEqual(
-    calls.map((c) => c.auth),
-    [null, 'Bearer ' + key, 'Bearer ' + rotated, null],
-  );
-  const pathPart = encodeURIComponent(prompt + suffix);
-  for (const [i, c] of calls.entries()) {
-    assert.equal(c.method, 'GET');
-    assert.equal(c.google, null);
-    assert.equal(c.redirect, 'error');
-    assert.equal(
-      c.url,
-      i === 0 || i === 3
-        ? `https://image.pollinations.ai/prompt/${pathPart}?width=1080&height=1920&nologo=true`
-        : `https://gen.pollinations.ai/image/${pathPart}?width=1080&height=1920`,
-    );
-  }
-  const serialized =
-    JSON.stringify([p, g.settings(), await (await req('/settings')).json()]) +
-    fs.readFileSync(path.join(store.dir(p.id), 'production.ndjson'), 'utf8');
-  for (const secret of [gemini, key, rotated]) assert.ok(!serialized.includes(secret));
-});
-
 test('no slide on provider failure; ready drawing, board approval and single directed redraw preserve narration/times and undo', async (t) => {
   let mode = 'fail';
   const prompts: Record<string, any>[] = [];
@@ -617,11 +395,12 @@ test('no slide on provider failure; ready drawing, board approval and single dir
     assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
     const input = JSON.parse(JSON.parse(String(o?.body)).messages[1].content);
     prompts.push(input);
-    return mode === 'fail'
+    if (!input.sahne) return completion(rigReply());
+    return mode === 'fail' && input.sahne === 1
       ? new Response('private-provider-error', { status: 503 })
       : mode === 'invalid'
         ? completion('broken')
-        : completion(sample(input.yönlendirme ? 4 : input.sahne - 1));
+        : completion(stageReply(input.sahne - 1, !!input.yönlendirme));
   });
   const key = 'isolated-openrouter-fixture';
   const settings = await (await req('/settings/svg-planner/key/openrouter', { key })).text();
@@ -636,16 +415,18 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   ).json();
   const route = '/projects/' + p.id;
   const gen = (b: Record<string, string>, rev = p.rev) => req(route + '/generate', b, rev);
-  assert.equal((await gen({ kind: 'svg-board' })).status, 409);
+  assert.equal((await gen({ kind: 'board' })).status, 409);
   p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
-  await gen({ kind: 'svg-board' });
+  await gen({ kind: 'board' });
   p = await settle(route);
   assert.equal(p.job.state, 'failed');
   assert.match(p.job.label, /503/);
   assert.equal(p.scenes.length, 3);
   assert.deepEqual(
-    p.scenes.map((s) => p.vectorWork?.[s.id].state),
-    ['failed', 'pending', 'pending'],
+    p.scenes.map((s) =>
+      p.motionWork?.[s.id]?.detail ? 'failed' : s.choreography ? 'ready' : 'pending',
+    ),
+    ['failed', 'ready', 'ready'],
   );
   assert.equal(
     (
@@ -658,13 +439,13 @@ test('no slide on provider failure; ready drawing, board approval and single dir
     422,
   );
   mode = 'draw';
-  await gen({ kind: 'svg-board' });
+  await gen({ kind: 'board' });
   p = await settle(route);
   assert.equal(p.job.state, 'done', p.job.label);
   const board = (scenes = p.scenes) =>
     req(route + '/board', { scenes, styleGuide: p.styleGuide, approve: true }, p.rev);
   const fake = structuredClone(p.scenes);
-  fake[1].vector!.title = 'Yerel Uydurma';
+  fake[1].choreography!.title = 'Yerel Uydurma';
   assert.equal((await board(fake)).status, 422);
   p = await (await board()).json();
   assert.ok(p.boardApproval);
@@ -695,12 +476,12 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   p = await settle(route);
   assert.equal(p.job.state, 'done', p.job.label);
   assert.equal(prompts.at(-1)?.yönlendirme, b.instruction);
-  assert.equal(prompts.length, 8);
+  assert.equal(prompts.length, 9);
   assert.equal(p.boardApproval, null);
   assert.deepEqual(p.scenes[0], old[0]);
   assert.deepEqual(p.scenes[2], old[2]);
-  const ref = p.scenes[1].vector!;
-  assert.notEqual(ref.digest, s.vector!.digest);
+  const ref = p.scenes[1].choreography!;
+  assert.notEqual(ref.digest, s.choreography!.digest);
   for (const [i, v] of p.scenes.entries()) {
     const m = p.assets[v.id];
     assert.deepEqual(m.voice, audio[v.id].voice);
@@ -708,10 +489,10 @@ test('no slide on provider failure; ready drawing, board approval and single dir
     assert.deepEqual(m.words, audio[v.id].words);
     assert.equal(!!m.clip, i === 2);
   }
-  const file = await req(route + '/illustrations/' + ref.digest);
+  const file = await req(route + '/motion/' + s.id);
   assert.equal(file.headers.get('content-type')?.includes('application/json'), true);
-  assert.equal((await file.json()).drawing.layers['layer-main'].tag, 'g');
-  assert.ok(!(await req('/projects/' + randomUUID() + '/illustrations/' + ref.digest)).ok);
+  assert.equal((await file.json()).ref.rigDigest, p.subjectRig!.digest);
+  assert.ok(!(await req('/projects/' + randomUUID() + '/motion/' + s.id)).ok);
   assert.ok(
     !(
       await fetch(base + route + '/scene-art', {
@@ -747,6 +528,7 @@ test(
       calls: number[] = [];
     const { req, settle, store } = await app(t, undefined, async (_url, opts) => {
       const i = JSON.parse(JSON.parse(String(opts?.body)).messages[1].content).sahne;
+      if (!i) return completion(rigReply());
       calls.push(i);
       if (calls.length === 2) {
         entered.open();
@@ -758,7 +540,7 @@ test(
         again.open();
         await finish.promise;
       }
-      return completion(sample(i - 1));
+      return completion(stageReply(i - 1));
     });
     await req('/settings/svg-planner/key/openrouter', { key: 'isolated-cancel-test' });
     let p: Project = await (
@@ -771,20 +553,20 @@ test(
     p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
     const script = p.scriptApproval;
     const start = async () =>
-      (await (await req(route + '/generate', { kind: 'svg-board' }, p.rev)).json()) as Project;
+      (await (await req(route + '/generate', { kind: 'board' }, p.rev)).json()) as Project;
     let accepted = await start();
     await entered.promise;
     const disk = store.get(p.id),
       first = disk.scenes[0];
-    assert.ok(first.vector);
-    assert.equal(disk.scenes[1].vector, undefined);
+    assert.ok(first.choreography);
+    assert.equal(disk.scenes[1].choreography, undefined);
     const stop = '/operations/' + accepted.job.runId + '/stop';
     assert.equal((await req(stop, {})).status, 202);
     await observed.promise;
     p = store.get(p.id);
     assert.equal(p.job.state, 'stopping');
     assert.equal(p.job.label, STOPPING);
-    assert.equal((await req(route + '/generate', { kind: 'svg-board' }, p.rev)).status, 409);
+    assert.equal((await req(route + '/generate', { kind: 'board' }, p.rev)).status, 409);
     assert.equal((await req(stop, {})).status, 202);
     cleanup.open();
     p = await settle(route);
@@ -793,7 +575,7 @@ test(
     assert.deepEqual(calls, [1, 2]);
     assert.deepEqual(p.scenes[0], first);
     assert.equal(p.scriptApproval, script);
-    assert.equal(p.scenes[1].vector, undefined);
+    assert.equal(p.scenes[1].choreography, undefined);
     accepted = await start();
     await again.promise;
     assert.notEqual('/operations/' + accepted.job.runId + '/stop', stop);
@@ -803,7 +585,7 @@ test(
     assert.equal(p.job.state, 'done', p.job.label);
     assert.deepEqual(calls, [1, 2, 2, 3]);
     assert.deepEqual(p.scenes[0], first);
-    assert.equal(p.vectorWork, undefined);
+    assert.equal(p.motionWork, undefined);
   },
 );
 
@@ -847,7 +629,10 @@ test(
         });
       return Response.json({
         candidates: [
-          { finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(sample()) }] } },
+          {
+            finishReason: 'STOP',
+            content: { parts: [{ text: JSON.stringify(posts === 1 ? rigReply() : stageReply()) }] },
+          },
         ],
       });
     });
@@ -890,7 +675,7 @@ test(
       assert.equal(p.boardApproval, before.boardApproval);
       assert.deepEqual(p.assets, before.assets);
     }
-    assert.equal(posts, 4);
+    assert.equal(posts, 5);
     assert.equal(aborts, 2);
     assert.equal(g.raw().services.tts?.status, 'connected');
     assert.equal(g.raw().services.text?.status, 'connected');
@@ -900,172 +685,3 @@ test(
     );
   },
 );
-
-test('default science board: stop in the second image body, resume only missing plates; directed replacement is transactional', async (t) => {
-  const headers: string[] = [],
-    requests: { name: string; seed: string | null }[] = [],
-    plans: Record<string, unknown>[] = [];
-  let hold = true,
-    wasAborted = false,
-    bodyCancelled = false,
-    badResponse = false,
-    reached!: () => void;
-  const bodyStarted = new Promise<void>((r) => {
-    reached = r;
-  });
-  const { req, store, settle, prod } = await app(t, undefined, async (url, o) => {
-    const u = new URL(String(url));
-    if (u.host === 'openrouter.ai') {
-      const body = JSON.parse(String(o?.body)),
-        input = JSON.parse(body.messages[1].content);
-      plans.push(input);
-      headers.push(body.messages[0].content);
-      return planned(input);
-    }
-    assert.equal(u.host, 'gen.pollinations.ai');
-    assert.equal(
-      new Headers(o?.headers).get('authorization'),
-      'Bearer sk_offline-illustration-fixture',
-    );
-    const name = shotFile(imageRequest(u));
-    requests.push({ name, seed: u.searchParams.get('seed') });
-    if (hold && name === '02') {
-      o?.signal?.addEventListener('abort', () => {
-        wasAborted = true;
-      });
-      return new Response(
-        new ReadableStream({
-          start(c) {
-            c.enqueue(new Uint8Array([255, 216]));
-            reached();
-          },
-          cancel() {
-            bodyCancelled = true;
-          },
-        }),
-        { headers: { 'content-type': 'image/jpeg' } },
-      );
-    }
-    if (badResponse) return new Response('<html>Not an image</html>');
-    return antImage(name);
-  });
-  await req('/settings/svg-planner/key/openrouter', { key: 'isolated-model-fixture' });
-  await req('/settings/pollinations/key', { key: 'sk_offline-illustration-fixture' });
-  let p: Project = await (
-    await req('/projects', { topic: antTopic, script: antLines.join('\n\n') })
-  ).json();
-  const route = '/projects/' + p.id;
-  const start = async (kind: string, extra: Record<string, string> = {}) => {
-    const r = await req(route + '/generate', { kind, ...extra }, p.rev);
-    assert.equal(r.status, 202, await r.text());
-  };
-  const finish = async () => {
-    p = await settle(route);
-    assert.equal(p.job.state, 'done', p.job.label);
-  };
-  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
-  await start('board');
-  await finish();
-  assert.equal(plans.length, 1 + antLines.length);
-  assert.ok(headers[0].includes('one recurring subject'));
-  assert.equal(p.cinema?.subject, antSubject);
-  assert.deepEqual(
-    p.scenes.map((s) => s.cinema?.title),
-    antShots.map((x) => x.title),
-  );
-  assert.ok(p.scenes.every((s) => s.visualMode === 'illustration' && !s.vector));
-  assert.equal(requests.length, 0);
-  assert.equal((await req(route + '/generate', { kind: 'illustrations' }, p.rev)).status, 409);
-  p = await (
-    await req(
-      route + '/board',
-      { styleGuide: p.styleGuide, scenes: p.scenes, approve: true },
-      p.rev,
-    )
-  ).json();
-  assert.ok(p.boardApproval);
-  const approval = p.boardApproval;
-  await start('illustrations');
-  await bodyStarted;
-  const op = await (await req('/operation')).json();
-  assert.equal((await req('/operations/' + op.id + '/stop', {})).status, 202);
-  p = await settle(route);
-  assert.equal(p.job.state, 'cancelled');
-  assert.ok(wasAborted && bodyCancelled);
-  assert.deepEqual(
-    requests.map((x) => x.name),
-    ['01', '02'],
-  );
-  const first = p.assets[p.scenes[0].id].image!;
-  assert.ok(first && fs.existsSync(prod.file(p, first.file)));
-  assert.ok(!p.assets[p.scenes[1].id]?.image);
-  assert.equal(p.boardApproval, approval);
-  hold = false;
-  await start('illustrations');
-  await finish();
-  assert.deepEqual(
-    requests.map((x) => x.name),
-    ['01', '02', '02', '03', '04', '05'],
-  );
-  assert.equal(new Set(requests.map((x) => x.seed)).size, 1);
-  assert.deepEqual(p.assets[p.scenes[0].id].image, first);
-  await start('illustrations');
-  await finish();
-  assert.equal(requests.length, 6);
-  // Distinct sentinels for externally acquired voice + timing files. No other service is allowed in this transport.
-  for (const s of p.scenes) {
-    const m = p.assets[s.id];
-    m.voice = { key: voiceKey(p, s), file: `audio/${s.id}.wav`, duration: 4 };
-    m.align = { file: `subtitles/${s.id}.json`, key: 'aligned', method: 'whisper' };
-    m.words = [{ text: s.narration, start: 0, end: 3 }];
-    m.clip = { file: `scenes/${s.id}.mp4`, key: 'clip' };
-  }
-  p.final = { file: 'renders/control.mp4', key: 'control' };
-  store.save(p);
-  const assets = structuredClone(p.assets),
-    board = structuredClone(p.scenes),
-    target = p.scenes[1];
-  badResponse = true;
-  await start('regenerate-illustration', { scene: target.id });
-  p = await settle(route);
-  assert.equal(p.job.state, 'failed');
-  assert.deepEqual(p.assets, assets);
-  assert.deepEqual(p.final, { file: 'renders/control.mp4', key: 'control' });
-  badResponse = false;
-  await start('regenerate-illustration', { scene: target.id, instruction: antDirection });
-  await finish();
-  assert.equal(plans.length, 7);
-  assert.equal(plans.at(-1)?.direction, antDirection);
-  assert.deepEqual(
-    requests.slice(-2).map((x) => x.name),
-    ['02', 'tunnel-close'],
-  );
-  assert.equal(p.final, undefined);
-  assert.equal(p.boardApproval, approval);
-  assert.deepEqual(p.scenes, board);
-  for (const [i, s] of p.scenes.entries()) {
-    const m = p.assets[s.id],
-      prev = assets[s.id];
-    assert.deepEqual(m.voice, prev.voice);
-    assert.deepEqual(m.align, prev.align);
-    assert.deepEqual(m.words, prev.words);
-    if (i < 2) assert.equal(m.clip, undefined);
-    else assert.deepEqual(m.clip, prev.clip);
-    if (i !== 1) assert.deepEqual(m.image, prev.image);
-    else {
-      assert.notEqual(m.image?.file, prev.image?.file);
-      assert.equal(m.image?.illustration?.brief, closer);
-      assert.notEqual(m.image?.illustration?.seed, prev.image?.illustration?.seed);
-      assert.notDeepEqual(
-        fs.readFileSync(prod.file(p, m.image!.file)),
-        fs.readFileSync(prod.file(p, prev.image!.file)),
-      );
-    }
-  }
-  const n = requests.length;
-  await start('illustrations');
-  await finish();
-  assert.equal(requests.length, n);
-  assert.ok(fs.readdirSync(path.join(store.dir(p.id), 'cache')).length === 0);
-  assert.equal((await req('/operations/' + op.id + '/stop', {})).status, 409);
-});

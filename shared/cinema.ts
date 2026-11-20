@@ -1,3 +1,4 @@
+// Read-only compatibility: schemas and key material of signed 1.5.0 local raster assets.
 import { z } from 'zod';
 import { heading, digestSchema } from './vector';
 
@@ -21,20 +22,3 @@ export const cinematicPlan = z.strictObject({
   brief: briefSchema,
   context: digestSchema,
 });
-export const shotReply = cinematicPlan.omit({ context: true });
-export function illustrationPrompt(subject: string, brief: string) {
-  return [
-    `Vertical 9:16, full bleed. Recurring subject: ${subjectSchema.parse(subject)}.`,
-    `Shot: ${briefSchema.parse(brief)}.`,
-    `Make the same ${subject} clearly recognizable, either prominently in frame or in a directly related close-up or habitat cross-section with the subject visible. Preserve its colors, proportions and identifying features across shots.`,
-    'Layered navy and deep teal surroundings, coral and warm gold accents. Keep the central action clear and the top and bottom quiet for editorial overlays.',
-    NEGATIVE_LOCK,
-    STYLE_LOCK,
-  ].join(' ');
-}
-export const cameraNames = [
-  'Yavaş yaklaşma',
-  'Yavaş uzaklaşma',
-  'Yatay kaydırma',
-  'Dikey kaydırma',
-] as const;

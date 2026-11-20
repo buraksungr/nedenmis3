@@ -8,7 +8,6 @@ import {
   EyeOff,
   FileText,
   HardDrive,
-  Image,
   KeyRound,
   Layers3,
   LockKeyhole,
@@ -166,141 +165,6 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
     </div>
   );
 }
-function PollinationsPanel({ s }: { s: SettingsType['pollinations'] }) {
-  const { setSettings, notify } = useStudio(),
-    { busy, run } = useRun();
-  const input = useRef<HTMLInputElement>(null);
-  const [entered, setEntered] = useState(false),
-    [confirm, setConfirm] = useState(false);
-  function clearInput() {
-    if (input.current) input.current.value = '';
-    setEntered(false);
-  }
-  return (
-    <section className="panel padded spaced" aria-label="Pollinations görsel ayarları">
-      <div className="provider-head">
-        <div className="provider-mark">
-          <Image size={23} />
-        </div>
-        <div>
-          <h2>Pollinations</h2>
-          <p>9:16 bilim illüstrasyonları ve klasik fotoğraf sahneleri.</p>
-        </div>
-        <span className="right">
-          <Badge tone={s.hasKey ? 'purple' : 'gray'}>
-            {s.hasKey ? 'Güncel API · anahtarlı' : 'Eski uç · anahtarsız'}
-          </Badge>
-        </span>
-      </div>
-      <div className="form-stack">
-        <label htmlFor="pollinations-key">Pollinations API anahtarı (isteğe bağlı)</label>
-        <div className="secret-field">
-          <KeyRound size={15} />
-          <input
-            id="pollinations-key"
-            ref={input}
-            type="password"
-            autoComplete="new-password"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={512}
-            placeholder={
-              s.hasKey
-                ? '••••••••••••••••  ·  Kayıtlı anahtar'
-                : 'Pollinations gizli anahtarı (sk_…)'
-            }
-            onInput={() => setEntered(!!input.current?.value.trim())}
-          />
-        </div>
-        <div className="credential-note">
-          <LockKeyhole size={13} />
-          {s.storage === 'encrypted'
-            ? 'Windows hesabında şifreli saklanır.'
-            : 'Önizlemede yalnızca sunucu belleğinde tutulur.'}{' '}
-          Kayıtlı anahtar gösterilmez.
-        </div>
-        <p className="help">
-          Anahtar kaydedersen istekler gen.pollinations.ai üzerinden hesabının bütçesini
-          kullanabilir. Anahtar yoksa eski image.pollinations.ai adresi denenir. Servis yanıt
-          vermezse başka adrese geçilmez; kendi görselini yükleyebilirsin.
-        </p>
-        <div className="actions">
-          <Button
-            disabled={busy || !entered}
-            onClick={() =>
-              void run(async () => {
-                setSettings(
-                  await post<SettingsType>('/settings/pollinations/key', {
-                    key: input.current!.value.trim(),
-                  }),
-                );
-                clearInput();
-                notify('Pollinations anahtarı kaydedildi.');
-              })
-            }
-          >
-            <Save size={14} />
-            {s.hasKey ? 'Pollinations anahtarını güncelle' : 'Pollinations anahtarını kaydet'}
-          </Button>
-          {s.hasKey && (
-            <Button variant="quiet" disabled={busy} onClick={() => setConfirm(true)}>
-              <Trash2 size={14} />
-              Pollinations anahtarını kaldır
-            </Button>
-          )}
-        </div>
-        <label className="check-label">
-          <input
-            type="checkbox"
-            checked={s.autoFill}
-            disabled={busy}
-            onChange={(e) => {
-              const autoFill = e.target.checked;
-              void run(async () =>
-                setSettings(await post<SettingsType>('/settings/pollinations', { autoFill })),
-              );
-            }}
-          />{' '}
-          Toplu üretimde eksik görselleri Pollinations ile üret
-        </label>
-        <p className="help">
-          Kapalıyken toplu üretim görsellerini yüklemeni bekler. Tek sahnede görsel üretme ve manuel
-          yükleme seçenekleri her zaman kullanılabilir.
-        </p>
-      </div>
-      {confirm && (
-        <Modal title="Pollinations anahtarı kaldırılsın mı?" close={() => setConfirm(false)}>
-          <p>
-            Sonraki görsel isteği eski anahtarsız adresi kullanacak. Gemini ayarları ve mevcut sahne
-            görselleri değişmez.
-          </p>
-          <div className="actions end">
-            <Button onClick={() => setConfirm(false)}>Vazgeç</Button>
-            <Button
-              variant="danger"
-              busy={busy}
-              onClick={() =>
-                void run(async () => {
-                  setSettings(
-                    await api<SettingsType>('/settings/pollinations/key', {
-                      method: 'DELETE',
-                      body: '{}',
-                    }),
-                  );
-                  clearInput();
-                  setConfirm(false);
-                  notify('Pollinations anahtarı kaldırıldı.');
-                })
-              }
-            >
-              Kaldır
-            </Button>
-          </div>
-        </Modal>
-      )}
-    </section>
-  );
-}
 function ApiTab({ s }: { s: SettingsType }) {
   const { setSettings, notify } = useStudio(),
     { busy, run } = useRun();
@@ -439,7 +303,6 @@ function ApiTab({ s }: { s: SettingsType }) {
           </a>
         </div>
       </div>
-      <PollinationsPanel s={s.pollinations} />
       <div className="panel padded spaced">
         <div className="panel-title">
           <SlidersHorizontal size={17} />

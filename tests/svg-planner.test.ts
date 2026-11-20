@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { parseIllustration, MAX_XML } from '../server/layered-svg';
 import { readIllustration, verifiedFrame } from '../server/vector-files';
-import { SvgPlanner } from '../server/svg-planner';
+import { SvgPlanner } from './legacy-layered-planner';
 import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
 import { Store, makeProject, scriptSig, approveBoard, approved } from '../server/store';

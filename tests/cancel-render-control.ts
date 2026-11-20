@@ -13,7 +13,8 @@ import { createStudio } from '../server/app';
 import { Operation, operation } from '../server/operation';
 import { makeProject, scriptSig, approveBoard } from '../server/store';
 import { STOPPED, jobActive, type Project } from '../shared/schema';
-import { sample, completion } from './vector-test-data';
+import { rigReply, stageReply } from './ant-motion-art';
+import { completion } from './vector-test-data';
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-render-stop-'));
   const ctx = createStudio(
@@ -22,9 +23,8 @@ async function main() {
       seed: false,
       transport: async (u, o) => {
         assert.equal(String(u), 'https://openrouter.ai/api/v1/chat/completions');
-        return completion(
-          sample(JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne - 1),
-        );
+        const i = JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne;
+        return completion(i ? stageReply(i - 1) : rigReply());
       },
     },
   );
@@ -79,7 +79,7 @@ async function main() {
   c.subscribe(track);
   try {
     await post('/settings/svg-planner/key/openrouter', { key: 'isolated-render-control' });
-    await post(route + '/generate', { kind: 'svg-board' }, p.rev);
+    await post(route + '/generate', { kind: 'board' }, p.rev);
     p = await settled();
     assert.equal(p.job.state, 'done', p.job.label);
     const second = p.scenes[1];

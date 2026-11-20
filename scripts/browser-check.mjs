@@ -7,20 +7,15 @@ import { once } from 'node:events';
 import express from 'express';
 import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
+import { rigReply, stageReply } from '../tests/ant-motion-art.ts';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
 const voiceCalls = [],
-  plannerCalls = [],
-  imageCalls = [],
-  imageCredential = 'sk_isolated-ui-fixture';
-let cinemaMode = false,
-  holdCinema = true,
-  cinemaAborted = 0;
-const cinemaGets = [];
-let stopDrawing = false,
-  abortedDraws = 0;
+  plannerCalls = [];
+let holdSecond = true,
+  stopped = 0;
 let enableTextFixture = false,
   scriptAttempts = 0;
 const ctx = studio.createStudio(
@@ -29,76 +24,20 @@ const ctx = studio.createStudio(
     transport: async (url, opts) => {
       const host = new URL(url).host;
       if (host === 'openrouter.ai') {
-        const data = JSON.parse(JSON.parse(opts.body).messages[1].content);
-        if (cinemaMode) {
-          const content = data.direction
-            ? { brief: 'A closer view of the forked ant tunnels.' }
-            : data.scene
-              ? {
-                  title: data.scene === 1 ? 'Kış Gelirken' : 'Yuvaya Dönüş',
-                  brief:
-                    data.scene === 1
-                      ? 'The red ant on a snowy woodland path.'
-                      : 'The red ant enters a deep winter tunnel.',
-                }
-              : { subject: 'red worker ant with a burgundy abdomen' };
-          return Response.json({
-            choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(content) } }],
-          });
-        }
-        plannerCalls.push(data);
-        if (plannerCalls.length === 1) return new Response(null, { status: 503 });
-        if (stopDrawing) {
+        const q = JSON.parse(JSON.parse(opts.body).messages[1].content);
+        plannerCalls.push(q);
+        if (q.sahne === 2 && holdSecond) {
           await once(opts.signal, 'abort');
-          abortedDraws++;
-          throw Error('Stopped test fetch');
+          stopped++;
+          throw Error('Stopped text request');
         }
-        const svg = fs.readFileSync('tests/fixtures/vector-ant.svg', 'utf8');
+        const result = q.sahne ? stageReply(q.sahne - 1, !!q.yönlendirme) : rigReply();
         return Response.json({
-          model: 'qa-illustrator-replay',
-          choices: [
-            {
-              finish_reason: 'stop',
-              message: {
-                content: JSON.stringify({
-                  title: data.yönlendirme ? 'Feromon İzi' : 'Karınca Kolonisi',
-                  fx: 'drift',
-                  svg: data.yönlendirme ? svg.replace('#ffe298', '#ff9263') : svg,
-                }),
-              },
-            },
-          ],
+          model: 'offline-object-QA',
+          choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }],
         });
       }
-      if (['gen.pollinations.ai', 'image.pollinations.ai'].includes(host)) {
-        if (cinemaMode) {
-          const prompt = decodeURIComponent(new URL(url).pathname.split('/').at(-1));
-          assert.ok(
-            prompt.includes('red worker ant with a burgundy abdomen') &&
-              prompt.includes('no text, no typography, no labels'),
-          );
-          const name = prompt.includes('closer view')
-            ? 'tunnel-close'
-            : prompt.includes('snowy woodland')
-              ? '01'
-              : '02';
-          cinemaGets.push(name);
-          if (name === '02' && holdCinema) {
-            await once(opts.signal, 'abort');
-            cinemaAborted++;
-            throw Error('Stopped test download');
-          }
-          return new Response(fs.readFileSync('tests/fixtures/ant-cinema/' + name + '.jpg'), {
-            headers: { 'content-type': 'image/jpeg' },
-          });
-        }
-        imageCalls.push([host, new Headers(opts.headers).get('authorization')]);
-        return host === 'gen.pollinations.ai'
-          ? new Response(fs.readFileSync('ui/public/art/ocean.jpg'), {
-              headers: { 'content-type': 'image/jpeg' },
-            })
-          : new Response(null, { status: 503 });
-      }
+      assert.equal(host, 'generativelanguage.googleapis.com');
       if (!enableTextFixture) throw new Error('Network deliberately disabled in UI control');
       const base = 'https://generativelanguage.googleapis.com/v1/models';
       if (
@@ -194,10 +133,6 @@ try {
   ]);
   await page.reload();
   assert.equal(await speaker.inputValue(), 'Kore');
-  await page.getByText('Eski uç · anahtarsız', { exact: true }).waitFor();
-  assert.ok(
-    await page.getByLabel('Toplu üretimde eksik görselleri Pollinations ile üret').isChecked(),
-  );
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
@@ -221,85 +156,7 @@ try {
     page.waitForResponse((r) => r.url().endsWith('/preferences') && r.ok()),
     speaker.selectOption('Puck'),
   ]);
-  await page.getByRole('button', { name: 'Sahne ekle' }).click();
-  assert.equal(await page.getByLabel('Sahne türü').inputValue(), 'illustration');
-  await page.getByLabel('Sahne türü').selectOption('photo');
-  await page.getByText('Sabit kadraj · Yumuşak geçiş', { exact: true }).waitFor();
-  await page.getByLabel('Anlatım', { exact: true }).fill('Karıncalar kışın toprak altına çekilir.');
-  await page
-    .getByLabel('Görsel betimleme', { exact: true })
-    .fill('Kışın toprağın altında korunaklı bir karınca yuvası.');
-  assert.equal(await page.getByLabel('Görsel istemi (isteğe bağlı)').inputValue(), '');
-  await page.getByText('Görsel bekleniyor', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Onayla ve üret' }).click();
-  await page.getByRole('heading', { name: 'Sahne istasyonları' }).waitFor();
-  await page.locator('.job-note.config').waitFor();
-  const id = page.url().split('/').at(-1);
-  let p = ctx.store.get(id);
-  assert.ok(p.scriptApproval && p.boardApproval);
-  assert.equal(p.final, undefined);
-  await page.getByRole('button', { name: 'Sahne üretim araçları' }).click();
-  assert.equal(p.voice, 'Puck');
-  assert.match(await page.locator('.job-note.config').innerText(), /Seslendirme/);
-  assert.equal(imageCalls.length, 0);
-  await page.getByRole('button', { name: 'Görsel üret', exact: true }).click();
-  await page.locator('.job-note.waiting').filter({ hasText: 'Pollinations: HTTP 503' }).waitFor();
-  assert.deepEqual(imageCalls, [['image.pollinations.ai', null]]);
-  assert.ok(await page.getByRole('button', { name: 'Görsel yükle' }).isEnabled());
-  const voiceEvent = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Anlatım yükle' }).click();
-  await Promise.all([
-    page.waitForResponse((r) => r.url().includes('/import/voice?') && r.ok()),
-    (await voiceEvent).setFiles('tests/fixtures/forest.wav'),
-  ]);
-  await page.locator('.job-note.waiting').waitFor();
-  await page.getByRole('button', { name: 'Storyboard', exact: true }).first().click();
-  const fileEvent = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Görsel yükle' }).click();
-  await (await fileEvent).setFiles('ui/public/art/ants.jpg');
-  await page.locator('.scene-card .station-art').waitFor();
-  assert.equal(ctx.store.get(id).assets[p.scenes[0].id].image.source, 'import');
-  await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
-  const keyInput = page.getByLabel('Pollinations API anahtarı (isteğe bağlı)');
-  assert.equal(await keyInput.getAttribute('type'), 'password');
-  await keyInput.fill(imageCredential);
-  await page.getByRole('button', { name: 'Pollinations anahtarını kaydet', exact: true }).click();
-  await page.getByText('Güncel API · anahtarlı', { exact: true }).waitFor();
-  await page.reload();
-  assert.equal(await keyInput.inputValue(), '');
-  await page.locator('.sidebar').getByRole('button', { name: 'Storyboard', exact: true }).click();
-  await page.getByRole('button', { name: 'Görseli yeniden üret', exact: true }).click();
-  const localImage = page.locator('.scene-card img[src*="/media/storyboard/"]');
-  await localImage.waitFor();
-  await localImage.evaluate((img) => img.decode());
-  assert.equal(ctx.store.get(id).assets[p.scenes[0].id].image.source, 'pollinations');
-  assert.deepEqual(imageCalls, [
-    ['image.pollinations.ai', null],
-    ['gen.pollinations.ai', 'Bearer ' + imageCredential],
-  ]);
-  await page.reload();
-  await localImage.waitFor();
-  await localImage.evaluate((img) => img.decode());
-  // The isolated project has no Whisper runtime. The shipped UI must allow viewing and editing its estimate.
-  await page
-    .locator('.sidebar')
-    .getByRole('button', { name: 'Üretim Merkezi', exact: true })
-    .click();
-  await page.getByRole('button', { name: 'Sahne üretim araçları' }).click();
-  await page.getByRole('button', { name: 'Sesi hizala' }).click();
-  await page.getByText('Tahmini altyazı', { exact: true }).waitFor();
-  await page.getByText('Hizalama günlüğü · tahmini cümle zamanları', { exact: true }).click();
-  assert.match(await page.locator('.alignment-detail').innerText(), /python|Whisper/i);
-  await page.getByRole('button', { name: 'Altyazıyı düzenle' }).click();
-  const sentence = page.getByRole('textbox', { name: '1. cümle', exact: true });
-  assert.equal(await sentence.inputValue(), 'Karıncalar kışın toprak altına çekilir.');
-  const corrected = 'Bu altyazı, ses dinlenerek düzenlendi.';
-  await sentence.fill(corrected);
-  await Promise.all([
-    page.waitForResponse((r) => r.url().endsWith('/subtitles') && r.ok()),
-    page.getByRole('button', { name: 'Kaydet', exact: true }).click(),
-  ]);
-  assert.equal(ctx.store.get(id).assets[p.scenes[0].id].edits[0].text, corrected);
+  assert.equal(ctx.store.get(page.url().split('/').at(-1)).voice, 'Puck');
   await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
   await page.getByLabel('Gemini API anahtarı').fill('only-a-local-ui-test-value');
   await page.getByRole('button', { name: 'Anahtarı kaydet' }).click();
@@ -332,9 +189,6 @@ try {
   assert.ok(await editor.isEditable());
   assert.equal(ctx.store.get(page.url().split('/').at(-1)).script, fixtureScript);
   await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
-  await page.getByRole('button', { name: 'Pollinations anahtarını kaldır', exact: true }).click();
-  await page.getByRole('button', { name: 'Kaldır', exact: true }).click();
-  await page.getByText('Eski uç · anahtarsız', { exact: true }).waitFor();
   assert.equal(ctx.g.settings().models.text.consent, 'free');
   await page.getByRole('button', { name: 'Sil', exact: true }).click();
   await page.getByRole('button', { name: 'Anahtarı sil', exact: true }).click();
@@ -358,111 +212,90 @@ try {
     page.getByRole('button', { name: 'Planlayıcıyı kaydet' }).click(),
   ]);
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
-  await page.getByLabel('Belgesel konusu').fill('Kök kesiti');
+  await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın nereye gider?');
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
-  await page.getByLabel('Mevcut senaryo').fill('Karıncalar ormanda ilerler.');
+  const lines = ['Karıncalar ormanda ilerler.', 'İşçiler yuvalarına döner.'];
+  await page.getByLabel('Mevcut senaryo').fill(lines.join(' '));
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
-  await page.getByLabel('Storyboard biçimi').selectOption('svg');
+  await page.getByText('Sabit kamera · Hareketli SVG', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
-  await page.locator('.job-note.failed').filter({ hasText: 'OpenRouter HTTP 503' }).waitFor();
-  assert.equal(await page.locator('.scene-card').count(), 1);
-  stopDrawing = true;
-  await page.getByRole('button', { name: 'Tekrar dene', exact: true }).click();
+  const card = page.locator('.scene-card').first(),
+    second = page.locator('.scene-card').nth(1);
+  await card.locator('[data-fixed-camera]').waitFor();
+  const id = page.url().split('/').at(-1),
+    initial = ctx.store.get(id),
+    first = initial.scenes[0].choreography.digest;
+  assert.equal(initial.scenes[0].visualMode, 'motion-svg');
+  assert.equal(initial.scenes[1].choreography, undefined);
   await page
     .locator('.job-note.working')
     .getByRole('button', { name: 'Durdur', exact: true })
     .click();
-  await page
-    .locator('.job-note.cancelled')
-    .filter({ hasText: 'İşlem kullanıcı tarafından durduruldu' })
-    .waitFor();
-  assert.equal(abortedDraws, 1);
-  stopDrawing = false;
-  await page.getByRole('button', { name: 'Bu sahneyi tamamla', exact: true }).click();
-  const card = page.locator('.scene-card').first(),
-    mode = card.getByLabel('Sahne türü');
-  await card.locator('[data-vector-scene]').waitFor();
-  assert.equal(await mode.inputValue(), 'svg');
-  assert.equal(await card.locator('[data-vector-layer]').count(), 3);
-  await mode.selectOption('photo');
-  await card.getByText('Sabit kadraj · Yumuşak geçiş').waitFor();
-  await mode.selectOption('svg');
-  const direction = card.getByLabel('Çizim yönlendirmesi (isteğe bağlı)');
-  await direction.fill('İz parçacıklarını turuncu çiz.');
-  await card.getByRole('button', { name: 'Bu sahneyi yeniden çiz' }).click();
-  await card.getByText('Feromon İzi', { exact: true }).first().waitFor();
-  assert.equal(plannerCalls.at(-1).yönlendirme, 'İz parçacıklarını turuncu çiz.');
-  await card.getByRole('button', { name: 'Hareketi önizle' }).click();
-  await page.waitForFunction(
-    () => +document.querySelector('input[aria-label="Vektör önizleme karesi"]').value > 0,
+  await page.locator('.job-note.cancelled').waitFor();
+  assert.equal(stopped, 1);
+  await page.reload();
+  await card.locator('[data-motion-stage]').waitFor();
+  holdSecond = false;
+  await second.getByRole('button', { name: 'Bu sahneyi tamamla' }).click();
+  await second.locator('[data-motion-stage]').waitFor();
+  assert.deepEqual(
+    plannerCalls.map((q) => q.sahne ?? 0),
+    [0, 1, 2, 2],
   );
-  assert.equal(await card.getByLabel('SVG şablonu').count(), 0);
+  const f = second.locator('[data-object="ant-lead"] > g'),
+    prev = await f.getAttribute('transform'),
+    cam = second.locator('[data-fixed-camera]'),
+    box = await cam.getAttribute('viewBox');
+  await second.getByLabel('Nesne animasyonu karesi').press('End');
+  assert.notEqual(await f.getAttribute('transform'), prev);
+  assert.equal(await cam.getAttribute('viewBox'), box);
+  assert.equal(await cam.getAttribute('transform'), null);
+  assert.equal(await second.locator('svg use').count(), 5);
+  const old = ctx.store.get(id).scenes[1].choreography.digest;
+  await second
+    .getByLabel('Çizim yönlendirmesi (isteğe bağlı)')
+    .fill('Öncü karıncayı daha büyük göster.');
+  await second.getByRole('button', { name: 'Bu sahneyi yeniden üret' }).click();
+  await page.waitForFunction((x) => {
+    const next = document
+      .querySelectorAll('.scene-card [data-motion-stage]')[1]
+      ?.getAttribute('data-motion-stage');
+    return next && next !== x;
+  }, old);
+  assert.equal(ctx.store.get(id).scenes[0].choreography.digest, first);
+  assert.notEqual(ctx.store.get(id).scenes[1].choreography.digest, old);
+  assert.equal(plannerCalls.at(-1).yönlendirme, 'Öncü karıncayı daha büyük göster.');
   await page.getByRole('button', { name: 'Onayla ve üret' }).click();
   await page.locator('.job-note.config').filter({ hasText: 'Seslendirme' }).waitFor();
   assert.deepEqual(voiceCalls, []);
-  // Test an already authorised model; pressing the production button is the only job action.
   ctx.g.key('isolated-browser-fixture');
   await ctx.g.test();
   ctx.g.configure('tts', { model: 'gemini-test-tts', consent: 'free' });
   await page.getByRole('button', { name: 'Videoyu üret', exact: true }).click();
-  await page.getByRole('button', { name: 'Videoyu izle' }).waitFor({ timeout: 120000 });
-  const svgResult = ctx.store.get(page.url().split('/').at(-1));
-  assert.deepEqual(voiceCalls, ['Karıncalar ormanda ilerler.']);
-  const shot = svgResult.assets[svgResult.scenes[0].id];
-  assert.ok(shot.voice && shot.align && shot.clip);
-  assert.equal(shot.align.method, 'estimated');
-  assert.equal(svgResult.final.duration, Math.ceil(shot.voice.duration * 30) / 30);
-  assert.equal(svgResult.scenes[0].vector.title, 'Feromon İzi');
-  assert.equal(svgResult.scenes[0].svgPlan, undefined);
-  assert.ok(!shot.image);
-  assert.equal(plannerCalls.length, 4);
-  assert.equal(imageCalls.length, 2);
-  // The default board plans text (never SVG), then explicitly acquires, stops and resumes real JPEGs.
-  {
-    cinemaMode = true;
-    await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
-    await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın nereye gider?');
-    await page.getByLabel('Kendi senaryomu kullanacağım').check();
-    await page
-      .getByLabel('Mevcut senaryo')
-      .fill('Karıncalar kışın nereye gider? İşçiler yer altındaki tünellere çekilir.');
-    await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
-    assert.equal(await page.getByLabel('Storyboard biçimi').inputValue(), 'illustration');
-    await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
-    await page
-      .locator('.scene-card')
-      .nth(1)
-      .getByRole('heading', { name: 'Yuvaya Dönüş' })
-      .waitFor();
-    await page.getByRole('button', { name: 'Yalnızca onayla', exact: true }).click();
-    const queue = page.getByRole('button', { name: 'Eksik illüstrasyonları üret', exact: true });
-    await queue.click();
-    const progress = page.locator('.job-note.working').filter({ hasText: '2/2' });
-    await progress.getByRole('button', { name: 'Durdur' }).click();
-    await page.locator('.job-note.cancelled').waitFor();
-    assert.equal(cinemaAborted, 1);
-    assert.deepEqual(cinemaGets, ['01', '02']);
-    holdCinema = false;
-    const firstImg = page.locator('.scene-card').first().locator('.cinema-frame img'),
-      src = await firstImg.getAttribute('src');
-    await queue.click();
-    const shot = page.locator('.scene-card').nth(1),
-      img = shot.locator('.cinema-frame img');
-    await img.waitFor();
-    const original = await img.getAttribute('src');
-    await shot
-      .getByLabel('Görsel yönlendirmesi (isteğe bağlı)')
-      .fill('Karınca tünellerini yakından göster.');
-    await shot.getByRole('button', { name: 'Bu sahneyi yeniden üret' }).click();
-    await page.waitForFunction(
-      (before) => document.querySelectorAll('.cinema-frame img')[1]?.getAttribute('src') !== before,
-      original,
-    );
-    assert.deepEqual(cinemaGets, ['01', '02', '02', 'tunnel-close']);
-    assert.equal(await firstImg.getAttribute('src'), src);
-    await shot.getByLabel('Kamera önizleme karesi').press('End');
-    assert.equal(await shot.getByLabel('Kamera önizleme karesi').inputValue(), '149');
+  await page.getByRole('button', { name: 'Videoyu izle' }).waitFor({ timeout: 150000 });
+  const finished = ctx.store.get(id);
+  assert.deepEqual(voiceCalls, lines);
+  for (const shot of Object.values(finished.assets)) {
+    assert.ok(shot.voice && shot.align && shot.clip && !shot.image);
+    assert.equal(shot.align.method, 'estimated');
   }
+  assert.ok(finished.final);
+  assert.deepEqual(
+    plannerCalls.map((q) => q.sahne ?? 0),
+    [0, 1, 2, 2, 2],
+  );
+  await page.getByRole('button', { name: 'Sahne üretim araçları' }).first().click();
+  await page.getByRole('button', { name: 'Altyazıyı düzenle' }).click();
+  const sentence = page.getByRole('textbox', { name: '1. cümle', exact: true });
+  await sentence.fill('Bu altyazı düzenlendi.');
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/subtitles') && r.ok()),
+    page.getByRole('button', { name: 'Kaydet', exact: true }).click(),
+  ]);
+  assert.equal(
+    ctx.store.get(id).assets[finished.scenes[0].id].edits[0].text,
+    'Bu altyazı düzenlendi.',
+  );
   // Play an already FFprobe-validated control, never a fabricated render in the dashboard.
   const previous = path.resolve('out/render-control/Projects');
   if (fs.existsSync(previous)) {
@@ -510,7 +343,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; default science board, abort/resume on shot two, directed replacement and live camera scrub; 503 → single-scene retry → actual request abortion → full-stage SVG → directed redraw → one-click TTS, alignment attempt and MP4.',
+    'PASS: actual default object SVG board, two approvals, stop/reopen/resume during the second scene, fixed camera while an ant moves, directed redraw, speaker selection, consent, one-click spoken MP4 and subtitle editing, local playback and mobile navigation.',
   );
 } finally {
   await browser.close();

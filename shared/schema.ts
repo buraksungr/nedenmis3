@@ -1,3 +1,4 @@
+import { motionRefSchema, type RigRef } from './object-motion';
 import { cinematicPlan } from './cinema';
 import { z } from 'zod';
 import type { Speaker } from './speakers';
@@ -11,8 +12,9 @@ const transitions = ['dissolve', 'iris', 'drift', 'cut'] as const;
 const str = z.string().trim().max(5000);
 export const sceneSchema = z.object({
   id: z.string().uuid(),
-  visualMode: z.enum(['photo', 'svg', 'illustration']).optional(), // absent in pre-1.1 projects: keep content-bound approvals intact
+  visualMode: z.enum(['photo', 'svg', 'illustration', 'motion-svg']).optional(), // absent in pre-1.1 projects: keep content-bound approvals intact
   cinema: cinematicPlan.optional(),
+  choreography: motionRefSchema.optional(),
   vector: vectorSchema.optional(),
   svgPlan: z.union([svgPlanSchema, legacySvgPlanSchema]).optional(),
   svgVoiceMode: z.enum(['auto', 'existing-only']).optional(), // Default: produce missing narration. Explicit opt-out keeps keyless SVG export.
@@ -31,6 +33,7 @@ export const sceneSchema = z.object({
   motion: z.number().min(0.2).max(2).optional(),
 });
 export type Scene = Omit<z.infer<typeof sceneSchema>, 'svgPlan'> & { svgPlan?: StoredSvgPlan };
+export const isSvgScene = (s: Scene) => s.visualMode === 'svg' || s.visualMode === 'motion-svg';
 export type TimedText = { text: string; start: number; end: number };
 export type Word = TimedText;
 export const wordSchema = z.object({
@@ -98,6 +101,8 @@ export type Project = {
   scenes: Scene[];
   // Work queue is not drawing content and must not affect a signed board.
   vectorWork?: Record<string, { state: 'pending' | 'failed'; detail?: string; direction?: string }>;
+  subjectRig?: RigRef;
+  motionWork?: Record<string, { detail?: string; direction?: string }>;
   cinema?: { subject: string; scriptHash: string };
   styleGuide: string;
   intensity?: 'Düşük' | 'Orta' | 'Yüksek'; // Legacy metadata only.
@@ -131,11 +136,6 @@ export type Connection =
   | 'quota'
   | 'unavailable';
 export type ModelConfig = { model: string; consent: 'blocked' | 'free' | 'paid' };
-export type PollinationsSettings = {
-  autoFill: boolean;
-  hasKey: boolean;
-  storage: 'encrypted' | 'session';
-};
 export type ProviderSettings = {
   models: Record<Kind, ModelConfig>;
   catalog: { id: string; kind: Kind; name: string }[];
@@ -146,7 +146,6 @@ export type ProviderSettings = {
   message: string;
 };
 export type Settings = ProviderSettings & {
-  pollinations: PollinationsSettings;
   svgPlanner: PlannerSettings;
   defaultSpeaker: Speaker;
   hasKey: boolean;

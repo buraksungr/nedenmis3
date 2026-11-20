@@ -82,7 +82,7 @@ export function ProjectCard({ item: p }: { item: ProjectSummary }) {
               9:16
             </span>
             <b />
-            Sinematik 2D
+            Belgesel
             {p.example && (
               <>
                 <b />
@@ -522,14 +522,14 @@ export function NewProject() {
             <img src="/art/forest-studio.jpg" alt="Ormanda kızıl tilki, sinematik 2D çizim" />
             <div className="padded">
               <div className="eyebrow">PRODÜKSİYON PROFİLİ</div>
-              <h2>Sinematik belgesel</h2>
+              <h2>Vektör belgesel</h2>
               {[
                 ['Hedef süre', '30 saniye'],
                 ['Format', '1080 × 1920 · 9:16'],
                 ['Kare hızı', '30 FPS'],
-                ['Anlatım', 'Türkçe · Erkek'],
-                ['Sahne türleri', '2D bilim illüstrasyonu'],
-                ['Kamera', 'Yavaş yakınlaşma ve kaydırma'],
+                ['Anlatım', 'Türkçe · Seçili konuşmacı'],
+                ['Sahne türleri', 'Nesne bazlı SVG'],
+                ['Kamera', 'Sabit kadraj'],
                 ['Üretim', 'İki aşamalı onay'],
               ].map(([k, v]) => (
                 <div className="kv" key={k}>

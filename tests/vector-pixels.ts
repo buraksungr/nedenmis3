@@ -1,6 +1,4 @@
-/** Compare every shot in the DECODED final film against independently drawn DOM
- * stills. For each group both absence and a frame-zero pose must be distinguishable
- * from the actual encoded pose. Metadata or a storyboard screenshot isn't evidence. */
+/** Verify signed archive drawing, title and each visible static layer in the decoded film. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,7 +6,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { chromium } from 'playwright-core';
 import { reduced, evidence } from './pixel-comparison';
-import { pose, VectorScene } from '../composition/VectorScene';
+import { VectorScene } from '../composition/VectorScene';
 import { layers, type VectorFrame } from '../shared/vector';
 import { browserCandidates, openFirstBrowser } from '../server/render-browser';
 import { ff } from '../server/media';
@@ -72,19 +70,9 @@ export async function verifyScenePixels(
         const g = root.locator(`[data-vector-layer="${l}"]`);
         await g.evaluate((e) => e.setAttribute('visibility', 'hidden'));
         const removed = evidence(film, expected, await capture(), v.ref.title + ' removed ' + l);
-        const set = async (frame: number) =>
-          g.evaluate(
-            (e, p) => {
-              e.removeAttribute('visibility');
-              e.setAttribute('transform', p.transform);
-              e.setAttribute('opacity', String(p.opacity));
-            },
-            pose(l, frame, v.ref.fx),
-          );
-        await set(0);
-        const frozen = evidence(film, expected, await capture(), v.ref.title + ' frozen ' + l);
-        await set(f);
-        motion.push({ layer: l, removed, frozen });
+        await g.evaluate((e) => e.removeAttribute('visibility'));
+        assert.equal(await g.getAttribute('transform'), null);
+        motion.push({ layer: l, removed, stationary: true });
       }
       const labels = await root.locator('[data-vector-layer] text').allTextContents();
       assert.ok(labels.length <= 2 && labels.every((s) => s.trim().split(/\s+/).length <= 2));

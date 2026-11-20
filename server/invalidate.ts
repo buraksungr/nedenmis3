@@ -1,12 +1,14 @@
-import { mediaUrl, type Project, type Scene } from '../shared/schema';
+import { isSvgScene, mediaUrl, type Project, type Scene } from '../shared/schema';
 import { imageKey, voiceKey } from './production';
 import { hash } from './store';
 const visualKey = (p: Project, s: Scene) =>
-  s.visualMode === 'svg'
-    ? hash('svg', s.vector ?? s.svgPlan)
-    : s.visualMode === 'illustration'
-      ? hash(imageKey(p, s), s.cinema?.title, p.scenes.indexOf(s) % 4)
-      : imageKey(p, s);
+  s.visualMode === 'motion-svg'
+    ? hash(s.choreography, p.subjectRig?.digest)
+    : s.visualMode === 'svg'
+      ? hash('svg', s.vector ?? s.svgPlan)
+      : s.visualMode === 'illustration'
+        ? hash(imageKey(p, s), s.cinema?.title)
+        : imageKey(p, s);
 /** Detach stale outputs, don't delete files. Snapshots retain the original versions. */
 export function invalidate(p: Project, old: Project) {
   const active = new Set(p.scenes.map((s) => s.id));
@@ -15,7 +17,7 @@ export function invalidate(p: Project, old: Project) {
     const m = p.assets[s.id];
     if (!m) continue;
     const oldIndex = old.scenes.findIndex((x) => x.id === s.id);
-    if (m.image && m.image.key !== imageKey(p, s)) {
+    if (m.image && (s.visualMode === 'motion-svg' || m.image.key !== imageKey(p, s))) {
       if (p.cover === mediaUrl(p, m.image.file))
         p.cover = old.example && old.category === 'DOĞA' ? '/art/ants.jpg' : '';
       delete m.image;
@@ -34,7 +36,7 @@ export function invalidate(p: Project, old: Project) {
     if (
       oldIndex < 0 ||
       visualKey(p, s) !== visualKey(old, old.scenes[oldIndex]) ||
-      (s.visualMode === 'svg' &&
+      (isSvgScene(s) &&
         !m.voice &&
         (s.svgVoiceMode !== old.scenes[oldIndex].svgVoiceMode ||
           s.seconds !== old.scenes[oldIndex].seconds ||

@@ -10,7 +10,6 @@ import { test } from 'node:test';
 import { sentenceEstimates, verifiedAlignment } from '../server/alignment';
 import { Gemini } from '../server/gemini';
 import { memoryVault } from '../server/vault';
-import { testImages } from './offline';
 import { exec } from '../server/media';
 import { Production } from '../server/production';
 import { Store, approveBoard, makeProject, scriptSig } from '../server/store';
@@ -86,7 +85,6 @@ test('fallback is versioned, editable, cached and replaceable with a verified tr
     store,
     new Gemini(store, memoryVault()),
     { root, pythonDir: 'python', composition: 'build/composition' },
-    testImages(store),
     async () => {
       attempts++;
       return {
@@ -184,7 +182,6 @@ test(
       store,
       new Gemini(store, memoryVault()),
       { root, pythonDir: 'python', composition: 'build/composition' },
-      testImages(store),
       async (_paths, _wav, _txt, out) => {
         const child = `require('node:fs').openSync(process.argv[1],'w');const s=require('node:net').createServer();s.listen(0,'127.0.0.1',()=>console.log(s.address().port));`;
         await exec(
