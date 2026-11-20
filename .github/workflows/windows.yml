@@ -54,10 +54,13 @@ jobs:
           exit 0
       - name: Verify legacy atlas playback, mixed storyboard, static photo fades and single-layer captions
         run: npm run test:render
+        timeout-minutes: 12
       - name: Stop a real in-flight render, release child processes and finish from the saved scene
         run: npm run test:stop
+        timeout-minutes: 12
       - name: Test storyboard editing, voice preflight and one-click production in Edge
         run: npm run test:ui
+        timeout-minutes: 15
       - name: Confirm this tagged push is not rebuilding an existing release
         shell: pwsh
         run: |
