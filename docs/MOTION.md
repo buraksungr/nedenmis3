@@ -2,6 +2,13 @@
 
 `board` / `ObjectPlanner` iki tür metin yanıtı kullanır. Önce onaylı senaryonun tamamı için `{subject, svg}`: SVG’deki `<defs><g id="subject-main">…</g></defs>` **tek** şablondur. Karıncada baş, göğüs, karın, altı bacak ve iki hareketli anten; balinada gövde, kuyruk ve yüzgeç istenir. Sonra her sahne için `{title, svg}`: aynı kanonik şablon bağlam olarak verilir. Sahne onu yeniden çizmez; bağımsız yerleştirilmiş `<use href="#subject-main">` örnekleriyle kullanır. Başlık çizime gömülmez. Metin modeli anlatıma özgü, doğal ve tamamlanmış 2–3 Türkçe sözcük üretir; sözcük sayısı, bilinen eksik bitişler ve tekrarlar denetlenir. Anlamı ve bilimsel doğruluğu storyboard onayında inceleyin.
 
+## İstek ve devam kuralları · 1.6.1
+
+- Şablon, sahne ve içerik onarımı isteklerinde çıkış bütçesi Gemini’de `maxOutputTokens: 8192`, OpenRouter’da `max_tokens: 8192` olur. İstem, **3500 karakterin altında** tam SVG, tam sayı koordinat, kısa geometri, yorumsuz XML ve kapalı son etiket ister. Bu bir model talimatıdır; kayıtlı büyük çizimleri kesmez veya eski dosyaların güvenlik sınırını değiştirmez.
+- İlk eksik sahne hemen başlar. Bir sonrakinden önce önceki sonuç diske yazılır ve **Sonraki sahne için bekleniyor...** gösterilerek 5 saniye beklenir. Kaydedilmiş şablon ve hazır sahne atlanır; kuyruğun sonunda beklenmez.
+- Alınmış HTTP 429/503 yanıtında aynı yetkili uç nokta ve gövdeyle sırasıyla 10/20/35 sn sonra yeniden denenir. Çizim başına toplam üç HTTP tekrarı vardır. Bunlar modelin JSON/XML veya `MAX_TOKENS` çıktısına yönelik en fazla iki **içerik onarımından** ayrıdır. Bağlantı kopması HTTP 503 değildir; otomatik olarak aynı POST’u yollamayız. Senaryo/TTS politikası ayrı kalır.
+- Kalıcı kotada iş durur; bozuk çizim veya üç tekrardan sonra süren HTTP 503 sadece o sahneyi eksik bırakabilir. Neden sahne numarasıyla iş günlüğüne ve bekleyen sahnenin kartına yazılır. **Durdur** hem zamanlayıcıyı hem etkin isteği keser. Uygulamayı tekrar açıp **Eksik sahneleri tamamla** dediğinizde `project.json` ve imzalı SVG’ler okunur; tamamlanan sahneler yeniden istenmez.
+
 ## Çizim protokolü
 
 Portre sahne `viewBox="0 0 1080 1920"` veya eşdeğer bir koordinat alanı kullanır. Sahne kökü ve dekor kare numarasından etkilenmez. Düz renk, gradyan ve statik şekil grupları serbesttir. İç içe görüntü koordinatları ve sabit yerleşim `transform`ları kamera hareketi değildir. Örnek: sahnede `<g transform="translate(160 820) scale(.8)"><use href="#subject-main" data-anim="move" data-dx="190" data-dy="45" data-delay=".2" data-duration="3.5"/></g>`.

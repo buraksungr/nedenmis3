@@ -1,20 +1,33 @@
+import { svgOutputTokens } from './planner-pacing';
 import { plannerConfigSchema, type PlannerConfig, type PlannerSettings } from '../shared/vector';
-import { Store, requireThat, Issue } from './store';
+import { Store, requireThat, Issue, ProviderHttpIssue } from './store';
 import type { Vault } from './vault';
 import type { Gemini } from './gemini';
 import { checkpoint, requestSignal } from './operation';
 export type PlannerVaults = Record<'groq' | 'openrouter', Vault>;
 export class InvalidModelReply extends Error {}
 const routerModel = 'openrouter/free';
+const routerStatus: Record<number, string> = {
+  400: 'Geçersiz istek',
+  401: 'Geçersiz API anahtarı',
+  402: 'Yetersiz bakiye',
+  403: 'Erişim reddedildi',
+  404: 'Model veya uç nokta bulunamadı',
+  408: 'İstek zaman aşımına uğradı',
+  429: 'Kota/Hız Sınırı',
+  503: 'Hizmet Geçici Olarak Kullanılamıyor',
+};
 async function responseText(r: Response) {
-  if (!r.ok || !r.body) {
-    await r.body?.cancel();
-    throw new Issue(
-      502,
-      `OpenRouter HTTP ${r.status}. İstek tekrarlanmadı; kayıtlı sahneler korunuyor.`,
+  if (!r.ok) {
+    await r.body?.cancel().catch(() => {});
+    checkpoint();
+    throw new ProviderHttpIssue(
+      r.status,
+      `OpenRouter HTTP ${r.status}${routerStatus[r.status] ? ' - ' + routerStatus[r.status] : ''}.`,
       r.status >= 500 ? 'temporary-response' : 'failed',
     );
   }
+  if (!r.body) throw new InvalidModelReply('Boş yanıt - OpenRouter gövde döndürmedi.');
   const reader = r.body.getReader(),
     parts: Uint8Array[] = [];
   let size = 0;
@@ -28,6 +41,10 @@ async function responseText(r: Response) {
       }
       parts.push(value);
     }
+  } catch (e) {
+    checkpoint();
+    if (e instanceof InvalidModelReply) throw e;
+    throw new Issue(502, 'Ağ Hatası - OpenRouter yanıt gövdesi okunurken bağlantı kesildi.');
   } finally {
     reader.releaseLock();
   }
@@ -35,13 +52,29 @@ async function responseText(r: Response) {
   try {
     data = JSON.parse(Buffer.concat(parts, size).toString('utf8'));
   } catch {
-    throw new InvalidModelReply('Tek, geçerli bir JSON nesnesi döndür.');
+    throw new InvalidModelReply('JSON Hatası - OpenRouter yanıt gövdesi geçerli JSON değil.');
+  }
+  // OpenRouter may report a provider error *inside* a successful HTTP envelope. Describe
+  // only its numeric code, never the raw message/credentials, and do not replay this POST.
+  if (data?.error) {
+    const code = data.error.code;
+    throw new Issue(
+      502,
+      `OpenRouter yanıt hatası (HTTP ${r.status}): ${Number.isInteger(code) && code >= 100 && code < 600 ? `sağlayıcı kodu ${code}${routerStatus[code] ? ' - ' + routerStatus[code] : ''}` : 'çizim döndürülmedi'}.`,
+    );
   }
   const c = data?.choices?.[0];
-  if (c?.finish_reason === 'length')
-    throw new InvalidModelReply('Yanıt yarım kaldı; daha kısa ve eksiksiz bir yanıt ver.');
+  if (c?.finish_reason === 'length' || c?.native_finish_reason === 'MAX_TOKENS')
+    throw new InvalidModelReply(
+      'MAX_TOKENS - Yanıt Yarım Kaldı (OpenRouter). Daha kısa ve eksiksiz SVG ver.',
+    );
   if (!c || c.finish_reason !== 'stop' || typeof c.message?.content !== 'string')
-    throw new Issue(502, 'OpenRouter kullanılabilir bir sahne yanıtı vermedi.');
+    throw new Issue(
+      502,
+      c?.finish_reason === 'content_filter'
+        ? 'CONTENT_FILTER - OpenRouter yanıtı engellendi.'
+        : 'Boş veya eksik yanıt - OpenRouter tamamlanmış bir metin döndürmedi.',
+    );
   return {
     text: c.message.content as string,
     model:
@@ -94,7 +127,7 @@ export class SceneModels {
       this.vaults[provider].set(value);
     }
   }
-  model(system: string, schema: object, maxTokens = 8192) {
+  model(system: string, schema: object) {
     const c = this.config().provider;
     const missing = () =>
       new Issue(
@@ -111,18 +144,19 @@ export class SceneModels {
         model: routerModel,
         draw: async (input: string) => {
           let r: Response;
+          const signal = requestSignal(150000);
           try {
             r = await this.transport('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
               credentials: 'omit',
               redirect: 'error',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-              signal: requestSignal(150000),
+              signal,
               body: JSON.stringify({
                 model: routerModel,
                 stream: false,
                 temperature: 0.4,
-                max_tokens: maxTokens,
+                max_tokens: svgOutputTokens,
                 response_format: { type: 'json_object' },
                 messages: [
                   { role: 'system', content: system },
@@ -132,7 +166,12 @@ export class SceneModels {
             });
           } catch {
             checkpoint();
-            throw new Issue(503, 'OpenRouter yanıt vermedi. İstek tekrarlanmadı.');
+            throw new Issue(
+              503,
+              signal.reason?.name === 'TimeoutError'
+                ? 'Zaman Aşımı - OpenRouter 150 sn içinde yanıt vermedi. İstek tekrarlanmadı.'
+                : 'Ağ Hatası - OpenRouter yanıt vermedi. İstek tekrarlanmadı.',
+            );
           }
           return responseText(r);
         },

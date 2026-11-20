@@ -1,6 +1,12 @@
+import { svgOutputTokens } from './planner-pacing';
 import { checkpoint, operation, requestSignal } from './operation';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
+import {
+  BlockedReason,
+  FinishReason,
+  GoogleGenAI,
+  type GenerateContentResponse,
+} from '@google/genai';
 import {
   kinds,
   type Connection,
@@ -11,7 +17,7 @@ import {
 } from '../shared/schema';
 import type { Speaker } from '../shared/speakers';
 import type { Store } from './store';
-import { Issue, now, requireThat } from './store';
+import { Issue, ProviderHttpIssue, now, requireThat } from './store';
 import type { Vault } from './vault';
 const fresh = (): ProviderSettings => ({
   models: {
@@ -28,6 +34,10 @@ const fresh = (): ProviderSettings => ({
 const origin = 'https://generativelanguage.googleapis.com';
 const scriptVersion = 'v1'; // Stable Gemini Developer API, also the current JS SDK default.
 const mediaVersion = 'v1beta'; // Structured storyboard JSON and media Interactions use the beta contract.
+const knownReasons = new Set<string>([
+  ...Object.values(BlockedReason),
+  ...Object.values(FinishReason),
+]);
 const maxScriptRetries = 3;
 const maxTimerMs = 2_147_483_647; // Larger Node timeouts fire immediately; never retry early.
 function retryAfterMs(header: string | null, rpcDelay: unknown) {
@@ -160,7 +170,8 @@ export class Gemini {
     return key;
   }
   // One transport for REST and the SDK. Never infer retryability from a thrown network
-  // error: the POST might already have reached Google. Only a received script HTTP 503 qualifies.
+  // error: the POST might already have reached Google. Script retries stay here. SVG retry timing
+  // belongs to the scene queue, which sees the typed HTTP failure and owns the stop signal.
   private async send(
     url: string,
     init: RequestInit,
@@ -171,20 +182,21 @@ export class Gemini {
       checkpoint();
       if (kind) this.countRequest(kind);
       let r: Response;
+      const signal = requestSignal(init.method === 'POST' ? 180_000 : 20_000, init.signal);
       try {
         r = await this.transport(url, {
           ...init,
           redirect: 'error',
-          signal: requestSignal(init.method === 'POST' ? 180_000 : 20_000, init.signal),
+          signal,
         });
       } catch {
         checkpoint();
-        this.record(
-          'unavailable',
-          'Gemini servisine ulaşılamadı. İnternet bağlantısını kontrol edin.',
-          kind,
-        );
-        throw new Issue(503, 'Gemini servisine ulaşılamadı. Ağ bağlantısını kontrol edin.');
+        const detail =
+          signal.reason?.name === 'TimeoutError'
+            ? 'Zaman Aşımı - Gemini isteği süre sınırını aştı.'
+            : 'Ağ Hatası - Gemini servisine ulaşılamadı. Ağ bağlantısını kontrol edin.';
+        this.record('unavailable', detail, kind);
+        throw new Issue(503, detail);
       }
       if (r.ok) return r;
       const e = await r.json().catch(() => null);
@@ -216,7 +228,7 @@ export class Gemini {
             : `Gemini HTTP 503 döndürdü ve otomatik zamanlayıcının desteklediğinden uzun bekleme istedi. Senaryo değiştirilmedi; daha sonra tekrar deneyin.`;
       }
       this.record(status, msg, kind);
-      throw new Issue(
+      throw new ProviderHttpIssue(
         r.status,
         msg,
         status === 'invalid' || (r.status === 404 && kind === 'text') ? 'config' : 'failed',
@@ -333,11 +345,15 @@ export class Gemini {
     s.requests[day] = (s.requests[day] || 0) + 1;
     this.store.set('gemini', s);
   }
-  private noOutput(kind: Kind): never {
-    this.record('unavailable', 'Yanıt engellendi, eksik veya beklenen biçimde değil.', kind);
+  private noOutput(kind: Kind, detail?: string): never {
+    this.record(
+      'unavailable',
+      detail ?? 'Yanıt engellendi, eksik veya beklenen biçimde değil.',
+      kind,
+    );
     throw new Issue(
       502,
-      'Gemini doğrulanabilir bir çıktı döndürmedi. Modeli ve içeriği kontrol edin.',
+      detail ?? 'Gemini doğrulanabilir bir çıktı döndürmedi. Modeli ve içeriği kontrol edin.',
     );
   }
   async text(prompt: string, schema?: object, onRetry?: RetryNotice): Promise<string> {
@@ -360,37 +376,58 @@ export class Gemini {
         model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         ...(schema
-          ? { config: { responseMimeType: 'application/json', responseJsonSchema: schema } }
+          ? {
+              config: {
+                responseMimeType: 'application/json',
+                responseJsonSchema: schema,
+                maxOutputTokens: svgOutputTokens,
+              },
+            }
           : {}),
       });
     } catch (e) {
       checkpoint();
       if (e instanceof Issue) throw e;
       // Do not expose raw SDK exceptions (may contain provider payload or credentials).
-      this.noOutput('text');
+      this.noOutput(
+        'text',
+        schema
+          ? e instanceof SyntaxError
+            ? 'JSON Hatası - Gemini yanıt gövdesi geçerli JSON değil.'
+            : 'Gemini yanıtı SDK tarafından okunamadı.'
+          : undefined,
+      );
     }
     checkpoint();
     const candidate = out?.candidates?.[0];
     const parts = candidate?.content?.parts;
     const block = out?.promptFeedback?.blockReason;
-    if (schema && candidate?.finishReason === 'MAX_TOKENS')
-      throw new Issue(
-        502,
-        'Yanıt yarım kaldı; daha az geometriyle eksiksiz bir çizim döndür.',
-        'incomplete',
-      );
+    if (schema && candidate?.finishReason === 'MAX_TOKENS') {
+      const detail =
+        'MAX_TOKENS - Yanıt Yarım Kaldı (Gemini). Daha az geometriyle SVG’yi eksiksiz bitir.';
+      this.record('unavailable', detail, 'text');
+      throw new Issue(502, detail, 'incomplete');
+    }
     if (
       !Array.isArray(parts) ||
       (block && !['BLOCK_REASON_UNSPECIFIED', 'BLOCKED_REASON_UNSPECIFIED'].includes(block)) ||
       (candidate?.finishReason && candidate.finishReason !== 'STOP')
-    )
-      this.noOutput('text');
+    ) {
+      const reason = block || candidate?.finishReason;
+      this.noOutput(
+        'text',
+        schema
+          ? `Gemini çizim yanıtı tamamlanmadı: ${reason && knownReasons.has(reason) ? reason : 'içerik yok'}.`
+          : undefined,
+      );
+    }
     // Never write a thought summary into the script or concatenate alternative candidates.
     const text = parts
       .map((p) => (!p?.thought && typeof p?.text === 'string' ? p.text : ''))
       .join('')
       .trim();
-    if (!text) this.noOutput('text');
+    if (!text)
+      this.noOutput('text', schema ? 'Boş yanıt - Gemini çizim için metin döndürmedi.' : undefined);
     this.record('connected', 'Geçerli servis yanıtı alındı.', 'text');
     return text;
   }

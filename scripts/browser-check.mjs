@@ -14,8 +14,7 @@ const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
 const voiceCalls = [],
   plannerCalls = [];
-let holdSecond = true,
-  stopped = 0;
+let quotaOnSecond = true;
 let enableTextFixture = false,
   scriptAttempts = 0;
 const ctx = studio.createStudio(
@@ -26,11 +25,7 @@ const ctx = studio.createStudio(
       if (host === 'openrouter.ai') {
         const q = JSON.parse(JSON.parse(opts.body).messages[1].content);
         plannerCalls.push(q);
-        if (q.sahne === 2 && holdSecond) {
-          await once(opts.signal, 'abort');
-          stopped++;
-          throw Error('Stopped text request');
-        }
+        if (q.sahne === 2 && quotaOnSecond) return new Response(null, { status: 429 });
         const result = q.sahne ? stageReply(q.sahne - 1, !!q.yönlendirme) : rigReply();
         return Response.json({
           model: 'offline-object-QA',
@@ -227,15 +222,29 @@ try {
     first = initial.scenes[0].choreography.digest;
   assert.equal(initial.scenes[0].visualMode, 'motion-svg');
   assert.equal(initial.scenes[1].choreography, undefined);
-  await page
-    .locator('.job-note.working')
-    .getByRole('button', { name: 'Durdur', exact: true })
-    .click();
-  await page.locator('.job-note.cancelled').waitFor();
-  assert.equal(stopped, 1);
+  async function stopWhile(label) {
+    await page
+      .locator('.job-note.working')
+      .filter({ hasText: label })
+      .getByRole('button', { name: 'Durdur', exact: true })
+      .click();
+    await page.locator('.job-note.cancelled').waitFor();
+  }
+  await stopWhile('Sonraki sahne için bekleniyor...');
+  assert.deepEqual(
+    plannerCalls.map((q) => q.sahne ?? 0),
+    [0, 1],
+  ); // no second POST
   await page.reload();
   await card.locator('[data-motion-stage]').waitFor();
-  holdSecond = false;
+  await page.getByRole('button', { name: 'Eksik sahneleri tamamla' }).click();
+  await stopWhile(/HTTP 429 - Kota\/Hız Sınırı.*10 sn.*1\/3/);
+  assert.deepEqual(
+    plannerCalls.map((q) => q.sahne ?? 0),
+    [0, 1, 2],
+  ); // no retry POST
+  assert.equal(ctx.store.get(id).scenes[0].choreography.digest, first);
+  quotaOnSecond = false;
   await second.getByRole('button', { name: 'Bu sahneyi tamamla' }).click();
   await second.locator('[data-motion-stage]').waitFor();
   assert.deepEqual(
@@ -343,7 +352,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: actual default object SVG board, two approvals, stop/reopen/resume during the second scene, fixed camera while an ant moves, directed redraw, speaker selection, consent, one-click spoken MP4 and subtitle editing, local playback and mobile navigation.',
+    'PASS: actual default object SVG board, two approvals, stop in the 5s cooldown (no scene POST), reopen, stop in the 429 backoff (no retry POST), resume only the missing drawing, fixed camera while an ant moves, directed redraw, speaker selection, consent, one-click spoken MP4 and subtitle editing, local playback and mobile navigation.',
   );
 } finally {
   await browser.close();

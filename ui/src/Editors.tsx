@@ -348,6 +348,7 @@ export function BoardEditor({ p }: { p: Project }) {
   const locked = busy || jobActive(p.job);
   const edit = (id: string, x: Partial<Scene>) =>
     d.edit({ ...d.v, scenes: d.v.scenes.map((s) => (s.id === id ? { ...s, ...x } : s)) });
+  const pending = Object.keys(p.motionWork ?? {}).length;
   const move = (i: number, dir: number) => {
     const scenes = [...d.v.scenes];
     [scenes[i], scenes[i + dir]] = [scenes[i + dir], scenes[i]];
@@ -437,6 +438,7 @@ export function BoardEditor({ p }: { p: Project }) {
             {p.subjectRig && (
               <p className="subject-lock">
                 <LockKeyhole size={14} /> Ortak özne <strong>{p.subjectRig.subject}</strong>
+                {pending > 0 && ` · ${p.scenes.length - pending}/${p.scenes.length} sahne hazır`}
               </p>
             )}
             <div className="actions">
@@ -444,7 +446,7 @@ export function BoardEditor({ p }: { p: Project }) {
                 variant="primary"
                 disabled={locked}
                 onClick={() =>
-                  d.v.scenes.some((s) => s.visualMode !== 'motion-svg')
+                  d.v.scenes.some((s) => s.visualMode !== 'motion-svg' && !p.motionWork?.[s.id])
                     ? setConfirmMotion(true)
                     : void run(() => gen('board'))
                 }
@@ -532,10 +534,9 @@ export function BoardEditor({ p }: { p: Project }) {
               {p.motionWork?.[s.id] && (
                 <div className="scene-work">
                   <span>
-                    {p.motionWork[s.id].detail ||
-                      (p.job.scene === s.id && jobActive(p.job)
-                        ? 'Çizim sürüyor…'
-                        : 'Çizim bekliyor')}
+                    {p.job.scene === s.id && jobActive(p.job)
+                      ? p.job.label
+                      : p.motionWork[s.id].detail || 'Çizim bekliyor'}
                   </span>
                   <Button
                     disabled={locked}

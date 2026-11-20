@@ -31,6 +31,9 @@ export class Issue extends Error {
     super(message);
   }
 }
+// Only a received status is evidence that an HTTP POST can be retried. A transport
+// failure with a local status of 503 may already have delivered (and billed) the request.
+export class ProviderHttpIssue extends Issue {}
 export function requireThat(v: unknown, msg: string, status = 409): asserts v {
   if (!v) throw new Issue(status, msg);
 }

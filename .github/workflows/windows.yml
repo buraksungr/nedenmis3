@@ -21,7 +21,14 @@ jobs:
         with: { node-version: '22.22', cache: npm }
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - name: Verify scene persistence, actual SVG retry timers and regressions
+        shell: pwsh
+        run: |
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $clock = Get-Content -Raw out/render-control/planner-clock.json | ConvertFrom-Json
+          Write-Output "::notice title=SVG planner timing::Actual elapsed ms (scene gap, retry 1, 2, 3): $($clock.observedMs -join ' / '). Two scenes saved; fixture responses, production timers."
+        env: { QA_PLANNER_REAL_CLOCK: '1' }
       - run: npm run build
       - name: Verify legacy atlas playback, mixed storyboard, static photo fades and single-layer captions
         run: npm run test:render
@@ -51,6 +58,7 @@ jobs:
             out/render-control/caption-plate-report.json
             out/render-control/static-fade-report.json
             out/render-control/install-report.json
+            out/render-control/planner-clock.json
             out/render-control/cancellation.json
             out/render-control/fallback-control.*
             out/render-control/fallback-diagnostics.ndjson

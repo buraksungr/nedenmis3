@@ -89,7 +89,7 @@ test('honor a longer server cooldown and stop on the first success', async (t) =
   assert.deepEqual(delays, [120000]);
   assert.equal(posts.length, 2);
 });
-test('non-503, indeterminate network failures, structured boards and media are single attempts', async (t) => {
+test('script-only retry policy never replays non-503/network failures or adds retries underneath the SVG planner or TTS', async (t) => {
   let status = 429;
   const { g, posts, delays } = await setup(t, () => {
     if (!status) throw new Error(key);

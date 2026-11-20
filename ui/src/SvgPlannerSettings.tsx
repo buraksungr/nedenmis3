@@ -86,8 +86,9 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
         <p className="help">
           Otomatik seçim kayıtlı OpenRouter anahtarına öncelik verir (openrouter/free); yoksa izin
           verdiğin Gemini metin modelini kullanır. Hata olursa başka sağlayıcıya geçilmez. Geçersiz
-          bir sahne yanıtı için aynı modele en fazla iki onarım isteği gider. Gemini’nin seçtiğin
-          kota ve ücret izni geçerlidir.
+          bir çizim için en fazla iki içerik onarımı yapılır. Sahneler arasında 5 sn beklenir.
+          Yalnız HTTP 429/503 için 10, 20 ve 35 sn sonra aynı istek yeniden denenebilir. Durdur
+          beklemeyi de keser. Gemini’de seçtiğin kota ve ücret izni geçerlidir.
         </p>
         {(provider === 'openrouter' || provider === 'auto') && (
           <KeyField provider="openrouter" has={saved.keys.openrouter} />

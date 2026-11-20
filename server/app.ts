@@ -1,3 +1,4 @@
+import type { PlannerWait } from './planner-pacing';
 import { ObjectPlanner } from './object-planner';
 import { motionFrame } from './motion-files';
 export { parseRig, parseStage } from './motion-svg';
@@ -75,6 +76,7 @@ export function createStudio(
     seed?: boolean;
     desktopToken?: string;
     transport?: typeof fetch;
+    plannerWait?: PlannerWait;
   } = {},
 ) {
   const store = new Store(paths.root, options.seed),
@@ -86,7 +88,7 @@ export function createStudio(
       options.transport,
       g,
     ),
-    objects = new ObjectPlanner(store, planner),
+    objects = new ObjectPlanner(store, planner, options.plannerWait),
     settings = () => ({
       ...g.settings(),
       svgPlanner: planner.settings(),

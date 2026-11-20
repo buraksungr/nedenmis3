@@ -4,49 +4,11 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
-import type { AddressInfo } from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { createStudio } from '../server/app';
+import { app } from './http-studio';
 import { voiceKey } from '../server/production';
-import { noNetwork } from './offline';
-import { STOPPED, STOPPING, jobActive, blankScene, type Project } from '../shared/schema';
-async function app(t: any, token?: string, transport: typeof fetch = noNetwork) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nedenmis-http-'));
-  const ctx = createStudio(
-    { root, pythonDir: path.resolve('python'), composition: path.resolve('build/composition') },
-    { seed: false, desktopToken: token, transport },
-  );
-  const server = ctx.app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
-  t.after(async () => {
-    await new Promise<void>((r) => server.close(() => r()));
-    ctx.store.db.close();
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const req = (route: string, body?: unknown, rev?: number, headers?: Record<string, string>) =>
-    fetch(base + route, {
-      method: body === undefined ? 'GET' : 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(rev === undefined ? {} : { 'If-Match': String(rev) }),
-        ...headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  const settle = async (route: string): Promise<Project> => {
-    const deadline = Date.now() + 25000;
-    while (Date.now() < deadline) {
-      const p: Project = await (await req(route)).json();
-      if (!jobActive(p.job)) return p;
-      await new Promise((r) => setTimeout(r, 30));
-    }
-    throw new Error('Background production did not settle');
-  };
-  return { ...ctx, req, settle, base, root };
-}
+import { STOPPED, STOPPING, blankScene, type Project } from '../shared/schema';
 test('HTTP workflow: stale writes rejected; both reviews required, then missing key is actionable', async (t) => {
   const { req, store } = await app(t);
   const created = await req('/projects', {
@@ -391,17 +353,22 @@ test('persistent script HTTP 503 stops the background job after four real SDK re
 test('no slide on provider failure; ready drawing, board approval and single directed redraw preserve narration/times and undo', async (t) => {
   let mode = 'fail';
   const prompts: Record<string, any>[] = [];
-  const { req, store, settle, base } = await app(t, undefined, async (url, o) => {
-    assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
-    const input = JSON.parse(JSON.parse(String(o?.body)).messages[1].content);
-    prompts.push(input);
-    if (!input.sahne) return completion(rigReply());
-    return mode === 'fail' && input.sahne === 1
-      ? new Response('private-provider-error', { status: 503 })
-      : mode === 'invalid'
-        ? completion('broken')
-        : completion(stageReply(input.sahne - 1, !!input.yönlendirme));
-  });
+  const { req, store, settle, base } = await app(
+    t,
+    undefined,
+    async (url, o) => {
+      assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
+      const input = JSON.parse(JSON.parse(String(o?.body)).messages[1].content);
+      prompts.push(input);
+      if (!input.sahne) return completion(rigReply());
+      return mode === 'fail' && input.sahne === 1
+        ? new Response('private-provider-error', { status: 503 })
+        : mode === 'invalid'
+          ? completion('broken')
+          : completion(stageReply(input.sahne - 1, !!input.yönlendirme));
+    },
+    async () => {},
+  );
   const key = 'isolated-openrouter-fixture';
   const settings = await (await req('/settings/svg-planner/key/openrouter', { key })).text();
   assert.ok(!settings.includes(key));
@@ -476,7 +443,10 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   p = await settle(route);
   assert.equal(p.job.state, 'done', p.job.label);
   assert.equal(prompts.at(-1)?.yönlendirme, b.instruction);
-  assert.equal(prompts.length, 9);
+  assert.deepEqual(
+    prompts.map((q) => q.sahne ?? 0),
+    [0, 1, 1, 1, 1, 2, 3, 1, 2, 2, 2, 2],
+  );
   assert.equal(p.boardApproval, null);
   assert.deepEqual(p.scenes[0], old[0]);
   assert.deepEqual(p.scenes[2], old[2]);

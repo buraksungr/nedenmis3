@@ -226,7 +226,7 @@ test('one broken middle heading: two repairs, later sibling saved, reload and re
     },
   );
   models.key('openrouter', 'offline-drawing-test');
-  const planner = new ObjectPlanner(store, models);
+  const planner = new ObjectPlanner(store, models, async () => {});
   let p = store.create(makeProject(topic, lines.slice(0, 3).join(' ')));
   p.scriptApproval = scriptSig(p);
   await assert.rejects(

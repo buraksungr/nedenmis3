@@ -87,7 +87,11 @@ export function parseGeometry(
     labels = 0,
     nodes = 0;
   const counts: Record<Layer, number> = { 'layer-bg': 0, 'layer-main': 0, 'layer-fx': 0 };
-  p.on('error', () => bad('XML kapanışlarını ve öznitelikleri düzelt.'));
+  p.on('error', () =>
+    bad(
+      `XML Hatası - Satır ${p.line}, sütun ${p.column}: etiket kapanışlarını ve öznitelikleri kontrol et.`,
+    ),
+  );
   for (const event of ['doctype', 'processinginstruction', 'cdata'] as const)
     p.on(event, () => bad('Etkin içerik veya belge yönergesi kabul edilmez.'));
   p.on('opentag', (t) => {
@@ -109,7 +113,7 @@ export function parseGeometry(
             ? tag === 'stop'
             : parent.tag === 'g' &&
               (shapes.has(tag) || tag === 'g' || use || (!object && tag === 'text'));
-    if (!allowed) bad('Desteklenmeyen SVG öğesi: ' + tag);
+    if (!allowed) bad('Desteklenmeyen SVG öğesi. Yalnız izinli öğeleri kullan.');
     for (const [k, { value: v }] of Object.entries(t.attributes)) {
       if (k === 'xmlns' && tag === 'svg' && v === ns) continue;
       if (tag === 'svg') {
