@@ -62,12 +62,21 @@ jobs:
         shell: pwsh
         run: |
           $tag = 'v' + (node -p "require('./package.json').version")
-          $existing = gh release view $tag --json isDraft,tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
+          # A missing tag makes gh exit 1; treat exactly that as "free", not as a step failure.
+          $existing = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" 2>$null
+          $found = $LASTEXITCODE -eq 0
+          if ($found) {
             $release = $existing | ConvertFrom-Json
-            if (!$release.isDraft) { throw "$tag is already published; bump package.json before tagging another build." }
+            if (!$release.draft) {
+              throw "$tag is already published; bump package.json before tagging another build."
+            }
             gh release delete $tag --yes
+            if ($LASTEXITCODE -ne 0) { throw "Could not remove stale draft $tag" }
+            Write-Output "Removed stale draft $tag"
+          } else {
+            Write-Output "$tag is free for this build"
           }
+          exit 0
         env: { GH_TOKEN: '${{ github.token }}' }
       - name: Package Windows installer
         run: npx --no-install electron-builder --win nsis --x64 --publish never
