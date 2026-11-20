@@ -187,5 +187,12 @@ async function main() {
 }
 main().catch((e) => {
   console.error(e);
+  // CI step annotations are the only readable log when the runner's log download fails.
+  const detail = String(e instanceof Error ? e.message : e)
+    .split('\n')
+    .slice(0, 4)
+    .join(' | ')
+    .slice(0, 900);
+  console.log(`::error title=Durdurma kontrolü::${detail}`);
   process.exitCode = 1;
 });
