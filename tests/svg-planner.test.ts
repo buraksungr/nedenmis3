@@ -42,36 +42,59 @@ test('rich colors, bounded local gradients and all three visible full-stage laye
     assert.ok(heading.safeParse(s.title).success);
   }
 });
-test('reject malformed XML, active/foreign/external content, invalid geometry and missing or repeated layers', () => {
-  const v = sample().svg;
-  const inject = (s: string) => v.replace('<g id="layer-fx">', '<g id="layer-fx">' + s);
-  for (const x of [
-    v.slice(0, -9),
-    '<!DOCTYPE svg>' + v,
-    v.repeat(2),
-    v.replace('1080 1350', '1080 -1'),
-    v.replace('id="layer-bg"', 'id="layer-main"'),
-    v.replace(/<g id="layer-main">[\s\S]*<g id="layer-fx">/, '<g id="layer-fx">'),
-    v + ' '.repeat(MAX_XML),
-    v.replace('url(#sky)', 'url(#missing)'),
-    inject('<circle r="8" fill="url(https://example.com/paint)"/>'),
-    inject('<use href="#sky"/>'),
-    inject('<script/>'),
-    inject('<image/>'),
-    inject('<a/>'),
-    inject('<animate/>'),
-    inject('<foreignObject/>'),
-    inject('<style/>'),
-    inject('<g onload="1"/>'),
-    inject('<circle r="1e999"/>'),
-    inject('<path d="M3 4 C90"/>'),
-    inject('<rect width="-1" height="10"/>'),
-    inject('<g transform="matrix(1 2)"/>'),
-    inject('<z:g xmlns:z="urn:other"/>'),
-    inject('<g style="stroke:red"/>'),
-    inject('<g>'.repeat(20) + '</g>'.repeat(20)),
+test('clean safe SVG instead of rejecting it: styles, SMIL, metadata, text, unknown décor and external paints are removed', () => {
+  const v = sample().svg,
+    inject = (s: string) => v.replace('<g id="layer-fx">', '<g id="layer-fx">' + s),
+    cleaned = parseIllustration(
+      inject(
+        '<title>Eski başlık</title><desc>Açıklama</desc><style>.x{fill:url(https://evil.test/a)}</style>' +
+          '<g class="x" stroke-alignment="outer">' +
+          '<animate attributeName="opacity" values="0;1"/><animateTransform type="rotate"/>' +
+          '<metadata><rdf:RDF xmlns:rdf="urn:rdf"/></metadata>' +
+          '<circle cx="5" cy="5" r="4" fill="url(https://evil.test/paint)"/>' +
+          '<rect x="9" y="9" width="4" height="4" filter="url(#missing)" stroke="red" stroke-dasharray="2 2"/>' +
+          '<path d="M0 0L4 4" fill="none" stroke="blue"/>' +
+          '<text x="9" y="9" font-size="4">serbest metin</text></g>',
+      ),
+    );
+  assert.ok(cleaned.drawing);
+  assert.ok(cleaned.canonical.includes('x-nedenmis-clean'));
+  assert.doesNotMatch(
+    cleaned.canonical,
+    /<(?:style|animate|animateTransform|metadata|title|desc)|evil\.test|url\(#missing\)|class=/,
+  );
+  assert.equal(parseIllustration(cleaned.canonical).canonical, cleaned.canonical);
+  // Active content is removed in place; the rest of the scene is still published.
+  for (const s of [
+    '<script>alert(1)</script>',
+    '<iframe/>',
+    '<foreignObject/>',
+    '<image href="https://x/y.png"/>',
   ])
-    assert.throws(() => parseIllustration(x));
+    assert.ok(parseIllustration(inject(s)).drawing);
+  // Broken structure and invalid motion/geometry are the only reasons to send a repair,
+  // and the message names the exact element.
+  const rejects: [string, RegExp][] = [
+    [v.slice(0, -9), /XML Hatası - Satır \d+, sütun \d+/],
+    ['<!DOCTYPE svg>' + v, /belge türü/],
+    [v.repeat(2), /XML Hatası/],
+    [v.replace('1080 1350', '1080 -1'), /<svg> viewBox/],
+    [v.replace('id="layer-bg"', 'id="layer-main"'), /yinelenen layer-main/],
+    [
+      v.replace(/<g id="layer-main">[\s\S]*<g id="layer-fx">/, '<g id="layer-fx">'),
+      /layer-bg, layer-main ve layer-fx/,
+    ],
+    [v + ' '.repeat(MAX_XML), /boyutu/],
+    [inject('<g onload="1"/>'), /Güvenlik: <g> etkin onload/],
+    [inject('<g href="https://evil.test/x"/>'), /Güvenlik: <g> harici href/],
+    [inject('<circle r="1e999"/>'), /<circle> r/],
+    [inject('<path d="M3 4 C90"/>'), /<path> path/],
+    [inject('<rect width="-1" height="10"/>'), /<rect> width/],
+    [inject('<g transform="matrix(1 2)"/>'), /<g> transform/],
+    [inject('<g opacity="6"/>'), /<g> geçersiz opacity/],
+    [inject('<g>'.repeat(20) + '</g>'.repeat(20)), /çok derin/],
+  ];
+  for (const [x, message] of rejects) assert.throws(() => parseIllustration(x), message);
 });
 const flat = (paint: string) =>
   `<svg viewBox="0 0 1080 1350"><defs><linearGradient id="sky"><stop stop-color="#7ac"/><stop offset="100%" stop-color="#8bc"/></linearGradient></defs><g id="layer-bg"><rect width="100%" height="100%" fill="${paint}"/></g><g id="layer-main"/><g id="layer-fx" opacity="0"/></svg>`;
@@ -94,7 +117,8 @@ test('flat and gradient environments pass on the first response and round-trip w
   }
   for (const layer of layers)
     assert.throws(() => parseIllustration(flat('#123').replace(layer, 'unknown')));
-  assert.throws(() => parseIllustration(flat('url(https://example.invalid/a)')));
+  const external = parseIllustration(flat('url(https://example.invalid/a)'));
+  assert.match(external.drawing.layers['layer-bg'].children[0].attrs.fill, /^none$/);
 });
 test('safe alternate coordinate systems are fitted to the full stage, not sent for aesthetic repair', () => {
   for (const input of [

@@ -10,7 +10,7 @@ on:
   push:
     branches: ['arena/**']
 permissions:
-  contents: read
+  contents: write
 jobs:
   installer:
     runs-on: windows-latest
@@ -30,18 +30,75 @@ jobs:
           Write-Output "::notice title=SVG planner timing::Actual elapsed ms (scene gap, retry 1, 2, 3): $($clock.observedMs -join ' / '). Two scenes saved; fixture responses, production timers."
         env: { QA_PLANNER_REAL_CLOCK: '1' }
       - run: npm run build
+      - name: Verify release notes are generated only from installed installer facts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/installer | Out-Null
+          $version = node -p "require('./package.json').version"
+          Set-Content -LiteralPath "dist/installer/Nedenmis-Studio-$version-Setup.exe" -Value 'release-notes-contract-check' -NoNewline
+          $hash = (Get-FileHash -LiteralPath "dist/installer/Nedenmis-Studio-$version-Setup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath out/render-control/install-report.json -Value '{"installed":true}'
+          Set-Content -LiteralPath out/render-control/planner-clock.json -Value '{"observedMs":[5000,10000,20000,35000]}'
+          $env:EXPECTED_SHA256 = $hash
+          node scripts/release-notes.mjs
+          if (-not (Select-String -LiteralPath out/render-control/release-notes.md -Pattern $hash -Quiet)) { throw 'Release notes omit the verified installer digest' }
+          $env:EXPECTED_SHA256 = '0' * 64
+          node scripts/release-notes.mjs
+          if ($LASTEXITCODE -eq 0) { throw 'Release notes accepted a wrong installer digest' }
+          $env:EXPECTED_SHA256 = ''
+          Remove-Item -LiteralPath "dist/installer/Nedenmis-Studio-$version-Setup.exe"
+          Set-Content -LiteralPath out/render-control/install-report.json -Value '{"installed":false}'
+          node scripts/release-notes.mjs
+          if ($LASTEXITCODE -eq 0) { throw 'Release notes accepted an unverified install report' }
+          Remove-Item -LiteralPath out/render-control/release-notes.md
+          exit 0
       - name: Verify legacy atlas playback, mixed storyboard, static photo fades and single-layer captions
         run: npm run test:render
       - name: Stop a real in-flight render, release child processes and finish from the saved scene
         run: npm run test:stop
       - name: Test storyboard editing, voice preflight and one-click production in Edge
         run: npm run test:ui
+      - name: Confirm this tagged push is not rebuilding an existing release
+        shell: pwsh
+        run: |
+          $tag = 'v' + (node -p "require('./package.json').version")
+          $existing = gh release view $tag --json isDraft,tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (!$release.isDraft) { throw "$tag is already published; bump package.json before tagging another build." }
+            gh release delete $tag --yes
+          }
+        env: { GH_TOKEN: '${{ github.token }}' }
       - name: Package Windows installer
         run: npx --no-install electron-builder --win nsis --x64 --publish never
         env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
       - name: Install and launch the packaged desktop app
         shell: pwsh
         run: ./scripts/verify-windows-install.ps1
+      - name: Prepare release from the verified installer
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' }}
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $exe = "dist/installer/Nedenmis-Studio-$version-Setup.exe"
+          $env:EXPECTED_SHA256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          node scripts/release-notes.mjs
+          "RELEASE_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Publish GitHub release with the installer (GitHub sends the release e-mail)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' }}
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $title = "Nedenmiş Studio $version · sabit kamera · SVG sahne temizleme"
+          gh release create $env:RELEASE_TAG "dist/installer/Nedenmis-Studio-$version-Setup.exe" --target $env:GITHUB_SHA --title $title --notes-file out/render-control/release-notes.md --latest
+        env: { GH_TOKEN: '${{ github.token }}' }
+      - name: Record the published release in the job summary
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' }}
+        shell: pwsh
+        run: |
+          $url = gh release view $env:RELEASE_TAG --json url --jq .url
+          "## Windows kurucusu yayınlandı`n`n$url" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+        env: { GH_TOKEN: '${{ github.token }}' }
       - uses: actions/upload-artifact@v4
         with:
           name: Nedenmis-Studio-Windows-x64
@@ -62,6 +119,7 @@ jobs:
             out/render-control/cancellation.json
             out/render-control/fallback-control.*
             out/render-control/fallback-diagnostics.ndjson
+            out/render-control/release-notes.md
 
   acoustic-control:
     name: Real Turkish CPU alignment

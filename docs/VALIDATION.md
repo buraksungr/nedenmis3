@@ -1,5 +1,15 @@
 # Doğrulama kaydı
 
+## 1.6.2 — Zararsız SVG'yi temizle, yalnız etkin içeriği çıkar
+
+**Durum:** kaynak ve otomatik testler bu sürümde; kurucu, gerçek Windows kurulumu ve ölçümler yayımlanan [Windows CI](https://github.com/buraksungr/nedenmis3/actions/workflows/windows.yml) işinde yeniden üretilir. Bu bölümdeki hiçbir sayı henüz 1.6.2 için ölçülmüş sayılmaz.
+
+- **Temizleme:** `title`, `desc`, `style`, `metadata`, `animate`, `animateTransform`, `animateMotion`, `text`, `a`, `tspan`, `class`, `style=`, SMIL zaman öznitelikleri, bilinmeyen dekor öznitelikleri ve tanımsız yerel başvurular sahne reddedilmeden çıkarılır. Yalnız `script`, `iframe`, `foreignObject`, `image`, `object`, `embed`, `video/audio`, `on*` olayları ve dış bağlantılar güvenlik gerekçesiyle silinir.
+- **Genişletilmiş izinli liste:** `symbol`, `clipPath`, `mask`, `pattern`, `filter`, `feGaussianBlur`, `feDropShadow`, `feOffset`, `feBlend`, `feMerge`, `feMergeNode` sayısal parametreler ve yerel bağlantılarla kabul edilir; React bunları gerçek SVG olarak üretir.
+- **Adlandırılmış hata:** Yapısal XML, geçersiz hareket parametresi veya bozuk geometri kalırsa mesaj etiketi ve özniteliği adlandırır (ör. `Desteklenmeyen SVG öğesi: <foo> (<g> içinde).`, `<circle> için geçersiz data-dx değeri`).
+- **Kanıt:** Birim testleri temizlenen sahnenin diske imzalı biçimde yazıldığını, yeniden açılışta bit-bit aynı kaldığını ve temizlik nedeniyle sağlayıcıya onarım isteği gitmediğini doğrular. Gerçek HTTP iş akışındaki kontrollü yanıt da kirlenmiş SVG'yi tek istekte kabul eder; `motionWork`, proje dosyası ve üretim günlüğünde dış URL veya ham yanıt bulunmaz.
+- **Yayın:** Windows kurucusu doğrulandıktan sonra aynı iş `v<package.json sürümü>` etiketiyle bir GitHub Release oluşturur ve Setup.exe'yi ekler. Etiket zaten yayımlandıysa yeni derleme yanlışlıkla üzerine yazılmaz; sürüm artırılmalıdır. GitHub yayın bildirimini e-posta olarak gönderir.
+
 ## 1.6.1 — Kesintiden sonra SVG planına devam
 
 **[Windows x64 Setup (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493/artifacts/14636574247)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493) · [Ölçülen zamanlayıcı, kurulum ve render raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493/artifacts/14637336698). Kurulan kaynak: `792d8245cd64980e8bdbaddcfb83b0077448bbbc`.

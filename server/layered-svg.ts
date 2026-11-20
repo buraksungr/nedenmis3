@@ -6,7 +6,59 @@ export const MAX_XML = 96 * 1024;
 const ns = 'http://www.w3.org/2000/svg',
   stage = '0 0 1080 1350';
 const shapes = new Set(['path', 'polygon', 'polyline', 'rect', 'circle', 'ellipse', 'line']);
-const gradients = new Set(['linearGradient', 'radialGradient']);
+/** Painted, static SVG. A model may use filter/mask/clipPath/pattern/symbol, but only with
+ * numeric geometry, local paints and no script: a decoration is never a reason to fail. */
+const painted = new Set([...shapes, 'text']);
+const defsTags = new Set([
+  'linearGradient',
+  'radialGradient',
+  'clipPath',
+  'mask',
+  'pattern',
+  'filter',
+  'symbol',
+]);
+const filterTags = new Set(['feGaussianBlur', 'feDropShadow', 'feOffset', 'feBlend']);
+const mergeTags = new Set(['feMerge', 'feMergeNode']);
+/** Content that can execute, embed or fetch. It is removed (with its subtree) and the
+ * remaining drawing is accepted. */
+const activeTags = new Set(
+  [
+    'script',
+    'iframe',
+    'foreignObject',
+    'image',
+    'object',
+    'embed',
+    'video',
+    'audio',
+    'canvas',
+    'handler',
+    'listener',
+    'font-face',
+  ].map((v) => v.toLowerCase()),
+);
+/** Harmless but not drawn: titles, CSS, SMIL, metadata and text wrappers are stripped. */
+const noiseTags = new Set(
+  [
+    'title',
+    'desc',
+    'metadata',
+    'style',
+    'animate',
+    'animatemotion',
+    'animatetransform',
+    'animatecolor',
+    'set',
+    'discard',
+    'mpath',
+    'textpath',
+    'switch',
+    'a',
+    'tspan',
+    'a:tspan',
+  ].map((v) => v.toLowerCase()),
+);
 export class InvalidDrawing extends Error {}
 const bad = (why: string): never => {
   throw new InvalidDrawing(why);
@@ -14,7 +66,7 @@ const bad = (why: string): never => {
 const numRE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 function num(v: string) {
   if (!numRE.test(v) || !Number.isFinite(+v) || Math.abs(+v) > 100000)
-    bad('Geometri sayıları sınır dışında.');
+    bad('sayı sınır dışında veya geçersiz');
   return +v;
 }
 const nums = (v: string) =>
@@ -22,6 +74,15 @@ const nums = (v: string) =>
     .trim()
     .split(/[\s,]+/)
     .map(num);
+const number = (v: string, tag: string, key: string) => {
+  try {
+    return num(v);
+  } catch {
+    return bad(
+      `<${token(tag)}> için geçersiz ${token(key)} değeri: ${token(v)} (sonlu bir sayı gerekli).`,
+    );
+  }
+};
 function transform(v: string) {
   const calls = v.match(/(?:matrix|translate|scale|rotate|skewX|skewY)\([^()]*\)/g);
   if (
@@ -30,7 +91,7 @@ function transform(v: string) {
     v.length > 320 ||
     v.replace(/(?:matrix|translate|scale|rotate|skewX|skewY)\([^()]*\)/g, '').replace(/[ ,\s]/g, '')
   )
-    return bad('Geçersiz dönüşüm.');
+    return bad('geçersiz dönüşüm');
   for (const c of calls) {
     const name = c.slice(0, c.indexOf('(')),
       n = nums(c.slice(c.indexOf('(') + 1, -1)).length;
@@ -43,22 +104,105 @@ function transform(v: string) {
             ? n === 1
             : n === 1 || n === 2)
     )
-      bad('Geçersiz dönüşüm.');
+      bad('geçersiz dönüşüm');
   }
   return v;
 }
 const enums: Record<string, string[]> = {
   'fill-rule': ['evenodd', 'nonzero'],
+  'clip-rule': ['evenodd', 'nonzero'],
   'stroke-linecap': ['butt', 'round', 'square'],
   'stroke-linejoin': ['miter', 'round', 'bevel'],
   'text-anchor': ['start', 'middle', 'end'],
   'font-family': ['sans-serif', 'Arial', 'system-ui'],
   'font-weight': ['normal', 'bold', '400', '500', '600', '650', '700'],
   gradientUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  spreadMethod: ['pad', 'reflect', 'repeat'],
+  clipPathUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  maskUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  maskContentUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  patternUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  patternContentUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  filterUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  primitiveUnits: ['userSpaceOnUse', 'objectBoundingBox'],
+  'color-interpolation-filters': ['sRGB', 'linearRGB'],
+  'vector-effect': ['non-scaling-stroke'],
+  preserveAspectRatio: ['none', 'xMidYMid meet', 'xMidYMid slice'],
 };
-const color =
-  /^(?:#[\da-f]{3,4}|#[\da-f]{6}|#[\da-f]{8}|none|black|white|red|green|blue|yellow|orange|transparent)$/i;
-const esc = (v: string) =>
+const blendModes = [
+  'normal',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+  'color-dodge',
+  'hard-light',
+  'soft-light',
+  'difference',
+  'exclusion',
+];
+const sources = new Set([
+  'SourceGraphic',
+  'SourceAlpha',
+  'BackgroundImage',
+  'BackgroundAlpha',
+  'FillPaint',
+  'StrokePaint',
+]);
+/** Percentages are relative to the fixed viewBox, so they are safe; expressions and
+ * external references are not. */
+function length(v: string, allowNegative = false) {
+  const m = /^([+-]?(?:\d+\.?\d*|\.\d+))(em|ex|px|pt|pc|mm|cm|in|%)?$/i.exec(v.trim())!;
+  if (!m) bad(`geçersiz boyut değeri: ${token(v)}`);
+  const n = num(m[1]);
+  if (!allowNegative && n < 0) bad('negatif boyut kullanılamaz');
+  return n + (m[2] ? m[2].toLowerCase() : '');
+}
+const colorRE =
+  /^(?:#[\da-f]{3,4}|#[\da-f]{6}|#[\da-f]{8}|none|black|white|red|green|blue|yellow|orange|transparent|currentColor)$/i;
+const named: Record<string, string> = {
+  black: 'black',
+  white: 'white',
+  red: 'red',
+  green: 'green',
+  blue: 'blue',
+  yellow: 'yellow',
+  orange: 'orange',
+  transparent: 'transparent',
+};
+const paints = new Set(['fill', 'stroke', 'stop-color', 'flood-color', 'lighting-color']);
+const references = new Set([
+  'filter',
+  'clip-path',
+  'mask',
+  'marker-start',
+  'marker-mid',
+  'marker-end',
+]);
+const hrefs = new Set(['href', 'src', 'action', 'formaction', 'poster', 'data', 'background']);
+const smil = new Set([
+  'begin',
+  'end',
+  'dur',
+  'repeatcount',
+  'repeatdur',
+  'from',
+  'to',
+  'by',
+  'values',
+  'keytimes',
+  'keysplines',
+  'calculatemode',
+  'accumulate',
+  'additive',
+  'attributename',
+  'attributetype',
+  'rel',
+  'target',
+]);
+const localOnly = /^url\(\s*#([A-Za-z][A-Za-z0-9_-]{0,48})\s*\)$|^#([A-Za-z][A-Za-z0-9_-]{0,48})$/;
+const escape = (v: string) =>
   v
     .replaceAll('&', '&amp;')
     .replaceAll('"', '&quot;')
@@ -67,78 +211,202 @@ const esc = (v: string) =>
 export const serialize = (n: Geometry): string =>
   `<${n.tag}${Object.keys(n.attrs)
     .sort()
-    .map((k) => ` ${k}="${esc(n.attrs[k])}"`)
-    .join('')}>${esc(n.text ?? '')}${n.children.map(serialize).join('')}</${n.tag}>`;
-// A shared XML/geometry allowlist. The motion dialect adds only one fixed, non-recursive
-// local <use> target and bounded numeric choreography; it never enables SMIL, CSS or scripts.
+    .map((k) => ` ${k}="${escape(n.attrs[k])}"`)
+    .join('')}>${escape(n.text ?? '')}${n.children.map(serialize).join('')}</${n.tag}>`;
+const token = (v: string) => v.replace(/[^A-Za-z0-9:._#-]/g, '').slice(0, 48) || '?';
+/** Notes are capped, de-duplicated and contain no artwork, prompt or credential. They are
+ * stored on the signed SVG root as `x-nedenmis-clean` so a later run reuses the sanitized
+ * file instead of asking the model for the same repair. */
+export type Cleanup = { notes: Set<string>; add(why: string): void };
+const cleanup = (): Cleanup => {
+  const notes = new Set<string>();
+  return { notes, add: (why) => notes.size < 8 && notes.add(why) };
+};
+const describe = (c: Cleanup) => [...c.notes].join('; ').slice(0, 240);
 export function parseGeometry(
   xml: string,
   mode: 'layers' | 'rig' | 'objects',
   editorial?: { title: string; narration: string },
 ) {
-  if (Buffer.byteLength(xml) > MAX_XML || /<!\s*(?:DOCTYPE|ENTITY)/i.test(xml))
-    bad('SVG boyutu veya belge türü geçersiz.');
-  const p = new SaxesParser({ xmlns: true }),
+  if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(xml)) bad('SVG belge türü geçersiz (DOCTYPE/ENTITY).');
+  if (Buffer.byteLength(xml) > MAX_XML) bad('SVG boyutu sınır dışında.');
+  const c = cleanup(),
+    note = (why: string) => c.add(why),
+    at = (tag: string, scope: string, why: string): never =>
+      bad(`${scope}: <${token(tag)}> ${why}`),
+    p = new SaxesParser({ xmlns: true }),
     stack: Geometry[] = [],
     ids = new Set<string>(),
     refs = new Set<string>();
   let root: Geometry | undefined,
     layer: Layer | undefined,
     labels = 0,
-    nodes = 0;
+    nodes = 0,
+    skip = 0,
+    skipRoot = false;
   const counts: Record<Layer, number> = { 'layer-bg': 0, 'layer-main': 0, 'layer-fx': 0 };
-  p.on('error', () =>
+  p.on('error', (e) => {
+    const element = /<([A-Za-z][A-Za-z0-9:_-]{0,47})>/.exec(e.message)?.[1];
     bad(
-      `XML Hatası - Satır ${p.line}, sütun ${p.column}: etiket kapanışlarını ve öznitelikleri kontrol et.`,
-    ),
-  );
-  for (const event of ['doctype', 'processinginstruction', 'cdata'] as const)
-    p.on(event, () => bad('Etkin içerik veya belge yönergesi kabul edilmez.'));
+      `XML Hatası - Satır ${p.line}, sütun ${p.column}${element ? `, <${element}>` : ''}: etiket kapanışlarını ve öznitelikleri kontrol et.`,
+    );
+  });
+  p.on('doctype', () => bad('Güvenlik: <!DOCTYPE> kabul edilmez.'));
+  p.on('processinginstruction', () => note('XML yönergesi temizlendi'));
+  p.on('cdata', () => note('CDATA temizlendi'));
   p.on('opentag', (t) => {
-    const tag = t.local,
-      parent = stack.at(-1),
-      a: Record<string, string> = {};
-    if (++nodes > 1200 || stack.length > 16 || t.prefix || (t.uri && t.uri !== ns))
-      bad('Desteklenmeyen SVG yapısı.');
-    const object = mode !== 'layers',
-      use = mode === 'objects' && tag === 'use';
-    const allowed = !parent
-      ? tag === 'svg'
-      : parent.tag === 'svg'
-        ? tag === 'defs' ||
-          (mode !== 'rig' && (tag === 'g' || (object && (shapes.has(tag) || use))))
-        : parent.tag === 'defs'
-          ? gradients.has(tag) || (mode === 'rig' && tag === 'g')
-          : gradients.has(parent.tag)
-            ? tag === 'stop'
-            : parent.tag === 'g' &&
-              (shapes.has(tag) || tag === 'g' || use || (!object && tag === 'text'));
-    if (!allowed) bad('Desteklenmeyen SVG öğesi. Yalnız izinli öğeleri kullan.');
-    for (const [k, { value: v }] of Object.entries(t.attributes)) {
-      if (k === 'xmlns' && tag === 'svg' && v === ns) continue;
-      if (tag === 'svg') {
+    const tag = t.local ?? '',
+      lower = tag.toLowerCase();
+    if (skip) {
+      skip++;
+      return;
+    }
+    if (activeTags.has(lower)) {
+      const label = `<${token(tag)}>`;
+      note(`${label} etkin içerik olarak temizlendi`);
+      skip = 1;
+      skipRoot ||= !stack.length;
+      return;
+    }
+    // A <text> node is only a legacy editorial label in layered illustrations. In the
+    // object dialect it is model decoration: strip it instead of failing the scene.
+    if (noiseTags.has(lower) || lower === 'style' || (lower === 'text' && mode !== 'layers')) {
+      skip = 1;
+      return;
+    }
+    if (++nodes > 1800 || stack.length > 20) bad('SVG yapısı çok derin veya çok büyük.');
+    const parent = stack.at(-1),
+      object = mode !== 'layers',
+      use = mode === 'objects' && tag === 'use',
+      allowed = !parent
+        ? tag === 'svg'
+        : parent.tag === 'svg'
+          ? tag === 'defs' ||
+            (mode !== 'rig' && (tag === 'g' || (object && painted.has(tag)) || use))
+          : parent.tag === 'defs'
+            ? defsTags.has(tag) ||
+              filterTags.has(tag) ||
+              mergeTags.has(tag) ||
+              (lower === 'g' && mode === 'rig')
+            : ['linearGradient', 'radialGradient'].includes(parent.tag)
+              ? tag === 'stop'
+              : parent.tag === 'filter'
+                ? filterTags.has(tag) || mergeTags.has(tag)
+                : filterTags.has(parent.tag)
+                  ? filterTags.has(tag) || mergeTags.has(tag)
+                  : mergeTags.has(parent.tag)
+                    ? tag === 'feMergeNode'
+                    : ['clipPath', 'mask', 'pattern', 'symbol'].includes(parent.tag)
+                      ? shapes.has(tag) ||
+                        tag === 'g' ||
+                        tag === 'text' ||
+                        (parent.tag === 'pattern' && (defsTags.has(tag) || filterTags.has(tag)))
+                      : parent.tag === 'g'
+                        ? object
+                          ? shapes.has(tag) || tag === 'g' || use || tag === 'defs'
+                          : tag === 'defs' || tag === 'g' || shapes.has(tag) || tag === 'text'
+                        : false;
+    if (!allowed)
+      bad(
+        parent
+          ? `Desteklenmeyen SVG öğesi: <${token(tag)}> (<${token(parent.tag)}> içinde).`
+          : `Desteklenmeyen SVG kökü: <${token(tag)}>. Belgenin tek kökü <svg> olmalı.`,
+      );
+    if (use && t.prefix && !isXlink(t))
+      at(tag, 'SVG', 'yalnız yerel #subject-main hedefini örnekleyebilir.');
+    const a: Record<string, string> = {},
+      unsupported: string[] = [];
+    for (const attr of Object.values(t.attributes)) {
+      const k = attr.local ?? attr.name,
+        v = attr.value,
+        n = k.toLowerCase().replaceAll('_', ''),
+        xlink = isXlink(attr) || k.startsWith('xlink:');
+      if (!xlink && attr.prefix) continue;
+      if (k === 'xmlns') {
+        if (tag === 'svg' && v === ns) a.xmlns = v;
+        else if (v !== ns) note('Yabancı XML ad alanı temizlendi');
+        continue;
+      }
+      if (n === 'href' && tag === 'use') {
+        if (v !== '#subject-main')
+          at(tag, 'SVG', `yalnız yerel #subject-main hedefini örnekleyebilir (${token(v)}).`);
+        a.href = v;
+        continue;
+      }
+      if (/^on[a-z]+$/.test(n))
+        at(tag, 'Güvenlik', `etkin ${token(k)} olay özniteliği kabul edilmez.`);
+      if (hrefs.has(n)) {
+        if (n === 'href' && tag !== 'use') {
+          const id = localOnly.exec(v),
+            ref = id?.[1] ?? id?.[2];
+          if (!ref)
+            return at(
+              tag,
+              'Güvenlik',
+              `harici ${token(k)} bağlantısı kabul edilmez (${token(v)}).`,
+            );
+          refs.add(ref);
+          a[k] = `#${ref}`;
+          continue;
+        }
+        at(tag, 'Güvenlik', `harici ${token(k)} bağlantısı kabul edilmez.`);
+      }
+      if (n === 'x-nedenmis-clean') {
+        // Our own recorded note: keep it so a sanitized file re-validates byte for byte.
+        for (const why of v.split('; ').slice(0, 8)) if (why) c.notes.add(why.slice(0, 240));
+        continue;
+      }
+      if (smil.has(n) || n === 'class') {
+        note(`${token(k)} özniteliği temizlendi`);
+        continue;
+      }
+      if (n === 'style') {
+        note('<style> CSS temizlendi');
+        continue;
+      }
+      if (!/^[A-Za-z][A-Za-z0-9:_-]{0,63}$/.test(k)) {
+        note('Geçersiz öznitelik adı temizlendi');
+        continue;
+      }
+      if (n === 'id' && tag === 'defs') continue;
+      if (n === 'id') {
+        // Only an essential structural name is rejected: duplicated keyed groups (layer ids,
+        // subject-main) break React's sibling keys and subject binding. Other duplicates
+        // are cleaned, not a reason to lose the scene.
+        if (tag === 'g' && ['subject-main', ...layers].includes(v) && ids.has(v))
+          at(tag, 'SVG', `için yinelenen ${v} kimliği kullanılamaz.`);
+        if (!/^[A-Za-z][A-Za-z0-9_-]{0,48}$/.test(v) || ids.has(v)) {
+          note(`geçersiz veya yinelenen id temizlendi: ${token(v)}`);
+          continue;
+        }
+        ids.add(v);
+        a.id = v;
+        continue;
+      }
+      if (lower === 'svg') {
         if (k === 'viewBox') {
           const box = nums(v);
           if (box.length !== 4 || box[2] < 0.1 || box[3] < 0.1)
-            bad('viewBox geçerli ve sonlu bir alan olmalı.');
+            at(tag, 'SVG', 'viewBox geçerli ve sonlu bir alan olmalı.');
           a.viewBox = box.join(' ');
           continue;
         }
         if (k === 'width' || k === 'height') {
-          const n = num(v.replace(/(?:%|px)$/, ''));
-          if (n <= 0) bad('Geçersiz tuval boyutu.');
+          const n = parseFloat(String(length(v)));
           if (!v.endsWith('%')) a[k] = String(n);
           continue;
         }
-        bad('İzin verilmeyen SVG kök özniteliği.');
-      }
-      if (use && k === 'href' && v === '#subject-main') {
-        a.href = v;
+        if (enums[k]?.includes(v)) {
+          a[k] = v;
+          continue;
+        }
+        note(`Kök özniteliği temizlendi: ${token(k)}`);
         continue;
       }
-      if (object && (shapes.has(tag) || tag === 'g' || use) && k.startsWith('data-')) {
+      if (object && (shapes.has(tag) || tag === 'g' || use) && n.startsWith('data-')) {
         if (k === 'data-anim') {
-          if (!animKinds.some((vv) => vv === v)) bad('Bilinmeyen nesne hareketi.');
+          if (!animKinds.some((vv) => vv === v))
+            at(tag, 'SVG', `için bilinmeyen data-anim değeri: ${token(v)}.`);
         } else {
           const ranges: Record<string, [number, number]> = {
             'data-dx': [-8000, 8000],
@@ -150,48 +418,96 @@ export function parseGeometry(
             'data-pivot-y': [-10000, 10000],
             'data-angle': [-180, 180],
           };
-          if (!Object.hasOwn(ranges, k)) bad('Bilinmeyen hareket parametresi.');
-          const n = num(v),
+          if (!Object.hasOwn(ranges, k)) {
+            note(`${token(k)} parametresi temizlendi`);
+            continue;
+          }
+          const nv = number(v, tag, k),
             [lo, hi] = ranges[k];
-          if (n < lo || n > hi) bad('Hareket parametresi sınır dışında: ' + k);
+          if (nv < lo || nv > hi)
+            at(tag, 'SVG', `geçersiz hareket parametresi ${token(k)}=${token(v)} (sınır dışında).`);
         }
         a[k] = v;
         continue;
       }
-      if (k === 'id') {
-        if (!/^[A-Za-z][A-Za-z0-9_-]{0,48}$/.test(v) || ids.has(v))
-          bad('Geçersiz veya tekrarlanan id.');
-        ids.add(v);
-        a.id = v;
+      if (paints.has(k)) {
+        a[k] = paint(v, tag, k, note);
         continue;
       }
-      if (['fill', 'stroke', 'stop-color'].includes(k)) {
-        const local = /^url\(#([A-Za-z][A-Za-z0-9_-]{0,48})\)$/.exec(v);
-        if (local && k !== 'stop-color') refs.add(local[1]);
-        else if (!color.test(v)) bad('Renk olarak hex veya tanımlı bir yerel gradyan kullan.');
-      } else if (k === 'd' && tag === 'path') {
-        if (v.length > 32000 || !/^\s*[Mm]/.test(v)) bad('Geçersiz path.');
+      if (k === 'paint-order') {
+        if (/^(?:normal|(?:fill|stroke|markers)(?: (?:fill|stroke|markers)){0,2})$/.test(v))
+          a[k] = v;
+        else note('paint-order temizlendi');
+        continue;
+      }
+      if (references.has(k)) {
+        const id = localOnly.exec(v);
+        if (!id) {
+          note(`harici ${token(k)} bağlantısı temizlendi`);
+          continue;
+        }
+        // localOnly has either group 1 (url(#id)) or group 2 (#id).
+        const ref = id[1] ?? id[2];
+        refs.add(ref);
+        a[k] = `url(#${ref})`;
+        continue;
+      }
+      if (k === 'd' && tag === 'path') {
+        if (v.length > 32000 || !/^\s*[Mm]/.test(v))
+          at(tag, 'SVG', 'path M veya m komutuyla başlamalı ve kısa olmalı.');
         try {
           const cs = SVGPathData.parse(v);
           if (
             cs.length > 5000 ||
-            cs.some((c) =>
-              Object.values(c).some(
-                (n) => typeof n === 'number' && (!Number.isFinite(n) || Math.abs(n) > 100000),
+            cs.some((cmd) =>
+              Object.values(cmd).some(
+                (x) => typeof x === 'number' && (!Number.isFinite(x) || Math.abs(x) > 100000),
               ),
             )
           )
-            bad('Geçersiz path.');
+            at(tag, 'SVG', 'path koordinatları sınır dışında.');
         } catch {
-          bad('Path komutlarını ve koordinat sayılarını düzelt.');
+          at(tag, 'SVG', 'path komutlarını ve koordinat sayılarını düzelt.');
         }
-      } else if (k === 'transform' || k === 'gradientTransform') transform(v);
-      else if (
-        ['opacity', 'stroke-opacity', 'fill-opacity', 'stop-opacity', 'offset'].includes(k)
+        a[k] = v;
+        continue;
+      }
+      if (k === 'transform' || k === 'gradientTransform') {
+        if (
+          k === 'gradientTransform' &&
+          !/^(?:matrix|translate|scale|rotate|skewX|skewY)\([^()]*\)$/.test(v)
+        ) {
+          note('gradientTransform temizlendi');
+          continue;
+        }
+        try {
+          a[k] = transform(v);
+        } catch (e) {
+          throw new InvalidDrawing(`<${token(tag)}> ${k}: ${(e as Error).message}`);
+        }
+        continue;
+      }
+      if (
+        ['opacity', 'stroke-opacity', 'fill-opacity', 'stop-opacity', 'flood-opacity'].includes(k)
       ) {
-        const n = k === 'offset' && v.endsWith('%') ? num(v.slice(0, -1)) / 100 : num(v);
-        if (n < 0 || n > 1) bad('Opaklık veya gradyan durağı geçersiz.');
-      } else if (
+        const nv = number(
+          v.endsWith('%') ? String(number(v.slice(0, -1), tag, k) / 100) : v,
+          tag,
+          k,
+        );
+        if (nv < 0 || nv > 1)
+          at(tag, 'SVG', `geçersiz ${token(k)} değeri: ${token(v)} (0 ile 1 arası olmalı).`);
+        a[k] = v;
+        continue;
+      }
+      if (k === 'offset') {
+        const nv = v.endsWith('%') ? number(v.slice(0, -1), tag, k) / 100 : number(v, tag, k);
+        if (nv < 0 || nv > 1)
+          at(tag, 'SVG', `geçersiz ${token(k)} değeri: ${token(v)} (0 ile 1 arası olmalı).`);
+        a[k] = v;
+        continue;
+      }
+      if (
         [
           'x',
           'y',
@@ -204,65 +520,125 @@ export function parseGeometry(
           'x2',
           'y1',
           'y2',
-          'width',
-          'height',
           'fx',
           'fy',
-          'stroke-width',
+          'fr',
+          'dx',
+          'dy',
           'stroke-miterlimit',
           'stroke-dashoffset',
           'font-size',
+          'pathLength',
         ].includes(k)
       ) {
-        const val = num(v.endsWith('%') ? v.slice(0, -1) : v);
-        if (
-          ['r', 'rx', 'ry', 'width', 'height', 'stroke-width', 'font-size'].includes(k) &&
-          val < 0
-        )
-          bad('Negatif boyut kullanılamaz.');
-      } else if (k === 'points' && ['polyline', 'polygon'].includes(tag)) {
-        const n = nums(v);
-        if (n.length < 4 || n.length % 2 || n.length > 3000) bad('Geçersiz nokta listesi.');
-      } else if (k === 'stroke-dasharray') {
-        if (nums(v).some((n) => n < 0)) bad('Geçersiz çizgi aralığı.');
-      } else if (!Object.hasOwn(enums, k) || !enums[k].includes(v))
-        bad('İzin verilmeyen SVG özniteliği.');
-      a[k] = v;
+        try {
+          a[k] = length(v, !['r', 'rx', 'ry', 'font-size'].includes(k));
+        } catch (e) {
+          throw new InvalidDrawing(`<${token(tag)}> ${k}: ${(e as Error).message}`);
+        }
+        continue;
+      }
+      if (['width', 'height', 'stroke-width'].includes(k)) {
+        try {
+          a[k] = length(v, k === 'stroke-width');
+        } catch (e) {
+          throw new InvalidDrawing(`<${token(tag)}> ${k}: ${(e as Error).message}`);
+        }
+        continue;
+      }
+      if (k === 'stdDeviation') {
+        const d = nums(v);
+        if (d.length < 1 || d.length > 2 || d.some((x) => x < 0))
+          at(tag, 'SVG', 'stdDeviation 0 veya daha büyük bir veya iki sayı olmalı.');
+        a[k] = d.join(' ');
+        continue;
+      }
+      if (k === 'points' && ['polyline', 'polygon'].includes(tag)) {
+        const nv = nums(v);
+        if (nv.length < 4 || nv.length % 2 || nv.length > 3000)
+          at(tag, 'SVG', 'nokta listesi çift sayıda ve kısa olmalı.');
+        a[k] = nv.join(' ');
+        continue;
+      }
+      if (k === 'stroke-dasharray') {
+        const dashes = nums(v);
+        if (dashes.some((nv) => nv < 0)) at(tag, 'SVG', 'çizgi aralığı negatif olamaz.');
+        a[k] = v;
+        continue;
+      }
+      if (k === 'in' || k === 'in2') {
+        if (!sources.has(v) && !/^[A-Za-z][A-Za-z0-9_-]{0,32}$/.test(v))
+          at(tag, 'SVG', `geçersiz filtre girdisi: ${token(v)}.`);
+        a[k] = v;
+        continue;
+      }
+      if (k === 'result') {
+        if (!/^[A-Za-z][A-Za-z0-9_-]{0,32}$/.test(v)) at(tag, 'SVG', 'filtre sonuç adı geçersiz.');
+        a[k] = v;
+        continue;
+      }
+      if (k === 'mode' && tag === 'feBlend') {
+        if (!blendModes.includes(v.toLowerCase())) at(tag, 'SVG', 'karışım modu geçersiz.');
+        a[k] = v.toLowerCase();
+        continue;
+      }
+      if (Object.hasOwn(enums, k) && enums[k].includes(v)) {
+        a[k] = v;
+        continue;
+      }
+      unsupported.push(token(k));
     }
-    if (use && a.href !== '#subject-main') bad('Yalnız yerel #subject-main örneklenebilir.');
-    if (mode === 'objects' && a.id === 'subject-main')
-      bad('Ortak özneyi sahnede yeniden tanımlama.');
-    if (mode === 'rig' && parent?.tag === 'defs' && tag === 'g' && a.id !== 'subject-main')
-      bad('defs içinde yalnız subject-main grubu olabilir.');
-    const n: Geometry = { tag, attrs: a, children: [] };
+    if (unsupported.length)
+      note(`Desteklenmeyen öznitelik temizlendi: ${[...new Set(unsupported)].sort().join(', ')}`);
+    const node: Geometry = { tag, attrs: a, children: [] };
+    if (
+      ['linearGradient', 'radialGradient', 'pattern', 'filter', 'mask', 'clipPath'].includes(tag)
+    ) {
+      const parentDefs = stack.at(-1);
+      if (parentDefs?.tag === 'defs')
+        for (const [k2, v2] of Object.entries(parentDefs.attrs))
+          if (!(k2 in a) && k2 !== 'id') a[k2] = v2;
+    }
     if (!parent) {
+      if (skipRoot) return;
+      if (tag !== 'svg') bad(`Desteklenmeyen SVG kökü: <${token(tag)}>.`);
       a.viewBox ??= `0 0 ${a.width ?? (mode === 'rig' ? 300 : 1080)} ${a.height ?? (mode === 'rig' ? 180 : mode === 'layers' ? 1350 : 1920)}`;
       if (
         nums(a.viewBox)
           .slice(2)
           .some((v) => v < 0.1)
       )
-        bad('Geçersiz tuval boyutu.');
-      root = n;
-    } else parent.children.push(n);
+        at('svg', 'SVG', 'geçersiz tuval boyutu.');
+      root = node;
+    } else parent.children.push(node);
     if (mode === 'layers' && parent?.tag === 'svg' && tag === 'g') {
-      if (!layers.includes(a.id as Layer)) bad('Kökte layer-bg, layer-main ve layer-fx gerekli.');
+      if (!layers.includes(a.id as Layer))
+        at(
+          'g',
+          'SVG',
+          `kökte layer-bg, layer-main ve layer-fx grupları gerekli (${token(a.id ?? 'id yok')}).`,
+        );
       layer = a.id as Layer;
     }
     if (layer && shapes.has(tag)) counts[layer]++;
-    stack.push(n);
+    stack.push(node);
   });
   p.on('text', (v) => {
+    if (skip) return;
     const n = stack.at(-1);
     if (n?.tag === 'text') n.text = (n.text ?? '') + v;
-    else if (v.trim()) bad('Sahne içinde serbest metin kullanma.');
+    else if (v.trim()) note('serbest metin temizlendi');
   });
   p.on('closetag', () => {
+    if (skip) {
+      skip--;
+      return;
+    }
     const n = stack.pop()!;
     if (n.tag === 'text') {
       const text = n.text?.trim() ?? '';
-      // Optional editorial text is not a reason to reject a safe drawing. Keep only
-      // short scientific labels, never crop a sentence or repeat the title.
+      // Optional editorial text never rejects an otherwise valid scene. Keep only short
+      // scientific labels; drop a sentence or the title instead of cropping it.
       if (
         layer !== 'layer-fx' ||
         labels >= 2 ||
@@ -270,7 +646,8 @@ export function parseGeometry(
         !/^\p{L}[\p{L}\p{M}\p{N}’'-]*(?: \p{L}[\p{L}\p{M}\p{N}’'-]*)?$/u.test(text) ||
         [editorial?.title, editorial?.narration].some(
           (t) => t?.trim().toLocaleLowerCase('tr') === text.toLocaleLowerCase('tr'),
-        )
+        ) ||
+        /(?:src|href)\s*=/i.test(text)
       ) {
         stack.at(-1)!.children.pop();
         return;
@@ -281,19 +658,53 @@ export function parseGeometry(
     if (stack.length === 1 && n.tag === 'g') layer = undefined;
   });
   p.write(xml).close();
-  if (!root) return bad('Boş SVG.');
-  const defs = root.children.filter((n) => n.tag === 'defs').flatMap((n) => n.children);
-  if (defs.length > 32) bad('Gradyan sayısı sınır dışında.');
+  if (!root) {
+    if (skipRoot) return bad('SVG kökü <svg> olmalı; etkin <script> veya <style> kabuk olamaz.');
+    return bad('Boş SVG.');
+  }
+  const all: Geometry[] = [];
+  const walk = (n: Geometry) => {
+    all.push(n);
+    n.children.forEach(walk);
+  };
+  walk(root);
+  const defs = all.filter((n) => n.tag === 'defs').flatMap((n) => n.children);
+  if (defs.length > 32) bad('Gradyan veya maske sayısı sınır dışında.');
+  const defined = new Set(defs.map((n) => n.attrs.id).filter(Boolean));
   for (const ref of refs)
-    if (!defs.some((g) => gradients.has(g.tag) && g.attrs.id === ref))
-      bad('Kullanılan gradyan tanımsız.');
-  return { root, defs, counts, nodes };
+    if (!defined.has(ref)) {
+      note(`tanımsız yerel başvuru temizlendi`);
+      // Drop a dangling paint/href so the renderer never receives an unresolved URL.
+      for (const n of all)
+        for (const [k, v] of Object.entries(n.attrs)) {
+          if (v === `url(#${ref})` || v === `#${ref}`) {
+            if (paints.has(k)) n.attrs[k] = 'none';
+            else delete n.attrs[k];
+          }
+        }
+    }
+  return { root, defs, counts, nodes, cleanup: describe(c) };
+}
+const isXlink = (a: { prefix?: string; uri?: string }) =>
+  a.prefix === 'xlink' || a.uri === 'http://www.w3.org/1999/xlink';
+/** A paint may be a local gradient/pattern, a plain colour or none. Anything else is
+ * cleaned to `none`, with the offending element named in the cleanup note. */
+function paint(v: string, tag: string, key: string, note: (s: string) => void) {
+  if (v === 'none') return v;
+  if (named[v.toLowerCase()]) return named[v.toLowerCase()];
+  if (/^currentcolor$/i.test(v)) return 'currentColor';
+  if (colorRE.test(v)) return v.toLowerCase();
+  const id = localOnly.exec(v);
+  if (id) return `url(#${id[1] ?? id[2]})`;
+  note(`<${token(tag)}> ${key}: harici veya geçersiz boya temizlendi`);
+  return 'none';
 }
 export function parseIllustration(
   xml: string,
   editorial?: { title: string; narration: string },
 ): { drawing: Drawing; canonical: string } {
-  const { root, defs, counts, nodes } = parseGeometry(xml, 'layers', editorial);
+  const { root, defs, counts, nodes, cleanup } = parseGeometry(xml, 'layers', editorial),
+    note = cleanup || root.attrs['x-nedenmis-clean'] || '';
   if (layers.some((id) => !root!.children.some((n) => n.tag === 'g' && n.attrs.id === id)))
     bad('layer-bg, layer-main ve layer-fx grupları gerekli.');
   const box = root.attrs.viewBox;
@@ -306,7 +717,7 @@ export function parseIllustration(
   };
   const document: Geometry = {
     tag: 'svg',
-    attrs: { xmlns: ns, viewBox: box },
+    attrs: { xmlns: ns, viewBox: box, ...(note ? { 'x-nedenmis-clean': note } : {}) },
     children: [
       ...(defs.length ? [{ tag: 'defs', attrs: {}, children: defs }] : []),
       ...layers.map((l) => drawing.layers[l]),

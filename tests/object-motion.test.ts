@@ -88,18 +88,66 @@ test('flat or gradient sets are preserved untouched; old layer wrappers, hidden 
   ])
     assert.throws(() => parseStage(svg, rig));
 });
-test('only the fixed local rig can be instantiated and only bounded inert motion metadata reaches React', () => {
-  for (const xml of [
-    scene(actor(42, 'move', 'http://example.test/s.svg#subject-main') + actor(500), '', flakes),
-    scene(actors, '', flakes.replace('fall', 'invented')),
-    scene(actors, '', flakes.replace('r="10"', 'r="10" data-delay="-1"')),
-    scene(actors, '', flakes.replace('r="10"', 'r="10" data-dx="Infinity"')),
-    scene(actors, '', flakes.replace('r="10"', 'r="10" onclick="0"')),
-    scene(actors, '<g id="subject-main"/>', flakes),
-    scene(actors, '<image/>', flakes),
-    scene(actors, '<animate/>', flakes),
+test('only the fixed local rig can be instantiated, and the error names the exact element', () => {
+  const rejects: [string, RegExp][] = [
+    [
+      scene(actor(42, 'move', 'http://example.test/s.svg#subject-main') + actor(500), '', flakes),
+      /<use> yalnız yerel #subject-main/,
+    ],
+    [scene(actors, '', flakes.replace('fall', 'invented')), /<circle> için bilinmeyen data-anim/],
+    [
+      scene(actors, '', flakes.replace('r="10"', 'r="10" data-delay="-1"')),
+      /<circle> geçersiz hareket parametresi data-delay=-1/,
+    ],
+    [
+      scene(actors, '', flakes.replace('r="10"', 'r="10" data-dx="Infinity"')),
+      /<circle> için geçersiz data-dx/,
+    ],
+    [
+      scene(actors, '', flakes.replace('r="10"', 'r="10" onclick="0"')),
+      /Güvenlik: <circle> etkin onclick/,
+    ],
+  ];
+  for (const [xml, message] of rejects) assert.throws(() => parseStage(xml, rig), message);
+});
+test('unsupported but harmless SVG is sanitized into a signed scene; only active content is removed', () => {
+  const dirty = scene(
+    actors,
+    '<title>Karıncalar</title><desc>not</desc><style>g{opacity:.4}</style>' +
+      '<metadata><x/></metadata><g id="set" class="shadow">' +
+      '<rect width="1080" height="1920" fill="#194057"/>' +
+      '<animate attributeName="opacity" values="0;1"/>' +
+      '<animateTransform attributeName="transform" type="rotate"/>' +
+      '<path d="M0 0L8 8" stroke="red"><animateMotion path="M0 0"/></path>' +
+      '<image href="https://example.test/a.png"/>' +
+      '<foreignObject><div/></foreignObject>' +
+      '<script>alert(1)</script></g>' +
+      '<g id="glow" data-anim="pulse" data-duration="3">' +
+      '<circle cx="640" cy="880" r="70" fill="none" stroke="#ffbe75" stroke-width="6" ' +
+      'filter="url(#blur)" clip-path="url(#ring)"/></g>',
+    flakes,
+  );
+  const v = parseStage(dirty, rig);
+  assert.match(v.canonical, /x-nedenmis-clean="[^"]*&lt;image&gt; etkin içerik olarak temizlendi/);
+  for (const tag of [
+    '<title',
+    '<desc',
+    '<style',
+    '<metadata',
+    '<animate',
+    '<animateTransform',
+    '<animateMotion',
+    '<image',
+    '<foreignObject',
+    '<script',
+    'class=',
   ])
-    assert.throws(() => parseStage(xml, rig));
+    assert.ok(!v.canonical.includes(tag), tag);
+  assert.ok(v.canonical.includes('data-anim="pulse"'));
+  // An undefined local filter is dropped from the shape, not treated as a scene failure.
+  assert.ok(!v.canonical.includes('filter='));
+  assert.match(v.canonical, /tanımsız yerel başvuru temizlendi/);
+  assert.equal(parseStage(v.canonical, rig).canonical, v.canonical);
 });
 test('eight deterministic frame-based primitives: travel in units, looping weather, normalized trace, pivot, spring overshoot', () => {
   const at = (kind: string, f: number, extra = {}) =>
@@ -249,4 +297,105 @@ test('one broken middle heading: two repairs, later sibling saved, reload and re
   assert.equal(p.scenes[0].choreography?.digest, before[0]);
   assert.equal(p.scenes[2].choreography?.digest, before[2]);
   assert.equal(calls.length, 7);
+});
+test('an allowed filter/clip/mask/pattern is rendered by React, never stripped to text or rejected', () => {
+  const stage = parseStage(
+    `<svg viewBox="0 0 1080 1920">
+      <defs>
+        <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="3" dy="4" stdDeviation="2.5" flood-color="#081528"/>
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+        </filter>
+        <clipPath id="ring"><circle cx="540" cy="700" r="90"/></clipPath>
+        <pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse">
+          <circle cx="4" cy="4" r="2" fill="#ffbe75"/>
+        </pattern>
+      </defs>
+      <g id="set"><rect width="1080" height="1920" fill="url(#dots)"/></g>
+      <path id="halo" d="M420 600Q540 520 660 600Z" fill="none" stroke="#ffbe75" stroke-width="8"
+            filter="url(#soft)" clip-path="url(#ring)" data-anim="pulse"/>
+      ${actors.replaceAll('data-anim="move"', 'data-anim="move"')}
+      ${flakes}
+    </svg>`,
+    rig,
+  ).root;
+  const tree = renderToStaticMarkup(
+    createElement(ObjectScene, {
+      scene: { rig, stage, ref: { title: 'Güvenli Derinlikler', digest: 'filters' } as MotionRef },
+      frame: 12,
+    }),
+  );
+  for (const expected of [
+    '<filter',
+    '<feDropShadow dx="3" dy="4" stdDeviation="2.5" flood-color="#081528">',
+    '<feGaussianBlur in="SourceAlpha" stdDeviation="2">',
+    '<clipPath',
+    'clip-path="url(#',
+    '<pattern',
+    'filter="url(#',
+  ])
+    assert.ok(tree.includes(expected), expected);
+});
+test('the reported regression: title/style/animate/text no longer stop a storyboard; <mask> is named if truly invalid', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-sanitize-')),
+    store = new Store(dir, false);
+  t.after(() => {
+    store.db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const replied = `<svg viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+    <title>Kışın Eşiği</title><desc>model açıklaması</desc><metadata>x</metadata>
+    <style>.a { opacity: .5; }</style>
+    <defs><linearGradient id="sky"><stop stop-color="#194057"/></linearGradient></defs>
+    <g id="set"><rect width="1080" height="1920" fill="url(#sky)"/>
+      <animate attributeName="opacity" values="0;1"/>
+      <text x="30" y="60" font-size="24">kış</text></g>
+    ${stageReply(0)
+      .svg.replace(/^<svg[^>]*>/, '')
+      .replace('</svg>', '')}
+  </svg>`;
+  const models = new SceneModels(
+    store,
+    { groq: memoryVault(), openrouter: memoryVault() },
+    async (_url, o) =>
+      completion(
+        JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne === 1
+          ? { title: 'Kışın Eşiği', svg: replied }
+          : template,
+      ),
+  );
+  models.key('openrouter', 'sanitize-regression');
+  const planner = new ObjectPlanner(store, models, async () => {}),
+    p = store.create(makeProject(topic, lines[0]));
+  p.scriptApproval = scriptSig(p);
+  await planner.plan(p, () => {});
+  const saved = store.get(p.id);
+  assert.equal(saved.motionWork, undefined);
+  assert.ok(saved.scenes[0].choreography);
+  const frame = motionFrame(
+    store.dir(p.id),
+    saved.subjectRig,
+    saved.scenes[0].choreography,
+    lines[0],
+  );
+  assert.ok(frame.stage.children.length > 1);
+  // The signed file records what was removed; the renderer only receives safe geometry.
+  assert.match(saved.scenes[0].choreography!.digest, /^[0-9a-f]{64}$/);
+  const file = fs.readFileSync(
+    path.join(store.dir(p.id), 'media', 'motion', saved.scenes[0].choreography!.digest + '.svg'),
+    'utf8',
+  );
+  assert.match(file, /x-nedenmis-clean=/);
+  assert.doesNotMatch(file, /<(?:style|animate|text|title|desc|metadata)/);
+
+  // A structurally invalid <mask> (directly under <svg>) is still rejected, but the message
+  // names it instead of the old opaque counter.
+  assert.throws(
+    () =>
+      parseStage(
+        replied.replace('<defs>', '<mask><g/></mask><defs>'),
+        parseRig(template.svg, template.subject).root,
+      ),
+    /<mask>/,
+  );
 });

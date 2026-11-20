@@ -414,3 +414,62 @@ test(
     );
   },
 );
+
+test('harmless unsupported markup reaches disk as a cleaned signed scene: no repair request, no failure card', async (t) => {
+  // The user's failing reply: a <title>, a <style> block and <animate> inside an ordinary
+  // scene used to stop every storyboard with "Desteklenmeyen SVG öğesi … (2 onarımdan sonra)".
+  const decorate = (svg: string) =>
+    svg
+      .replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')
+      .replace(
+        '<g id="set">',
+        '<title>Sahne</title><desc>açıklama</desc><metadata>m</metadata>' +
+          '<style>.glow{opacity:.6}</style><g id="set" class="glow">',
+      )
+      .replace(
+        '</svg>',
+        '<animate attributeName="opacity" values="0;1"/><animateTransform attributeName="transform"/>' +
+          '<text x="20" y="40" font-size="22">kış</text>' +
+          '<image href="https://example.test/subject.png"/><script>alert(1)</script></svg>',
+      );
+  const f = await fixture(t, 'openrouter', 2, (scene) =>
+    scene
+      ? success('openrouter', { ...compactStage(scene), svg: decorate(compactStage(scene).svg) })
+      : undefined,
+  );
+  // The rig itself carries the same harmless habits.
+  const p = await f.finish();
+  assert.equal(p.job.state, 'done', p.job.label);
+  assert.deepEqual(
+    f.posts.map((q) => q.scene),
+    [0, 1, 2], // only the shared template and the two scenes; no content repair
+  );
+  assert.ok(f.posts.every((q) => q.repair === undefined));
+  assert.ok(p.scenes.every((s) => s.choreography));
+  assert.equal(p.motionWork, undefined);
+  const files = p.scenes.flatMap((s) =>
+    s.choreography
+      ? [path.join(f.store.dir(p.id), 'media', 'motion', s.choreography.digest + '.svg')]
+      : [],
+  );
+  for (const file of files) {
+    const xml = fs.readFileSync(file, 'utf8');
+    assert.match(xml, /x-nedenmis-clean="/);
+    for (const bad of ['<style', '<animate', '<text', '<image', '<script', 'class='])
+      assert.ok(!xml.includes(bad), `${file}: ${bad}`);
+    assert.ok(xml.includes('data-anim'));
+  }
+  assert.ok(
+    !fs.readFileSync(path.join(f.store.dir(p.id), 'project.json'), 'utf8').includes('example.test'),
+  );
+  assert.deepEqual(
+    await (await f.req('/projects/' + p.id)).json().then((x: Project) => x.motionWork),
+    undefined,
+  );
+  // Reopening a stored, cleaned scene must not contact the provider or rewrite it.
+  const before = f.posts.length;
+  assert.equal((await f.req(f.route + '/generate', { kind: 'board' }, p.rev)).status, 202);
+  const again = await f.settle(f.route);
+  assert.equal(again.job.state, 'done');
+  assert.equal(f.posts.length, before);
+});

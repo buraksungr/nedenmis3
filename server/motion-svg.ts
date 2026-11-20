@@ -4,17 +4,21 @@ const fail = (s: string): never => {
   throw new InvalidDrawing(s);
 };
 const descend = (n: Geometry): Geometry[] => [n, ...n.children.flatMap(descend)];
-function canonical(root: Geometry) {
+function canonical(root: Geometry, cleanup = '') {
   const result = serialize({
     ...root,
-    attrs: { xmlns: 'http://www.w3.org/2000/svg', viewBox: root.attrs.viewBox },
+    attrs: {
+      xmlns: 'http://www.w3.org/2000/svg',
+      viewBox: root.attrs.viewBox,
+      ...(cleanup ? { 'x-nedenmis-clean': cleanup } : {}),
+    },
   });
   if (Buffer.byteLength(result) > MAX_XML) fail('SVG çok büyük.');
   return result;
 }
 export function parseRig(xml: string, subject = '') {
-  const { root, defs } = parseGeometry(xml, 'rig'),
-    main = defs.find((n) => n.tag === 'g' && n.attrs.id === 'subject-main');
+  const { root, defs, cleanup } = parseGeometry(xml, 'rig'),
+    main = defs.find((n) => ['g', 'symbol'].includes(n.tag) && n.attrs.id === 'subject-main');
   if (!main) return fail('defs içinde tek, bütünleşik subject-main gerekli.');
   const parts = descend(main);
   if (
@@ -45,7 +49,7 @@ export function parseRig(xml: string, subject = '') {
   }
   if (/balina|whale/u.test(name) && !['body', 'tail', 'flipper'].every(named))
     fail('Balinanın body, tail ve flipper parçalarını bağlı bir siluet olarak çiz.');
-  return { root, canonical: canonical(root) };
+  return { root, canonical: canonical(root, cleanup) };
 }
 // Track placement without a browser; catch co-located clones / invisible transforms without
 // a pixel-count or background-complexity gate. The SVG renderer remains the source of pixels.
@@ -85,7 +89,7 @@ function matrix(s = '') {
 }
 const loops = new Set(['fall', 'rise', 'pulse', 'swing', 'wiggle']);
 export function parseStage(xml: string, rig: Geometry) {
-  const { root } = parseGeometry(xml, 'objects'),
+  const { root, cleanup } = parseGeometry(xml, 'objects'),
     [bx, by, bw, bh] = root.attrs.viewBox.split(' ').map(Number),
     [rx, ry, rw, rh] = rig.attrs.viewBox.split(' ').map(Number);
   const motions = new Set<Geometry>(),
@@ -186,5 +190,5 @@ export function parseStage(xml: string, rig: Geometry) {
     )
   )
     fail('Baştan sona süren bir döngü kullan: fall, rise, pulse, swing veya wiggle.');
-  return { root, actors: instances, objects: motions.size, canonical: canonical(root) };
+  return { root, actors: instances, objects: motions.size, canonical: canonical(root, cleanup) };
 }
