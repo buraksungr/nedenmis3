@@ -9,6 +9,10 @@ on:
   pull_request:
   push:
     branches: ['arena/**']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'resources/NOTICE.txt'
 permissions:
   contents: write
 jobs:
@@ -61,24 +65,26 @@ jobs:
       - name: Test storyboard editing, voice preflight and one-click production in Edge
         run: npm run test:ui
         timeout-minutes: 15
-      - name: Confirm this tagged push is not rebuilding an existing release
+      - name: Publish only when this version has no release yet
         shell: pwsh
         run: |
           $tag = 'v' + (node -p "require('./package.json').version")
-          # A missing tag makes gh exit 1; treat exactly that as "free", not as a step failure.
+          # A missing tag makes the API return 404; treat exactly that as "free". An already
+          # published version is not rebuilt or overwritten: bump package.json for a release.
           $existing = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" 2>$null
           $found = $LASTEXITCODE -eq 0
+          $publish = if (!$found) { 'true' } else { 'false' }
           if ($found) {
             $release = $existing | ConvertFrom-Json
             if (!$release.draft) {
-              throw "$tag is already published; bump package.json before tagging another build."
+              Write-Output "::notice title=Release skipped::$tag is already published; this build still uploads its installer artifact."
+            } else {
+              gh release delete $tag --yes
+              if ($LASTEXITCODE -ne 0) { throw "Could not remove stale draft $tag" }
+              $publish = 'true'
             }
-            gh release delete $tag --yes
-            if ($LASTEXITCODE -ne 0) { throw "Could not remove stale draft $tag" }
-            Write-Output "Removed stale draft $tag"
-          } else {
-            Write-Output "$tag is free for this build"
           }
+          "PUBLISH_RELEASE=$publish" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
         env: { GH_TOKEN: '${{ github.token }}' }
       - name: Package Windows installer
@@ -97,7 +103,7 @@ jobs:
           node scripts/release-notes.mjs
           "RELEASE_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Publish GitHub release with the installer (GitHub sends the release e-mail)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' && env.PUBLISH_RELEASE == 'true' }}
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
@@ -105,7 +111,7 @@ jobs:
           gh release create $env:RELEASE_TAG "dist/installer/Nedenmis-Studio-$version-Setup.exe" --target $env:GITHUB_SHA --title $title --notes-file out/render-control/release-notes.md --latest
         env: { GH_TOKEN: '${{ github.token }}' }
       - name: Record the published release in the job summary
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' && env.PUBLISH_RELEASE == 'true' }}
         shell: pwsh
         run: |
           $url = gh release view $env:RELEASE_TAG --json url --jq .url
