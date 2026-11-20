@@ -1,5 +1,16 @@
 # Doğrulama kaydı
 
+## 1.6.1 — Kesintiden sonra SVG planına devam
+
+**[Windows x64 Setup (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493/artifacts/14636574247)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493) · [Ölçülen zamanlayıcı, kurulum ve render raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493/artifacts/14637336698). Kurulan kaynak: `792d8245cd64980e8bdbaddcfb83b0077448bbbc`.
+
+- **Kurulum:** İmzasız `Nedenmis-Studio-1.6.1-Setup.exe` temiz Windows koşucusuna kuruldu; kurulu uygulama ve paketlenmiş kompozisyon sistem Edge’iyle açıldı. **EXE SHA-256:** `e0b66886fe50afc11bc72d9f1746bbeb5a0e54b2f5f9252ad048e48d606ae657`. İndirilen ZIP için SHA-256: `3e01804923d5adecb34d9cad9301678ac44562049178f5d6ab5e58c6ed6de1c7`.
+- **Gerçek bekleme süreleri:** Windows’ta Gemini SDK yoluna ikinci sahnede **429 → 503 → 429 → başarı** yanıtları verildi. İki sahne isteği arasındaki süre ve aynı gövdenin üç yeniden gönderim aralığı sırasıyla **5071 / 10032 / 20041 / 35024 ms** ölçüldü (`planner-clock.json`). İlk sahne bir kez istendi; ikincisi dördüncü istekte kaydedildi. Her iki sağlayıcıda şablon/sahne/onarım için aynı 8.192 tokenlik çıkış bütçesi ve 3.500 karakterin altında tamamlanmış SVG istemi doğrulandı.
+- **Kısmi başarı ve neden:** Her iki sağlayıcıda üçüncü sahnede kalıcı 429 verildi. İlk iki sahne ve SVG dosyaları diskten açıldı. Aynı projeye devam isteği yalnız 3 ve 4’ü planladı; şablon ve ilk iki sahnenin kimlikleri ile dosya içerikleri değişmedi. `MAX_TOKENS`, bozuk XML ve gerçek HTTP durumları ayrı etiketlendi. Belirsiz ağ hatasında POST yinelenmedi. Anahtar ve ham hata gövdesi sahne kaydına/günlüğe yazılmadı.
+- **Durdur ve render:** 67 otomatik test geçti. Edge arayüzünde 5 sn sahne beklemesinde, ardından 10 sn kota beklemesinde **Durdur** denendi; ilave istek çıkmadı. Yalnız eksik çizim tamamlandı, tek tıkla sesli MP4 üretildi. Etkin sağlayıcı isteğinin ve gerçek render’ın iptali, tek katmanda söylenen sözcüğün sarı vurgusu ve [sabit kadrajlı nesne hareketinin son MP4’teki piksel kontrolü](https://github.com/buraksungr/nedenmis3/actions/runs/44753777493/artifacts/14637196987) de geçti.
+- **Ek yerel kontrol:** Üçüncü sahnenin beklemesinde uygulama süreci zorla sonlandırıldı. Yeni süreç aynı klasörden açıldı, yalnızca 3–4’ü istedi. İki sağlayıcıda da iptalden sonra gerçek 5 ve 10 sn sürelerinin dolması beklendi; gecikmiş bir POST çıkmadı.
+- **Sınır:** API yanıtları kontrollü test verisidir; canlı hesap veya kota sınanmadı. SDK, zamanlayıcılar, disk yazımı, Edge, MP4 ve NSIS kurulumu gerçektir. Kalıcı kota varsa uygulama bunu gidermez; çizimleri koruyup nedeni gösterir.
+
 ## 1.6.0 — Sabit kamera, nesne bazlı SVG
 
 **[Windows x64 Setup (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44733363496/artifacts/14626944968)** · **[Karıncalar kışın nereye gider? — Windows MP4, ses zamanları ve piksel raporu](https://github.com/buraksungr/nedenmis3/actions/runs/44733363496/artifacts/14628006802)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44733363496). Kurulan kod: `2e6979c236eb08b8d6f842423c167cac887be696`.
