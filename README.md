@@ -2,7 +2,7 @@
 
 Türkçe Windows belgesel stüdyosu. **1.6.0:** Yeni projelerde kamera sabittir. Hareket, fotoğrafın üzerinde gezinen bir kameradan değil, sahne içindeki ayrı SVG nesnelerinden gelir. Çıktı 1080 × 1920, 30 FPS H.264/AAC’dir. 30 saniye bir hedeftir; gerçek süre ses kayıtlarından ölçülür.
 
-[Windows kurucusu ve doğrulama kayıtları](docs/VALIDATION.md) · [Sahne biçimi](docs/MOTION.md) · [Kabul kontrolü](docs/ACCEPTANCE.md)
+**[Windows x64 Setup · 1.6.0 (ZIP)](https://github.com/buraksungr/nedenmis3/actions/runs/44733363496/artifacts/14626944968)** · **[Karıncalar kışın nereye gider? · Windows MP4 ve ölçümler](https://github.com/buraksungr/nedenmis3/actions/runs/44733363496/artifacts/14628006802)** · [Doğrulama kaydı](docs/VALIDATION.md) · [Sahne biçimi](docs/MOTION.md) · [Kabul kontrolü](docs/ACCEPTANCE.md)
 
 ## Windows’ta başla
 
