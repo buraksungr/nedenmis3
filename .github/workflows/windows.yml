@@ -94,7 +94,7 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-windows-install.ps1
       - name: Prepare release from the verified installer
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/arena/bf4f6387-nedenmis3' && env.PUBLISH_RELEASE == 'true' }}
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
