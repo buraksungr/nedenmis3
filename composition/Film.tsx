@@ -1,3 +1,4 @@
+import { CinematicPlate, ShotTitle, type Shot } from './CinematicPlate';
 import React from 'react';
 import {
   AbsoluteFill,
@@ -16,6 +17,8 @@ import { AnimatedPlate } from './ScientificPlate';
 import { AnimatedVector } from './VectorScene';
 import type { VectorFrame } from '../shared/vector';
 export type FilmProps = {
+  shot?: Shot;
+  nextShot?: Shot;
   vector?: VectorFrame;
   nextVector?: VectorFrame;
   svg?: SvgPlan;
@@ -30,7 +33,7 @@ export type FilmProps = {
   subtitleSize: number;
   highlight: boolean;
 };
-// Both plates have exactly the same fixed bounds. No overscan, filters or camera pose.
+// Legacy photographs remain static. Only the explicit cinematic wrapper moves an image.
 const still: React.CSSProperties = {
   position: 'absolute',
   inset: 0,
@@ -39,6 +42,8 @@ const still: React.CSSProperties = {
   objectFit: 'cover',
 };
 export function Film({
+  shot,
+  nextShot,
   svg,
   nextSvg,
   vector,
@@ -61,7 +66,11 @@ export function Film({
   const alpha = next || nextSvg || nextVector ? dissolveAt(f, fps, durationInFrames) : 0;
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
-      {vector ? (
+      {shot ? (
+        <CinematicPlate shot={shot} frame={f} frames={durationInFrames}>
+          <Img src={image} style={still} />
+        </CinematicPlate>
+      ) : vector ? (
         <AnimatedVector scene={vector} />
       ) : svg ? (
         <AnimatedPlate plan={svg} artHref={artHref} />
@@ -70,7 +79,13 @@ export function Film({
       )}
       {/* Source-over on the opaque first photo gives (1-alpha)*old + alpha*new. */}
       {alpha > 0 &&
-        (nextVector ? (
+        (nextShot && next ? (
+          <AbsoluteFill style={{ opacity: alpha }}>
+            <CinematicPlate shot={nextShot} frame={0} frames={durationInFrames}>
+              <Img src={next} style={still} />
+            </CinematicPlate>
+          </AbsoluteFill>
+        ) : nextVector ? (
           <AbsoluteFill style={{ opacity: alpha }}>
             <AnimatedVector scene={nextVector} opening />
           </AbsoluteFill>
@@ -81,6 +96,12 @@ export function Film({
         ) : (
           next && <Img src={next} style={{ ...still, opacity: alpha }} />
         ))}
+      {/* One still, safe-area heading. Fade through zero rather than stacking two titles. */}
+      {alpha < 0.5 && shot ? (
+        <ShotTitle title={shot.title} opacity={1 - 2 * alpha} />
+      ) : alpha >= 0.5 && nextShot ? (
+        <ShotTitle title={nextShot.title} opacity={2 * alpha - 1} />
+      ) : null}
       {cap && (
         <div
           style={{

@@ -472,11 +472,8 @@ export function NewProject() {
           </label>
           <div className="example-hint">
             <Sparkles size={13} />
-            <button
-              type="button"
-              onClick={() => setTopic('Karıncalar kışın neden ortadan kaybolur?')}
-            >
-              Örnek: Karıncalar kışın neden ortadan kaybolur?
+            <button type="button" onClick={() => setTopic('Karıncalar kışın nereye gider?')}>
+              Örnek: Karıncalar kışın nereye gider?
             </button>
           </div>
           <label>
@@ -531,8 +528,8 @@ export function NewProject() {
                 ['Format', '1080 × 1920 · 9:16'],
                 ['Kare hızı', '30 FPS'],
                 ['Anlatım', 'Türkçe · Erkek'],
-                ['Sahne türleri', 'Fotoğraf / SVG Animasyon'],
-                ['Kurgu', 'Yumuşak opaklık geçişleri'],
+                ['Sahne türleri', '2D bilim illüstrasyonu'],
+                ['Kamera', 'Yavaş yakınlaşma ve kaydırma'],
                 ['Üretim', 'İki aşamalı onay'],
               ].map(([k, v]) => (
                 <div className="kv" key={k}>

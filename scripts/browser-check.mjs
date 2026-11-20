@@ -15,6 +15,10 @@ const voiceCalls = [],
   plannerCalls = [],
   imageCalls = [],
   imageCredential = 'sk_isolated-ui-fixture';
+let cinemaMode = false,
+  holdCinema = true,
+  cinemaAborted = 0;
+const cinemaGets = [];
 let stopDrawing = false,
   abortedDraws = 0;
 let enableTextFixture = false,
@@ -26,6 +30,22 @@ const ctx = studio.createStudio(
       const host = new URL(url).host;
       if (host === 'openrouter.ai') {
         const data = JSON.parse(JSON.parse(opts.body).messages[1].content);
+        if (cinemaMode) {
+          const content = data.direction
+            ? { brief: 'A closer view of the forked ant tunnels.' }
+            : data.scene
+              ? {
+                  title: data.scene === 1 ? 'Kış Gelirken' : 'Yuvaya Dönüş',
+                  brief:
+                    data.scene === 1
+                      ? 'The red ant on a snowy woodland path.'
+                      : 'The red ant enters a deep winter tunnel.',
+                }
+              : { subject: 'red worker ant with a burgundy abdomen' };
+          return Response.json({
+            choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(content) } }],
+          });
+        }
         plannerCalls.push(data);
         if (plannerCalls.length === 1) return new Response(null, { status: 503 });
         if (stopDrawing) {
@@ -51,6 +71,27 @@ const ctx = studio.createStudio(
         });
       }
       if (['gen.pollinations.ai', 'image.pollinations.ai'].includes(host)) {
+        if (cinemaMode) {
+          const prompt = decodeURIComponent(new URL(url).pathname.split('/').at(-1));
+          assert.ok(
+            prompt.includes('red worker ant with a burgundy abdomen') &&
+              prompt.includes('no text, no typography, no labels'),
+          );
+          const name = prompt.includes('closer view')
+            ? 'tunnel-close'
+            : prompt.includes('snowy woodland')
+              ? '01'
+              : '02';
+          cinemaGets.push(name);
+          if (name === '02' && holdCinema) {
+            await once(opts.signal, 'abort');
+            cinemaAborted++;
+            throw Error('Stopped test download');
+          }
+          return new Response(fs.readFileSync('tests/fixtures/ant-cinema/' + name + '.jpg'), {
+            headers: { 'content-type': 'image/jpeg' },
+          });
+        }
         imageCalls.push([host, new Headers(opts.headers).get('authorization')]);
         return host === 'gen.pollinations.ai'
           ? new Response(fs.readFileSync('ui/public/art/ocean.jpg'), {
@@ -181,6 +222,8 @@ try {
     speaker.selectOption('Puck'),
   ]);
   await page.getByRole('button', { name: 'Sahne ekle' }).click();
+  assert.equal(await page.getByLabel('Sahne türü').inputValue(), 'illustration');
+  await page.getByLabel('Sahne türü').selectOption('photo');
   await page.getByText('Sabit kadraj · Yumuşak geçiş', { exact: true }).waitFor();
   await page.getByLabel('Anlatım', { exact: true }).fill('Karıncalar kışın toprak altına çekilir.');
   await page
@@ -302,7 +345,7 @@ try {
   await page.getByText('Kullanılabilir', { exact: true }).first().waitFor();
   assert.equal(await page.getByText('Kullanılabilir', { exact: true }).count(), 2);
   // From own script to an actual all-SVG export with no image or TTS key.
-  await page.getByRole('button', { name: 'SVG planlayıcı', exact: true }).click();
+  await page.getByRole('button', { name: 'Sahne planlayıcı', exact: true }).click();
   await page.getByLabel('Planlama kaynağı').selectOption('openrouter');
   const svgKey = page.getByLabel('OpenRouter API anahtarı');
   await svgKey.fill('isolated-openrouter-fixture');
@@ -374,6 +417,52 @@ try {
   assert.ok(!shot.image);
   assert.equal(plannerCalls.length, 4);
   assert.equal(imageCalls.length, 2);
+  // The default board plans text (never SVG), then explicitly acquires, stops and resumes real JPEGs.
+  {
+    cinemaMode = true;
+    await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
+    await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın nereye gider?');
+    await page.getByLabel('Kendi senaryomu kullanacağım').check();
+    await page
+      .getByLabel('Mevcut senaryo')
+      .fill('Karıncalar kışın nereye gider? İşçiler yer altındaki tünellere çekilir.');
+    await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
+    assert.equal(await page.getByLabel('Storyboard biçimi').inputValue(), 'illustration');
+    await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
+    await page
+      .locator('.scene-card')
+      .nth(1)
+      .getByRole('heading', { name: 'Yuvaya Dönüş' })
+      .waitFor();
+    await page.getByRole('button', { name: 'Yalnızca onayla', exact: true }).click();
+    const queue = page.getByRole('button', { name: 'Eksik illüstrasyonları üret', exact: true });
+    await queue.click();
+    const progress = page.locator('.job-note.working').filter({ hasText: '2/2' });
+    await progress.getByRole('button', { name: 'Durdur' }).click();
+    await page.locator('.job-note.cancelled').waitFor();
+    assert.equal(cinemaAborted, 1);
+    assert.deepEqual(cinemaGets, ['01', '02']);
+    holdCinema = false;
+    const firstImg = page.locator('.scene-card').first().locator('.cinema-frame img'),
+      src = await firstImg.getAttribute('src');
+    await queue.click();
+    const shot = page.locator('.scene-card').nth(1),
+      img = shot.locator('.cinema-frame img');
+    await img.waitFor();
+    const original = await img.getAttribute('src');
+    await shot
+      .getByLabel('Görsel yönlendirmesi (isteğe bağlı)')
+      .fill('Karınca tünellerini yakından göster.');
+    await shot.getByRole('button', { name: 'Bu sahneyi yeniden üret' }).click();
+    await page.waitForFunction(
+      (before) => document.querySelectorAll('.cinema-frame img')[1]?.getAttribute('src') !== before,
+      original,
+    );
+    assert.deepEqual(cinemaGets, ['01', '02', '02', 'tunnel-close']);
+    assert.equal(await firstImg.getAttribute('src'), src);
+    await shot.getByLabel('Kamera önizleme karesi').press('End');
+    assert.equal(await shot.getByLabel('Kamera önizleme karesi').inputValue(), '149');
+  }
   // Play an already FFprobe-validated control, never a fabricated render in the dashboard.
   const previous = path.resolve('out/render-control/Projects');
   if (fs.existsSync(previous)) {
@@ -421,7 +510,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; 503 → single-scene retry → actual request abortion → full-stage SVG → directed redraw → one-click TTS, alignment attempt and MP4.',
+    'PASS: creation, auto-save/reopen, both approvals, speaker defaults/override, cost guard, both Pollinations routes (offline contract), failed image → manual upload → keyed regeneration and reloaded local thumbnail, generateContent draft in editor (offline contract), secure-entry UI, real local checks, player and mobile navigation; default science board, abort/resume on shot two, directed replacement and live camera scrub; 503 → single-scene retry → actual request abortion → full-stage SVG → directed redraw → one-click TTS, alignment attempt and MP4.',
   );
 } finally {
   await browser.close();

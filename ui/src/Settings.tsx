@@ -184,7 +184,7 @@ function PollinationsPanel({ s }: { s: SettingsType['pollinations'] }) {
         </div>
         <div>
           <h2>Pollinations</h2>
-          <p>Storyboard sahneleri için sabit görseller.</p>
+          <p>9:16 bilim illüstrasyonları ve klasik fotoğraf sahneleri.</p>
         </div>
         <span className="right">
           <Badge tone={s.hasKey ? 'purple' : 'gray'}>
@@ -637,7 +637,7 @@ export function SettingsPage() {
       <div className="tabs">
         {[
           { id: 'api', title: 'API ve modeller', I: KeyRound },
-          { id: 'planner', title: 'SVG planlayıcı', I: Layers3 },
+          { id: 'planner', title: 'Sahne planlayıcı', I: Layers3 },
           { id: 'local', title: 'Yerel servisler', I: Cpu },
           { id: 'workspace', title: 'Çalışma alanı', I: HardDrive },
         ].map((x) => (

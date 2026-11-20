@@ -2,7 +2,11 @@ import { mediaUrl, type Project, type Scene } from '../shared/schema';
 import { imageKey, voiceKey } from './production';
 import { hash } from './store';
 const visualKey = (p: Project, s: Scene) =>
-  s.visualMode === 'svg' ? hash('svg', s.vector ?? s.svgPlan) : imageKey(p, s);
+  s.visualMode === 'svg'
+    ? hash('svg', s.vector ?? s.svgPlan)
+    : s.visualMode === 'illustration'
+      ? hash(imageKey(p, s), s.cinema?.title, p.scenes.indexOf(s) % 4)
+      : imageKey(p, s);
 /** Detach stale outputs, don't delete files. Snapshots retain the original versions. */
 export function invalidate(p: Project, old: Project) {
   const active = new Set(p.scenes.map((s) => s.id));

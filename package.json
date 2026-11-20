@@ -1,7 +1,7 @@
 {
   "name": "nedenmis-studio",
   "productName": "Nedenmiş Studio",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "description": "Yerel, onay tabanlı belgesel üretim stüdyosu",
   "author": "Nedenmiş Studio",
@@ -22,7 +22,8 @@
     "test:ui": "node scripts/browser-check.mjs",
     "test:thirst": "tsx tests/narrated-atlas-control.ts",
     "test:flight": "tsx tests/narrated-atlas-control.ts --flight",
-    "test:whale": "tsx tests/narrated-atlas-control.ts --whale"
+    "test:whale": "tsx tests/narrated-atlas-control.ts --whale",
+    "test:ant": "tsx tests/ant-cinema-control.ts"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "1.1.0",

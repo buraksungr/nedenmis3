@@ -6,6 +6,10 @@ on:
         description: 'Require live OpenRouter or explicitly configured free Gemini text (no QA replay)'
         type: boolean
         default: false
+      live_ant:
+        description: 'Use authorized live OpenRouter and Pollinations for the ant film (uses provider budget)'
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: ['arena/**']
@@ -78,6 +82,23 @@ jobs:
           python tests/prepare-qa-speech.py --flight
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/prepare-qa-speech.py --whale
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/prepare-qa-speech.py --ant
+      - name: Five subject-locked ant illustrations, decoded camera and title pixels, actual CPU Whisper
+        env:
+          QA_LIVE_ANT: ${{ inputs.live_ant }}
+          QA_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          QA_POLLINATIONS_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+        run: npm run test:ant
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Karincalar-Kisin-Nereye-Gider-2D-Sinematik-MP4
+          if-no-files-found: error
+          path: |
+            out/ant-control/karincalar-kisin-nereye-gider.*
+            out/ant-control/frames/
+            out/ant-control/plates/
+            out/ant-control/report.json
       - name: Full-stage whale documentary, decoded layer motion, complete titles and real CPU Whisper
         env:
           QA_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}

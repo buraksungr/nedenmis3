@@ -1,3 +1,4 @@
+import { illustrationPrompt } from '../shared/cinema';
 import { checkpoint, requestSignal } from './operation';
 import type { PollinationsSettings } from '../shared/schema';
 import { inputFormat } from './import-formats';
@@ -13,20 +14,20 @@ export class ImageUnavailable extends Issue {
 }
 
 // Encode exactly one path component, including the style; never put a secret in this URL.
-function storyboardUrl(prompt: string, keyed: boolean) {
+function storyboardUrl(prompt: string, keyed: boolean, seed?: number) {
   const text = prompt.trim();
   requireThat(text, 'Görsel istemi veya sahne betimlemesi gerekiyor.', 422);
   const base = keyed
     ? 'https://gen.pollinations.ai/image/'
     : 'https://image.pollinations.ai/prompt/';
   try {
-    return `${base}${encodeURIComponent(text + suffix)}?width=1080&height=1920${keyed ? '' : '&nologo=true'}`;
+    return `${base}${encodeURIComponent(text)}?width=1080&height=1920${keyed ? '' : '&nologo=true'}${seed === undefined ? '' : '&seed=' + seed}`;
   } catch {
     throw new ImageUnavailable('Görsel istemindeki karakterler kodlanamadı.');
   }
 }
 
-async function readImage(r: Response) {
+async function readImage(r: Response, signal: AbortSignal) {
   if (!r.ok || !r.body) {
     await r.body?.cancel();
     const reason =
@@ -55,9 +56,15 @@ async function readImage(r: Response) {
   const reader = r.body.getReader(),
     chunks: Uint8Array[] = [];
   let size = 0;
+  const abort = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal.addEventListener('abort', abort, { once: true });
   try {
+    if (signal.aborted) abort();
     for (;;) {
       const { value, done } = await reader.read();
+      signal.throwIfAborted();
       if (done) break;
       size += value.byteLength;
       if (size > maxBytes) {
@@ -67,6 +74,7 @@ async function readImage(r: Response) {
       chunks.push(value);
     }
   } finally {
+    signal.removeEventListener('abort', abort);
     reader.releaseLock();
   }
   const data = Buffer.concat(chunks, size);
@@ -106,26 +114,35 @@ export class Pollinations {
     );
     this.vault.set(key);
   }
-  async image(prompt: string) {
+  image(prompt: string) {
+    requireThat(prompt.trim(), 'Görsel istemi veya sahne betimlemesi gerekiyor.', 422);
+    return this.fetchImage(prompt.trim() + suffix);
+  }
+  illustration(subject: string, brief: string, seed: number) {
+    return this.fetchImage(illustrationPrompt(subject, brief), seed);
+  }
+  private async fetchImage(prompt: string, seed?: number) {
+    checkpoint();
     let key: string | undefined;
     try {
       key = this.vault.get();
     } catch {
       throw new ImageUnavailable('Kayıtlı anahtar çözülemedi. Ayarlar’dan güncelleyin veya silin.');
     }
-    const url = storyboardUrl(prompt, !!key);
+    const url = storyboardUrl(prompt, !!key, seed);
+    const signal = requestSignal(90_000);
     try {
       const response = await this.transport(url, {
         method: 'GET',
         credentials: 'omit',
         redirect: 'error',
-        signal: requestSignal(90_000),
+        signal,
         headers: {
           Accept: 'image/jpeg, image/png, image/webp',
           ...(key ? { Authorization: `Bearer ${key}` } : {}),
         },
       });
-      return await readImage(response);
+      return await readImage(response, signal);
     } catch (e) {
       checkpoint();
       if (e instanceof ImageUnavailable) throw e;

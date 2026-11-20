@@ -1,3 +1,4 @@
+import { cinematicPlan } from './cinema';
 import { z } from 'zod';
 import type { Speaker } from './speakers';
 import { svgPlanSchema, legacySvgPlanSchema, type StoredSvgPlan } from './svg';
@@ -10,7 +11,8 @@ const transitions = ['dissolve', 'iris', 'drift', 'cut'] as const;
 const str = z.string().trim().max(5000);
 export const sceneSchema = z.object({
   id: z.string().uuid(),
-  visualMode: z.enum(['photo', 'svg']).optional(), // absent in pre-1.1 projects: keep content-bound approvals intact
+  visualMode: z.enum(['photo', 'svg', 'illustration']).optional(), // absent in pre-1.1 projects: keep content-bound approvals intact
+  cinema: cinematicPlan.optional(),
   vector: vectorSchema.optional(),
   svgPlan: z.union([svgPlanSchema, legacySvgPlanSchema]).optional(),
   svgVoiceMode: z.enum(['auto', 'existing-only']).optional(), // Default: produce missing narration. Explicit opt-out keeps keyless SVG export.
@@ -43,6 +45,7 @@ export type Asset = {
   source?: 'gemini' | 'pollinations' | 'import' | 'local';
   model?: string;
   created?: string;
+  illustration?: { brief: string; seed: number };
 };
 export type Media = {
   image?: Asset;
@@ -95,6 +98,7 @@ export type Project = {
   scenes: Scene[];
   // Work queue is not drawing content and must not affect a signed board.
   vectorWork?: Record<string, { state: 'pending' | 'failed'; detail?: string; direction?: string }>;
+  cinema?: { subject: string; scriptHash: string };
   styleGuide: string;
   intensity?: 'Düşük' | 'Orta' | 'Yüksek'; // Legacy metadata only.
   voice: Speaker;

@@ -1,3 +1,15 @@
+import {
+  lines as antLines,
+  topic as antTopic,
+  shots as antShots,
+  subject as antSubject,
+  direction as antDirection,
+  closer,
+  planned,
+  imageRequest,
+  antImage,
+  shotFile,
+} from './ant-fixtures';
 import { sample, completion } from './vector-test-data';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -274,7 +286,7 @@ test('gemini-2.5-flash generateContent script and JSON board, then chosen TTS wi
   assert.equal(p.script, text);
   await req('/settings/speaker', { speaker: 'Kore' }); // applies to existing unvoiced drafts, too
   p = await (await req(route + '/script', { text, approve: true }, p.rev)).json();
-  assert.equal((await req(route + '/generate', { kind: 'board' }, p.rev)).status, 202);
+  assert.equal((await req(route + '/generate', { kind: 'photo-board' }, p.rev)).status, 202);
   p = await settle(route);
   assert.equal(p.job.state, 'done', p.job.label);
   assert.equal(p.scenes.length, lines.length);
@@ -888,3 +900,172 @@ test(
     );
   },
 );
+
+test('default science board: stop in the second image body, resume only missing plates; directed replacement is transactional', async (t) => {
+  const headers: string[] = [],
+    requests: { name: string; seed: string | null }[] = [],
+    plans: Record<string, unknown>[] = [];
+  let hold = true,
+    wasAborted = false,
+    bodyCancelled = false,
+    badResponse = false,
+    reached!: () => void;
+  const bodyStarted = new Promise<void>((r) => {
+    reached = r;
+  });
+  const { req, store, settle, prod } = await app(t, undefined, async (url, o) => {
+    const u = new URL(String(url));
+    if (u.host === 'openrouter.ai') {
+      const body = JSON.parse(String(o?.body)),
+        input = JSON.parse(body.messages[1].content);
+      plans.push(input);
+      headers.push(body.messages[0].content);
+      return planned(input);
+    }
+    assert.equal(u.host, 'gen.pollinations.ai');
+    assert.equal(
+      new Headers(o?.headers).get('authorization'),
+      'Bearer sk_offline-illustration-fixture',
+    );
+    const name = shotFile(imageRequest(u));
+    requests.push({ name, seed: u.searchParams.get('seed') });
+    if (hold && name === '02') {
+      o?.signal?.addEventListener('abort', () => {
+        wasAborted = true;
+      });
+      return new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(new Uint8Array([255, 216]));
+            reached();
+          },
+          cancel() {
+            bodyCancelled = true;
+          },
+        }),
+        { headers: { 'content-type': 'image/jpeg' } },
+      );
+    }
+    if (badResponse) return new Response('<html>Not an image</html>');
+    return antImage(name);
+  });
+  await req('/settings/svg-planner/key/openrouter', { key: 'isolated-model-fixture' });
+  await req('/settings/pollinations/key', { key: 'sk_offline-illustration-fixture' });
+  let p: Project = await (
+    await req('/projects', { topic: antTopic, script: antLines.join('\n\n') })
+  ).json();
+  const route = '/projects/' + p.id;
+  const start = async (kind: string, extra: Record<string, string> = {}) => {
+    const r = await req(route + '/generate', { kind, ...extra }, p.rev);
+    assert.equal(r.status, 202, await r.text());
+  };
+  const finish = async () => {
+    p = await settle(route);
+    assert.equal(p.job.state, 'done', p.job.label);
+  };
+  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+  await start('board');
+  await finish();
+  assert.equal(plans.length, 1 + antLines.length);
+  assert.ok(headers[0].includes('one recurring subject'));
+  assert.equal(p.cinema?.subject, antSubject);
+  assert.deepEqual(
+    p.scenes.map((s) => s.cinema?.title),
+    antShots.map((x) => x.title),
+  );
+  assert.ok(p.scenes.every((s) => s.visualMode === 'illustration' && !s.vector));
+  assert.equal(requests.length, 0);
+  assert.equal((await req(route + '/generate', { kind: 'illustrations' }, p.rev)).status, 409);
+  p = await (
+    await req(
+      route + '/board',
+      { styleGuide: p.styleGuide, scenes: p.scenes, approve: true },
+      p.rev,
+    )
+  ).json();
+  assert.ok(p.boardApproval);
+  const approval = p.boardApproval;
+  await start('illustrations');
+  await bodyStarted;
+  const op = await (await req('/operation')).json();
+  assert.equal((await req('/operations/' + op.id + '/stop', {})).status, 202);
+  p = await settle(route);
+  assert.equal(p.job.state, 'cancelled');
+  assert.ok(wasAborted && bodyCancelled);
+  assert.deepEqual(
+    requests.map((x) => x.name),
+    ['01', '02'],
+  );
+  const first = p.assets[p.scenes[0].id].image!;
+  assert.ok(first && fs.existsSync(prod.file(p, first.file)));
+  assert.ok(!p.assets[p.scenes[1].id]?.image);
+  assert.equal(p.boardApproval, approval);
+  hold = false;
+  await start('illustrations');
+  await finish();
+  assert.deepEqual(
+    requests.map((x) => x.name),
+    ['01', '02', '02', '03', '04', '05'],
+  );
+  assert.equal(new Set(requests.map((x) => x.seed)).size, 1);
+  assert.deepEqual(p.assets[p.scenes[0].id].image, first);
+  await start('illustrations');
+  await finish();
+  assert.equal(requests.length, 6);
+  // Distinct sentinels for externally acquired voice + timing files. No other service is allowed in this transport.
+  for (const s of p.scenes) {
+    const m = p.assets[s.id];
+    m.voice = { key: voiceKey(p, s), file: `audio/${s.id}.wav`, duration: 4 };
+    m.align = { file: `subtitles/${s.id}.json`, key: 'aligned', method: 'whisper' };
+    m.words = [{ text: s.narration, start: 0, end: 3 }];
+    m.clip = { file: `scenes/${s.id}.mp4`, key: 'clip' };
+  }
+  p.final = { file: 'renders/control.mp4', key: 'control' };
+  store.save(p);
+  const assets = structuredClone(p.assets),
+    board = structuredClone(p.scenes),
+    target = p.scenes[1];
+  badResponse = true;
+  await start('regenerate-illustration', { scene: target.id });
+  p = await settle(route);
+  assert.equal(p.job.state, 'failed');
+  assert.deepEqual(p.assets, assets);
+  assert.deepEqual(p.final, { file: 'renders/control.mp4', key: 'control' });
+  badResponse = false;
+  await start('regenerate-illustration', { scene: target.id, instruction: antDirection });
+  await finish();
+  assert.equal(plans.length, 7);
+  assert.equal(plans.at(-1)?.direction, antDirection);
+  assert.deepEqual(
+    requests.slice(-2).map((x) => x.name),
+    ['02', 'tunnel-close'],
+  );
+  assert.equal(p.final, undefined);
+  assert.equal(p.boardApproval, approval);
+  assert.deepEqual(p.scenes, board);
+  for (const [i, s] of p.scenes.entries()) {
+    const m = p.assets[s.id],
+      prev = assets[s.id];
+    assert.deepEqual(m.voice, prev.voice);
+    assert.deepEqual(m.align, prev.align);
+    assert.deepEqual(m.words, prev.words);
+    if (i < 2) assert.equal(m.clip, undefined);
+    else assert.deepEqual(m.clip, prev.clip);
+    if (i !== 1) assert.deepEqual(m.image, prev.image);
+    else {
+      assert.notEqual(m.image?.file, prev.image?.file);
+      assert.equal(m.image?.illustration?.brief, closer);
+      assert.notEqual(m.image?.illustration?.seed, prev.image?.illustration?.seed);
+      assert.notDeepEqual(
+        fs.readFileSync(prod.file(p, m.image!.file)),
+        fs.readFileSync(prod.file(p, prev.image!.file)),
+      );
+    }
+  }
+  const n = requests.length;
+  await start('illustrations');
+  await finish();
+  assert.equal(requests.length, n);
+  assert.ok(fs.readdirSync(path.join(store.dir(p.id), 'cache')).length === 0);
+  assert.equal((await req('/operations/' + op.id + '/stop', {})).status, 409);
+});

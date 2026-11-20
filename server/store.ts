@@ -1,3 +1,4 @@
+import { subjectSchema, cinematicPlan } from '../shared/cinema';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,13 +9,11 @@ import { vectorSchema } from '../shared/vector';
 import {
   STOPPED,
   jobActive,
-  blankScene,
   normalize,
   stageOf,
   type Project,
   type ProjectSummary,
   type ProviderSettings,
-  type Scene,
   type Task,
 } from '../shared/schema';
 export const hash = (...v: unknown[]) =>
@@ -41,7 +40,15 @@ export function atomic(file: string, data: string | Buffer) {
   fs.renameSync(tmp, file);
 }
 export const scriptSig = (p: Project) => hash(normalize(p.script));
-export const boardSig = (p: Project) => hash(scriptSig(p), p.scenes, p.styleGuide);
+export const shotContext = (subject: string, narration: string) =>
+  hash('science-shot-1', subject, normalize(narration));
+export const boardSig = (p: Project) =>
+  hash(
+    scriptSig(p),
+    p.scenes,
+    p.styleGuide,
+    ...(p.scenes.some((s) => s.visualMode === 'illustration') ? [p.cinema] : []),
+  );
 export function approved(p: Project) {
   requireThat(p.scriptApproval === scriptSig(p), 'Önce güncel senaryoyu onaylayın.');
   requireThat(
@@ -56,16 +63,21 @@ export function approveBoard(p: Project) {
       p.scenes.every(
         (s) =>
           s.narration &&
-          (s.visualMode === 'svg'
-            ? s.vector
-              ? !s.svgPlan &&
-                vectorSchema.safeParse(s.vector).success &&
-                s.vector.narrationHash === hash(normalize(s.narration))
-              : svgPlanSchema.safeParse(s.svgPlan).success ||
-                legacySvgPlanSchema.safeParse(s.svgPlan).success
-            : s.description),
+          (s.visualMode === 'illustration'
+            ? p.cinema?.scriptHash === p.scriptApproval &&
+              subjectSchema.safeParse(p.cinema?.subject).success &&
+              cinematicPlan.safeParse(s.cinema).success &&
+              s.cinema?.context === shotContext(p.cinema!.subject, s.narration)
+            : s.visualMode === 'svg'
+              ? s.vector
+                ? !s.svgPlan &&
+                  vectorSchema.safeParse(s.vector).success &&
+                  s.vector.narrationHash === hash(normalize(s.narration))
+                : svgPlanSchema.safeParse(s.svgPlan).success ||
+                  legacySvgPlanSchema.safeParse(s.svgPlan).success
+              : s.description),
       ),
-    'Her sahnede anlatım ve geçerli bir SVG planı veya fotoğraf betimlemesi gerekiyor.',
+    'Her sahne için güncel anlatım ve görsel plan gerekli. Eksik illüstrasyon planını tamamlayın.',
   );
   requireThat(
     new Set(p.scenes.map((s) => s.id)).size === p.scenes.length,
@@ -110,7 +122,7 @@ export function makeProject(topic: string, script = '', instructions = ''): Proj
     boardApproval: null,
     scenes: [],
     styleGuide:
-      'Nostaljik 2D piksel sanatıyla ayrıntılı doğa belgeseli. Doğal tonlar, yönlü ışık, güçlü ön ve arka plan ayrımı. Aynı özneyi, renk paletini ve çizim tekniğini koru.',
+      '2D vektör bilim illüstrasyonu. Koyu lacivert ve petrol yeşili ortam, sıcak ışık vurguları ve tutarlı ana özne.',
     voice: defaultSpeaker,
     voiceStyle: 'Sakin, merak uyandıran, doğal bir Türkçe belgesel anlatımı.',
     pace: 'Doğal',
@@ -302,38 +314,21 @@ export class Store {
     });
     this.create(sea);
     const lines = [
-      'Karıncalar kışın neden ortadan kaybolur?',
+      'Karıncalar kışın nereye gider?',
       'Yaz boyunca toprağın üzerinde gördüğümüz bu küçük canlılar, soğuk günlerde aslında çok yakınımızdadır.',
       'Ilıman bölgelerde birçok karınca türü, sıcaklık düştükçe yuvasının daha korunaklı bölümlerine çekilir.',
       'Toprak, yüzeydeki ani sıcaklık değişimlerini bir battaniye gibi yavaşlatır.',
       'Soğukta karıncaların metabolizması yavaşlar; daha az hareket eder, daha az enerji harcarlar.',
       'İlkbaharda toprak yeniden ısındığında, yuvanın girişinde beliren ilk işçiler bize koloninin kışı yer altında geçirdiğini gösterir.',
     ];
-    const ant = makeProject('Karıncalar kışın neden ortadan kaybolur?', lines.join('\n\n'));
+    const ant = makeProject('Karıncalar kışın nereye gider?', lines.join('\n\n'));
     Object.assign(ant, {
       title: 'Karıncaların kış sırrı',
       category: 'DOĞA',
       cover: '/art/ants.jpg',
       example: true,
     });
-    const details = [
-      'Boş bir orman patikası ve ilk kar taneleri.',
-      'Yazın yosun üzerinde ilerleyen koyu kızıl işçi karınca.',
-      'Kesitte görünen köklerin altındaki korunaklı koloni.',
-      'Toprak katmanlarında soğuk mavi yüzeyden sıcak kahverengi derinliğe geçiş.',
-      'Bir odacıkta birbirine yakın, neredeyse hareketsiz işçi karıncalar.',
-      'Güneşle ısınmış yuva girişinden çıkan ilk işçi.',
-    ];
-    ant.scenes = lines.map(
-      (n, i): Scene => ({
-        ...blankScene(randomUUID()),
-        narration: n,
-        description: details[i],
-        prompt: details[i] + ' Dikey kadraj, sinematik doğa çizimi, metinsiz.',
-        sound: i === 0 ? 'Hafif kış rüzgarı' : 'Sakin orman ortamı',
-        environment: details[i],
-      }),
-    );
+    // Fresh installations plan this script through the same subject-locked route as a new project.
     this.create(ant);
   }
 }

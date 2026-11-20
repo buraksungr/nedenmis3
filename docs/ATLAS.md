@@ -1,5 +1,8 @@
 # Tam ekran özel vektör sahnesi (1.4+)
 
+> Bu belge eski atlas/katmanlı SVG biçimini açıklar. 1.5.0’da yeni projelerin varsayılan görsel motoru [sağlayıcı tabanlı sinematik 2D illüstrasyondur](../README.md#sinematik-bilim-illüstrasyonları--150).
+
+
 **Çizim ve başlık.** “SVG planı oluştur” onaylı metni sahnelere ayırır; metin zaten sahnelere bölünmüşse kimlikleri, sırayı ve anlatımları korur. Seçili OpenRouter (`openrouter/free`) veya izinli Gemini **metin** modelinden her sahne için `{title, fx, svg}` istenir. Modele konu, sahne sırası ve o sahnenin anlatımı verilir; ses, zaman dosyası, proje yolu veya diğer sağlayıcının anahtarı gönderilmez. Başlık 2–3 sözcükten oluşur; yerel metin çıkarımı veya şablon seçimi yoktur. Bilimsel doğruluğunu ve Türkçe anlam bütünlüğünü onaydan önce gözden geçirin.
 
 **Doğrulama.** Sunucu 96 KiB sınırında XML'i ayrıştırır. Sonlu ve geçerli koordinatlar (varsayılan `viewBox="0 0 1080 1350"`; farklı koordinat alanı kadraja sığdırılır), benzersiz katman kimlikleri, sayısal geometri, yol komutları, yerel gradyanlar, düğüm ve derinlik sınırları denetlenir. Script, HTML, stil, bağlantı, dış kaynak, animasyon ve tanımsız referanslar reddedilir. Üç grup (`layer-bg`, `layer-main`, `layer-fx`) gereklidir; renk sayısı, piksel kapsamı, özne büyüklüğü ve arka plan karmaşıklığı ret nedeni değildir. Uygulama, yeni edinilen düz veya gradyan zeminli çizime imzalamadan önce hafif, sabit bir ışık dokusu ekler. Uzun veya yinelenen çizim içi yazı sahneyi reddettirmez; yalnızca kısa efekt etiketleri tutulur. Eski imzalı dosyalar açılışta değiştirilmez. Bozuk/eksik çizim yanıtı için ilk isteğe ek olarak **en fazla iki onarım** istenir. Ağ, kota ve yetki hatasında otomatik tekrar veya sağlayıcı değişimi yoktur.

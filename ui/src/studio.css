@@ -2592,3 +2592,71 @@ audio {
   align-items: center;
   box-shadow: 0 3px 12px #0003;
 }
+.cinema-planning p {
+  margin: 10px 0 14px;
+}
+.subject-lock {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.86rem;
+}
+.cinema-editor {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 16px 0;
+}
+.cinema-monitor {
+  width: clamp(90px, 17vw, 136px);
+  flex: none;
+}
+.cinema-monitor input {
+  width: 100%;
+  accent-color: var(--purple, #775563);
+}
+.cinema-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #11222a;
+}
+.cinema-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cinema-empty {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  color: #bdc9c6;
+}
+.cinema-tools {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+.cinema-tools h3,
+.cinema-tools p {
+  margin: 0;
+}
+.cinema-tools label,
+.cinema-tools details {
+  width: 100%;
+}
+.cinema-tools details {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.cinema-tools details summary {
+  cursor: pointer;
+}

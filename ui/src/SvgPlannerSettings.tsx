@@ -64,13 +64,14 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
     <section className="panel padded">
       <div className="panel-title">
         <Layers3 size={18} />
-        <h2>Özel vektör sahneleri</h2>
+        <h2>Sahne planlayıcı</h2>
         <Badge tone="green">{providerNames[saved.provider]}</Badge>
       </div>
       <div className="form-stack spaced">
         <p>
-          Her anlatım için bir tam ekran illüstrasyon çizilir. Yeni çizim için metin modeli gerekir;
-          kayıtlı çizimler çevrimdışı oynatılır.
+          Metin modeli belgeselin ana öznesini, İngilizce sahne istemlerini ve kısa Türkçe
+          başlıkları belirler. İllüstrasyonu Pollinations üretir. Kayıtlı sahneler çevrimdışı
+          oynatılır.
         </p>
         <label>
           Planlama kaynağı
@@ -84,9 +85,9 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
         </label>
         <p className="help">
           Otomatik seçim kayıtlı OpenRouter anahtarına öncelik verir (openrouter/free); yoksa izin
-          verdiğin Gemini metin modelini kullanır. Hata olursa başka sağlayıcıya geçilmez. Bozuk bir
-          çizim için aynı modele en fazla iki onarım isteği gider. Gemini’nin seçtiğin kota ve ücret
-          izni geçerlidir.
+          verdiğin Gemini metin modelini kullanır. Hata olursa başka sağlayıcıya geçilmez. Geçersiz
+          bir sahne yanıtı için aynı modele en fazla iki onarım isteği gider. Gemini’nin seçtiğin
+          kota ve ücret izni geçerlidir.
         </p>
         {(provider === 'openrouter' || provider === 'auto') && (
           <KeyField provider="openrouter" has={saved.keys.openrouter} />
@@ -113,7 +114,7 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
           onClick={() =>
             void run(async () => {
               setSettings(await post<Settings>('/settings/svg-planner', { provider }));
-              notify('Çizim modeli kaydedildi.');
+              notify('Sahne planlayıcı kaydedildi.');
             })
           }
         >

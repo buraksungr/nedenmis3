@@ -1,3 +1,4 @@
+import { CinemaPlanner } from './cinema-planner';
 import { isDeepStrictEqual } from 'node:util';
 export { parseIllustration } from './layered-svg';
 import { Operation, checkpoint } from './operation';
@@ -86,6 +87,7 @@ export function createStudio(
       options.transport,
       g,
     ),
+    cinema = new CinemaPlanner(store, planner),
     settings = () => ({
       ...g.settings(),
       pollinations: images.settings(),
@@ -292,6 +294,14 @@ export function createStudio(
     const old = structuredClone(p);
     const next = { ...p, scenes: b.scenes, styleGuide: b.styleGuide };
     for (const s of b.scenes) {
+      if (s.cinema) {
+        const stored = p.scenes.find((v) => v.id === s.id)?.cinema;
+        requireThat(
+          stored?.context === s.cinema.context && stored.brief === s.cinema.brief,
+          'İllüstrasyon istemi ve öznesi planlayıcıya bağlıdır.',
+          422,
+        );
+      }
       if (s.visualMode === 'svg' && !s.vector && !s.svgPlan)
         requireThat(!b.approve && p.vectorWork?.[s.id], 'Geçerli bir sahne çizimi gerekli.', 422);
       if (s.svgPlan) {
@@ -335,7 +345,16 @@ export function createStudio(
         p.boardApproval = next.boardApproval;
         atomic(
           path.join(store.dir(p.id), 'storyboard', p.boardApproval + '.json'),
-          JSON.stringify(b, null, 2),
+          JSON.stringify(
+            {
+              ...b,
+              ...(p.scenes.some((s) => s.visualMode === 'illustration')
+                ? { cinema: p.cinema }
+                : {}),
+            },
+            null,
+            2,
+          ),
         );
       }
       store.save(p);
@@ -352,6 +371,9 @@ export function createStudio(
           'lengthen',
           'paragraph',
           'board',
+          'photo-board',
+          'illustrations',
+          'regenerate-illustration',
           'svg-board',
           'redraw-vector',
           'retry-vector',
@@ -368,22 +390,74 @@ export function createStudio(
       })
       .parse(q.body);
     const s = b.scene ? find(p, b.scene) : undefined;
-    if (['board', 'svg-board', 'redraw-vector', 'retry-vector', 'concept'].includes(b.kind))
-      requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
-    if (['all', 'image', 'voice', 'align', 'clip'].includes(b.kind)) approved(p);
     if (
-      ['image', 'voice', 'align', 'clip', 'concept', 'redraw-vector', 'retry-vector'].includes(
+      ['board', 'photo-board', 'svg-board', 'redraw-vector', 'retry-vector', 'concept'].includes(
         b.kind,
       )
     )
+      requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
+    if (
+      [
+        'all',
+        'illustrations',
+        'regenerate-illustration',
+        'image',
+        'voice',
+        'align',
+        'clip',
+      ].includes(b.kind)
+    )
+      approved(p);
+    if (
+      [
+        'image',
+        'voice',
+        'align',
+        'clip',
+        'concept',
+        'regenerate-illustration',
+        'redraw-vector',
+        'retry-vector',
+      ].includes(b.kind)
+    )
       requireThat(s, 'Bir sahne seçin.');
+    if (b.kind === 'regenerate-illustration')
+      requireThat(s?.visualMode === 'illustration', 'Bu sahne bir bilim illüstrasyonu değil.');
+    if (b.kind === 'concept')
+      requireThat(
+        !s?.visualMode || s.visualMode === 'photo',
+        'Bu işlem yalnız klasik fotoğraflar içindir.',
+      );
     if (b.kind === 'image')
       requireThat(s?.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
-    requireThat(!(b.kind === 'all' && s), 'Tam üretim tüm zaman çizelgesini kullanır.', 400);
+    requireThat(
+      !(['all', 'illustrations', 'photo-board', 'svg-board'].includes(b.kind) && s),
+      'Toplu işlem için tek sahne seçilmez.',
+      400,
+    );
     r.status(202).json(
       run(p, b.kind, async () => {
         if (['script', 'shorten', 'lengthen', 'paragraph'].includes(b.kind)) {
           return generateScript(p, b.kind, b.paragraph);
+        }
+        if (b.kind === 'board') {
+          return cinema.plan(p, (label, scene) => prod.tick(p, label, 'board', scene?.id), s);
+        }
+        if (b.kind === 'illustrations') return prod.illustrations(p);
+        if (b.kind === 'regenerate-illustration') {
+          requireThat(s?.visualMode === 'illustration', 'Bu sahne bir bilim illüstrasyonu değil.');
+          prod.tick(
+            p,
+            b.instruction
+              ? 'Türkçe yönlendirme görsel istemine işleniyor'
+              : 'İllüstrasyon hazırlanıyor',
+            b.kind,
+            s.id,
+          );
+          const brief = b.instruction ? await cinema.directed(p, s, b.instruction) : undefined;
+          checkpoint();
+          await prod.asset(p, s, 'image', true, brief);
+          return;
         }
         if (b.kind === 'svg-board') {
           await planner.plan(p, (i, n) =>
@@ -408,11 +482,14 @@ export function createStudio(
           );
           return;
         }
-        if (b.kind === 'board' || b.kind === 'concept') {
+        if (b.kind === 'photo-board' || b.kind === 'concept') {
           const result = await storyboard(g, p, s);
           checkpoint();
           const old = structuredClone(p);
-          if (b.kind === 'board') delete p.vectorWork;
+          if (b.kind === 'photo-board') {
+            delete p.vectorWork;
+            delete p.cinema;
+          }
           clearFinal(p);
           Object.assign(p, result);
           invalidate(p, old);
@@ -641,8 +718,8 @@ export function createStudio(
       );
     } else if (scene && /görsel|çiz|resim/.test(t)) {
       requireThat(
-        scene.visualMode !== 'svg',
-        'Bu sahneyi storyboard üzerinden yeniden çizin.',
+        scene.visualMode !== 'svg' && scene.visualMode !== 'illustration',
+        'Storyboard üzerinden bu sahneyi yönlendirme ile yeniden üretin.',
         422,
       );
       store.checkpoint(p);

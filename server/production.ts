@@ -1,6 +1,7 @@
+import { STYLE_LOCK, NEGATIVE_LOCK } from '../shared/cinema';
 import { checkpoint, operation } from './operation';
 import { readArtwork } from './atlas-art';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { FilmProps } from '../composition/Film';
@@ -47,7 +48,9 @@ import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
 export type Step = 'all' | 'image' | 'voice' | 'align' | 'clip';
 export const imageKey = (p: Project, s: Scene) =>
-  hash('image-v1', p.styleGuide, s.description, s.prompt, s.angle, s.environment);
+  s.visualMode === 'illustration'
+    ? hash('science-image-v1', p.cinema?.subject, s.cinema?.brief, STYLE_LOCK, NEGATIVE_LOCK)
+    : hash('image-v1', p.styleGuide, s.description, s.prompt, s.angle, s.environment);
 export const voiceKey = (p: Project, s: Scene) =>
   hash('voice-v1', s.narration, p.voice, p.voiceStyle, p.pace);
 export const framesForVoice = (seconds: number) => Math.max(1, Math.ceil(seconds * 30 - 1e-7));
@@ -104,7 +107,9 @@ export class Production {
     kind: 'image' | 'voice' | 'music' | 'sfx',
     data: Buffer,
     s?: Scene,
-    origin: { source: 'import' | 'pollinations' } | { source: 'gemini'; model: string } = {
+    origin:
+      | { source: 'import' | 'pollinations'; illustration?: Asset['illustration'] }
+      | { source: 'gemini'; model: string } = {
       source: 'import',
     },
   ) {
@@ -127,7 +132,32 @@ export class Production {
           'Görsel boyutu okunamadı veya 40 megapiksel sınırını aşıyor.',
           422,
         );
-        await ff([...input, '-frames:v', '1', '-vf', "scale='min(1920,iw)':-2", '-q:v', '2', out]);
+        const science = s!.visualMode === 'illustration';
+        if (science) {
+          requireThat(
+            dimensions.width >= 180 && dimensions.height >= 180,
+            'İllüstrasyon yanıtı çok küçük.',
+            422,
+          );
+          if (origin.source === 'pollinations')
+            requireThat(
+              Math.abs(dimensions.width / dimensions.height - 9 / 16) < 0.08,
+              'Sağlayıcı dikey 9:16 kadraj göndermedi.',
+              422,
+            );
+        }
+        await ff([
+          ...input,
+          '-frames:v',
+          '1',
+          '-vf',
+          science
+            ? "crop=w='min(iw,ih*9/16)':h='min(ih,iw*16/9)',scale=1080:1920,setsar=1"
+            : "scale='min(1920,iw)':-2",
+          '-q:v',
+          '2',
+          out,
+        ]);
         const v = (await probe(out)).streams[0];
         requireThat(
           v.width >= 180 && v.height >= 180,
@@ -218,7 +248,13 @@ export class Production {
       422,
     );
   }
-  async asset(p: Project, s: Scene, kind: 'image' | 'voice', force: boolean) {
+  async asset(
+    p: Project,
+    s: Scene,
+    kind: 'image' | 'voice',
+    force: boolean,
+    revisedBrief?: string,
+  ) {
     checkpoint();
     approved(p);
     if (kind === 'image') requireThat(s.visualMode !== 'svg', 'SVG sahnesi görsel API kullanmaz.');
@@ -228,20 +264,39 @@ export class Production {
     this.tick(
       p,
       kind === 'image'
-        ? 'Pollinations sahne görseli hazırlanıyor'
+        ? s.visualMode === 'illustration'
+          ? `İllüstrasyon indiriliyor · ${p.scenes.findIndex((x) => x.id === s.id) + 1}/${p.scenes.length}`
+          : 'Pollinations sahne görseli hazırlanıyor'
         : 'Türkçe seslendirme üretiliyor',
       kind,
       s.id,
     );
     if (kind === 'image') {
-      const data = await this.images.image(s.prompt.trim() || s.description);
+      let art: Asset['illustration'];
+      if (s.visualMode === 'illustration') {
+        requireThat(s.cinema && p.cinema, 'İllüstrasyon planı eksik.');
+        const prior = m.image?.key === k ? m.image.illustration : undefined;
+        art = {
+          brief: revisedBrief ?? prior?.brief ?? s.cinema.brief,
+          seed: force
+            ? randomInt(0x7fffffff)
+            : (prior?.seed ?? parseInt(hash(p.id, p.cinema.subject).slice(0, 7), 16)),
+        };
+      }
+      const data = art
+        ? await this.images.illustration(p.cinema!.subject, art.brief, art.seed)
+        : await this.images.image(s.prompt.trim() || s.description);
+      checkpoint();
       // Reuse the verified, single-frame import path. Do not publish or invalidate
       // any prior image, clip, or export until the downloaded bytes decode locally.
       try {
-        await this.import(p, 'image', data, s, { source: 'pollinations' });
+        await this.import(p, 'image', data, s, {
+          source: 'pollinations',
+          ...(art ? { illustration: art } : {}),
+        });
       } catch (e) {
         if (e instanceof Issue && e.status === 422)
-          throw new ImageUnavailable('İndirilen görsel doğrulanamadı.');
+          throw new ImageUnavailable('İndirilen görsel doğrulanamadı. ' + e.message);
         throw e;
       }
     } else {
@@ -385,8 +440,16 @@ export class Production {
     };
     const artHref = data(svg),
       nextArtHref = data(nextSvg);
+    const index = p.scenes.findIndex((v) => v.id === s.id);
+    const shot =
+      s.visualMode === 'illustration' && s.cinema ? { index, title: s.cinema.title } : undefined;
+    const nextShot =
+      next?.visualMode === 'illustration' && next.cinema
+        ? { index: index + 1, title: next.cinema.title }
+        : undefined;
     const key = hash(
       'film-5-static-crossfade',
+      ...(shot || nextShot ? ['cinematic-plate-v1', shot, nextShot] : []),
       vector
         ? ['vector-film-v1', vector.ref]
         : svg
@@ -411,6 +474,8 @@ export class Production {
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
+      ...(shot ? { shot } : {}),
+      ...(nextShot ? { nextShot } : {}),
       ...(vector ? { vector } : {}),
       ...(nextVector ? { nextVector } : {}),
       ...(svg ? { svg, artHref } : {}),
@@ -466,6 +531,15 @@ export class Production {
         label: `${count} sahne için görsel bekleniyor. Görselleri yükleyip üretime devam edin.`,
         at: now(),
       };
+  }
+  async illustrations(p: Project) {
+    approved(p);
+    const scenes = p.scenes.filter((s) => s.visualMode === 'illustration');
+    requireThat(scenes.length, 'İllüstrasyon planı gerekli.');
+    for (const s of scenes) {
+      checkpoint();
+      await this.asset(p, s, 'image', false);
+    }
   }
   private async batchVoice(p: Project, s: Scene) {
     if (!useExistingVoiceOnly(s)) return this.asset(p, s, 'voice', false);

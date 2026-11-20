@@ -1,3 +1,4 @@
+import { CinemaShot } from './CinemaShot';
 import { artUrl } from '../../shared/artwork';
 import {
   ArrowDown,
@@ -173,7 +174,7 @@ export function ScriptEditor({ p }: { p: Project }) {
   const { run, busy } = useRun();
   const draft = useDraft(p, 'script', p.script, (text) => ({ text }));
   const [para, setPara] = useState(0),
-    [boardType, setBoardType] = useState('photo');
+    [boardType, setBoardType] = useState('illustration');
   const locked = busy || jobActive(p.job);
   async function generate(kind: string) {
     await draft.flush();
@@ -233,10 +234,17 @@ export function ScriptEditor({ p }: { p: Project }) {
                   disabled={locked}
                   onChange={(e) => setBoardType(e.target.value)}
                 >
-                  <option value="photo">Fotoğraf · Gemini ile planla</option>
-                  <option value="svg">Tam ekran özel vektör · OpenRouter / Gemini</option>
+                  <option value="illustration">2D bilim illüstrasyonu · Sinematik kamera</option>
+                  <option value="photo">Klasik fotoğraf · Sabit kadraj</option>
+                  <option value="svg">Eski biçim · Katmanlı SVG</option>
                 </select>
               </label>
+              {boardType === 'illustration' && (
+                <p className="help">
+                  Planlayıcı ortak özneyi, sahne istemlerini ve Türkçe başlıkları hazırlar. Dikey
+                  çizimleri görsel sağlayıcısı üretir; kamera hareketini stüdyo ekler.
+                </p>
+              )}
               {boardType === 'svg' && (
                 <p className="help">
                   Onaylanan anlatımlar seçili metin modeline gönderilir. Her sahne için özgün bir
@@ -271,7 +279,14 @@ export function ScriptEditor({ p }: { p: Project }) {
                     setP(
                       await post<Project>(
                         `/projects/${p.id}/generate`,
-                        { kind: boardType === 'svg' ? 'svg-board' : 'board' },
+                        {
+                          kind:
+                            boardType === 'svg'
+                              ? 'svg-board'
+                              : boardType === 'photo'
+                                ? 'photo-board'
+                                : 'board',
+                        },
                         { 'If-Match': String(saved.rev) },
                       ),
                     );
@@ -344,9 +359,13 @@ export function BoardEditor({ p }: { p: Project }) {
   const autoFill = settings?.pollinations.autoFill;
   const { run, busy } = useRun();
   const d = useDraft(p, 'board', { scenes: p.scenes, styleGuide: p.styleGuide }, (v) => v);
-  const invalidPlan = d.v.scenes.some((s) => s.visualMode === 'svg' && !s.svgPlan && !s.vector);
+  const invalidPlan = d.v.scenes.some(
+    (s) =>
+      (s.visualMode === 'svg' && !s.svgPlan && !s.vector) ||
+      (s.visualMode === 'illustration' && (!s.cinema || p.cinema?.scriptHash !== p.scriptApproval)),
+  );
   const [open, setOpen] = useState<string | null>(null),
-    [confirmSvg, setConfirmSvg] = useState(false);
+    [confirmCinema, setConfirmCinema] = useState(false);
   const locked = busy || jobActive(p.job);
   const edit = (id: string, x: Partial<Scene>) =>
     d.edit({ ...d.v, scenes: d.v.scenes.map((s) => (s.id === id ? { ...s, ...x } : s)) });
@@ -395,13 +414,20 @@ export function BoardEditor({ p }: { p: Project }) {
                 {p.boardApproval ? 'Onaylandı' : 'Planlama'}
               </Badge>
             </div>
-            <textarea
-              aria-label="Ortak görsel kimlik"
-              rows={2}
-              disabled={locked}
-              value={d.v.styleGuide}
-              onChange={(e) => d.edit({ ...d.v, styleGuide: e.target.value })}
-            />
+            {d.v.scenes.every((s) => s.visualMode === 'illustration') ? (
+              <p className="help">
+                Kilitli stil: düz vektör bilim illüstrasyonu · koyu arka plan · net geometrik
+                çizgiler · yazısız görsel.
+              </p>
+            ) : (
+              <textarea
+                aria-label="Ortak görsel kimlik"
+                rows={2}
+                disabled={locked}
+                value={d.v.styleGuide}
+                onChange={(e) => d.edit({ ...d.v, styleGuide: e.target.value })}
+              />
+            )}
           </div>
           <div className="panel padded spaced">
             <SpeakerSelect
@@ -424,58 +450,76 @@ export function BoardEditor({ p }: { p: Project }) {
             <p className="help">
               Seslendirme, storyboard onayından sonra seçtiğin sesle yapılır.
               {autoFill
-                ? ' Onayla ve üret, yalnız eksik fotoğrafların istemlerini Pollinations’a gönderir.'
-                : ' Toplu üretim eksik fotoğrafları yüklemeni bekler.'}{' '}
+                ? ' Onayla ve üret, yalnız eksik sahnelerin istemlerini Pollinations’a gönderir.'
+                : ' Toplu üretim eksik görselleri yüklemeni bekler.'}{' '}
               İstersen yalnızca onaylayıp tek sahne için görsel üretebilir veya dosya
               yükleyebilirsin.
             </p>
           </div>
-          <div className="panel padded spaced svg-planning">
+          <div className="panel padded spaced cinema-planning">
             <div className="panel-title">
               <Layers3 size={17} />
-              <h2>Tam ekran özel vektör sahne</h2>
+              <h2>2D bilim illüstrasyonu</h2>
+              <Badge tone="purple">9:16</Badge>
             </div>
             <p>
-              Her sahne için ayrı bir ortam, ana özne ve bilimsel efekt çizilir. Başlık da çizimle
-              birlikte modelden gelir. Kayıtlı işlerde önizleme ve video üretimi aynı yerel çizimi
-              kullanır.
+              Tek ana özne, ortak renk paleti ve her anlatıma özel bir çekim. Görseller yazısız
+              üretilir; başlık, kamera hareketi ve altyazı sonradan eklenir.
             </p>
+            {p.cinema && (
+              <p className="subject-lock">
+                <LockKeyhole size={14} /> Ana özne <strong lang="en">{p.cinema.subject}</strong>
+              </p>
+            )}
             <div className="actions">
               <Button
+                variant="primary"
                 disabled={locked}
                 onClick={() =>
-                  d.v.scenes.length && !Object.keys(p.vectorWork ?? {}).length
-                    ? setConfirmSvg(true)
-                    : void run(() => gen('svg-board'))
+                  d.v.scenes.some((s) => s.visualMode !== 'illustration')
+                    ? setConfirmCinema(true)
+                    : void run(() => gen('board'))
                 }
               >
                 <Sparkles size={14} />
-                {Object.keys(p.vectorWork ?? {}).length
-                  ? 'SVG planına devam et'
-                  : 'SVG planı oluştur'}
+                {p.cinema ? 'İllüstrasyon planını tamamla' : 'İllüstrasyon planı oluştur'}
               </Button>
-              <small>Planlayıcı: {providerNames[settings?.svgPlanner.provider ?? 'auto']}</small>
+              {p.boardApproval && p.scenes.some((s) => s.visualMode === 'illustration') && (
+                <Button
+                  disabled={locked || d.status !== 'Kaydedildi'}
+                  onClick={() => void run(() => gen('illustrations'))}
+                >
+                  <Image size={14} />
+                  Eksik illüstrasyonları üret
+                </Button>
+              )}
             </div>
+            <small className="help">
+              Plan: {providerNames[settings?.svgPlanner.provider ?? 'auto']} · Görsel: Pollinations
+            </small>
           </div>
-          {confirmSvg && (
-            <Modal title="Sahneler SVG olarak planlansın mı?" close={() => setConfirmSvg(false)}>
+          {confirmCinema && (
+            <Modal
+              title="Sahneler illüstrasyona dönüştürülsün mü?"
+              close={() => setConfirmCinema(false)}
+            >
               <p>
-                Hazır vektör çizimleri korunur. Yalnız eksik sahneler çizilir; değişen plan yeniden
-                onay ister. Anlatımlar senaryoyla eşleşiyorsa sahne kimlikleri ve kayıtlı medya
-                korunur; eşleşmiyorsa senaryodan yeni bir sahne sırası çıkarılır.
+                Bu projedeki klasik fotoğraf veya SVG sahneleri yeni bir görsel plan alır. Ses ve
+                sözcük zamanları anlatım değişmedikçe korunur. Yeni görseller ancak storyboard
+                onayından sonra üretilir.
               </p>
               <div className="actions end">
-                <Button onClick={() => setConfirmSvg(false)}>Vazgeç</Button>
+                <Button onClick={() => setConfirmCinema(false)}>Vazgeç</Button>
                 <Button
                   variant="primary"
                   onClick={() =>
                     void run(async () => {
-                      setConfirmSvg(false);
-                      await gen('svg-board');
+                      setConfirmCinema(false);
+                      await gen('board');
                     })
                   }
                 >
-                  SVG planını hazırla
+                  İllüstrasyona dönüştür
                 </Button>
               </div>
             </Modal>
@@ -486,14 +530,13 @@ export function BoardEditor({ p }: { p: Project }) {
               <span className="count-tag">{d.v.scenes.length}</span>
             </div>
             <div className="actions">
-              <Button disabled={locked} onClick={() => void run(() => gen('board'))}>
-                <Sparkles size={14} />
-                Gemini ile planla
-              </Button>
               <Button
                 disabled={locked || d.v.scenes.length >= 24}
                 onClick={() => {
-                  const s = blankScene(crypto.randomUUID());
+                  const s: Scene = {
+                    ...blankScene(crypto.randomUUID()),
+                    visualMode: 'illustration',
+                  };
                   d.edit({ ...d.v, scenes: [...d.v.scenes, s] });
                   setOpen(s.id);
                 }}
@@ -507,7 +550,7 @@ export function BoardEditor({ p }: { p: Project }) {
             <Empty
               icon={Grid2X2}
               title="Henüz sahne yok"
-              sub="Özel vektör sahneleriyle başla, Gemini ile fotoğraf planı hazırla veya ilk sahneyi kendin ekle."
+              sub="İllüstrasyon planını oluştur veya ilk sahneyi kendin ekle."
             />
           )}
           {d.v.scenes.map((s, i) => (
@@ -545,7 +588,7 @@ export function BoardEditor({ p }: { p: Project }) {
                   </Button>
                 </div>
               )}
-              {s.visualMode !== 'svg' && (
+              {s.visualMode !== 'svg' && s.visualMode !== 'illustration' && (
                 <p className="scene-description">{s.description || 'Betimleme ekle.'}</p>
               )}
               <label className="visual-selector">
@@ -558,14 +601,45 @@ export function BoardEditor({ p }: { p: Project }) {
                       if (s.vector || s.svgPlan) edit(s.id, { visualMode: 'svg' });
                       else void run(() => gen('redraw-vector', s.id));
                       setOpen(s.id);
+                    } else if (e.target.value === 'illustration') {
+                      if (s.cinema || !s.narration) edit(s.id, { visualMode: 'illustration' });
+                      else void run(() => gen('board', s.id));
                     } else edit(s.id, { visualMode: 'photo' });
                   }}
                 >
-                  <option value="photo">Fotoğraf</option>
+                  <option value="illustration">2D bilim illüstrasyonu</option>
+                  <option value="photo">Klasik fotoğraf</option>
                   <option value="svg">Vektör sahnesi</option>
                 </select>
               </label>
-              {s.visualMode === 'svg' ? (
+              {s.visualMode === 'illustration' ? (
+                <>
+                  <CinemaShot
+                    p={p}
+                    s={s}
+                    index={i}
+                    locked={locked || d.status !== 'Kaydedildi'}
+                    plan={() => void run(() => gen('board', s.id))}
+                    editTitle={(title) =>
+                      s.cinema && edit(s.id, { cinema: { ...s.cinema, title } })
+                    }
+                    regenerate={(hint) =>
+                      void run(() => gen('regenerate-illustration', s.id, hint))
+                    }
+                  />
+                  {p.boardApproval && (
+                    <div className="actions">
+                      <UploadFile
+                        p={p}
+                        scene={s.id}
+                        kind="image"
+                        title="Kendi görselini yükle"
+                        disabled={locked || d.status !== 'Kaydedildi'}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : s.visualMode === 'svg' ? (
                 <div className="manual-image-slot">
                   <SceneThumbnail p={p} s={s} />
                   <div className="grow">
@@ -659,7 +733,12 @@ export function BoardEditor({ p }: { p: Project }) {
                         ['sound', 'Ses tasarımı'],
                       ] as const
                     )
-                      .filter(([k]) => s.visualMode !== 'svg' || k === 'narration' || k === 'sound')
+                      .filter(
+                        ([k]) =>
+                          (s.visualMode !== 'svg' && s.visualMode !== 'illustration') ||
+                          k === 'narration' ||
+                          k === 'sound',
+                      )
                       .map(([k, l]) => (
                         <label key={k}>
                           {l}
@@ -670,7 +749,7 @@ export function BoardEditor({ p }: { p: Project }) {
                           />
                         </label>
                       ))}
-                    {s.visualMode !== 'svg' && (
+                    {s.visualMode !== 'svg' && s.visualMode !== 'illustration' && (
                       <label>
                         Kamera açısı
                         <input
@@ -692,7 +771,7 @@ export function BoardEditor({ p }: { p: Project }) {
                     </label>
                   </div>
                   <div className="actions">
-                    {s.visualMode !== 'svg' && (
+                    {s.visualMode !== 'svg' && s.visualMode !== 'illustration' && (
                       <Button onClick={() => void run(() => gen('concept', s.id))}>
                         <Sparkles size={13} />
                         Konsepti yenile
@@ -753,11 +832,7 @@ export function BoardEditor({ p }: { p: Project }) {
                 </button>
               </Notice>
             )}
-          {invalidPlan && (
-            <Notice>
-              Onaylamadan önce bekleyen vektör sahnelerini tamamla veya fotoğrafa dönüştür.
-            </Notice>
-          )}
+          {invalidPlan && <Notice>Onaylamadan önce her sahnenin görsel planını tamamla.</Notice>}
           <div className="approval-footer">
             <span>
               <CheckCheck size={14} />
@@ -1019,8 +1094,8 @@ export function ProductionView({ p }: { p: Project }) {
             </div>
             <p className="help">
               {autoFill
-                ? 'Eksik fotoğraflar Pollinations ile üretilir; vektör çizimleri projeden okunur. '
-                : 'Eksik fotoğrafları yükle, ardından üretime devam et. SVG sahnelerine görsel yüklenmez. '}
+                ? 'Eksik illüstrasyon ve fotoğraflar Pollinations ile üretilir; eski SVG sahneleri projeden okunur. '
+                : 'Eksik görselleri yükle, ardından üretime devam et. SVG sahnelerine görsel yüklenmez. '}
               Videoyu üret: eksik anlatımı seslendirir, sesle hizalar ve MP4’e aktarır. Hazır sesler
               ve zamanlar yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe aktarabilirsin.
               Müzik eklemezsen stüdyonun özgün ambiyans müziği kullanılır.
