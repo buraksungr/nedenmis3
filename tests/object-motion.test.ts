@@ -86,7 +86,6 @@ test('flat or gradient sets are preserved untouched; old layer wrappers, hidden 
     scene(actor(30) + actor(30000), '', flakes),
     scene(actor(50) + `<g opacity="0">${actor(450)}</g>`, '', flakes),
     scene(`<g data-anim="pulse">${actors}</g>`, '', flakes),
-    scene(actors, '<rect width="100%" height="100%" data-anim="pulse"/>', flakes),
     scene(actors, '', flakes.replaceAll('fall', 'draw')),
   ])
     assert.throws(() => parseStage(svg, rig));
@@ -192,6 +191,30 @@ test('unsupported but harmless SVG is sanitized into a signed scene; only active
   assert.match(v.canonical, /tanımsız yerel başvuru temizlendi/);
   assert.equal(parseStage(v.canonical, rig).canonical, v.canonical);
 });
+
+test('data-anim sabit arka plansal ögelerden temizlenir; sahne onarım gerektirmeden kabul edilir', () => {
+  const rig = parseRig(rigReply().svg, rigReply().subject).root;
+  const svg = `<svg viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg" data-anim="move" data-dx="10" data-duration="2">
+    <defs><g id="subject-main"><circle id="bug" cx="5" cy="5" r="3" fill="#000"/></g></defs>
+    <g id="set" data-anim="pulse" data-duration="3"><rect width="1080" height="1920" fill="#112334"/></g>
+    <rect x="0" y="0" width="100%" height="100%" fill="#0f172a" data-anim="move" data-dx="50"/>
+    <use href="#subject-main" x="140" y="1020" data-anim="move" data-dx="120" data-duration="2"/>
+    <use href="#subject-main" x="610" y="1050" data-anim="move" data-dx="80" data-duration="3"/>
+    <circle cx="240" cy="420" r="12" data-anim="fall" data-duration="4"/>
+    <circle cx="580" cy="340" r="9" data-anim="fall" data-duration="5"/>
+    <circle cx="810" cy="520" r="14" data-anim="wiggle" data-pivot-x="7" data-pivot-y="7" data-angle="12" data-duration="6"/>
+  </svg>`;
+  const s = parseStage(svg, rig);
+  assert.equal(s.actors, 2);
+  assert.ok(s.objects >= 5);
+  assert.ok(s.cleanup);
+  assert.match(s.cleanup, /data-anim/);
+  assert.match(s.canonical, /x-nedenmis-clean=/);
+  // Arka plan / kök / tam-tuval ögelerinden data-anim silindi; diğer hareketli nesneler kaldı.
+  assert.ok(!/<(?:svg|g|rect)[^>]*data-anim=/.test(s.canonical));
+  assert.equal(parseStage(s.canonical, rig).canonical, s.canonical);
+});
+
 test('eight deterministic frame-based primitives: travel in units, looping weather, normalized trace, pivot, spring overshoot', () => {
   const at = (kind: string, f: number, extra = {}) =>
     objectPose(

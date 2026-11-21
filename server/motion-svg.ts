@@ -88,15 +88,31 @@ function matrix(s = '') {
   return m;
 }
 const loops = new Set(['fall', 'rise', 'pulse', 'swing', 'wiggle']);
+// Kamera sabitliği kuralı ile çakışan animasyon öznitelikleri; bu öznitelikler
+// arka plan / kök / tam-tuval şeklinden sessizce silinir, sahne reddedilmez.
+const animAttrs = [
+  'data-anim',
+  'data-dx',
+  'data-dy',
+  'data-delay',
+  'data-duration',
+  'data-pivot-x',
+  'data-pivot-y',
+  'data-angle',
+];
 export function parseStage(xml: string, rig: Geometry) {
-  const { root, cleanup } = parseGeometry(xml, 'objects'),
+  const { root, cleanup: baseCleanup } = parseGeometry(xml, 'objects'),
     [bx, by, bw, bh] = root.attrs.viewBox.split(' ').map(Number),
     [rx, ry, rw, rh] = rig.attrs.viewBox.split(' ').map(Number);
   const motions = new Set<Geometry>(),
     actors = new Set<Geometry>(),
     positions = new Set<string>();
   let instances = 0,
-    continuous = false;
+    continuous = false,
+    cleanup = baseCleanup;
+  const note = (why: string) => {
+    cleanup = cleanup ? `${cleanup}; ${why}` : why;
+  };
   const walk = (
     n: Geometry,
     m: Matrix,
@@ -111,36 +127,50 @@ export function parseStage(xml: string, rig: Geometry) {
     if (Math.abs(m[0] * m[3] - m[1] * m[2]) < 0.000001) return;
     background ||= ['set', 'background', 'layer-bg'].includes(a.id);
     if (kind) {
-      if (
-        background ||
+      const selfBg =
+        n.tag === 'svg' ||
+        ['set', 'background', 'layer-bg'].includes(a.id) ||
+        (n.tag === 'rect' &&
+          (a.width === '100%' || parseFloat(a.width ?? '0') >= bw) &&
+          (a.height === '100%' || parseFloat(a.height ?? '0') >= bh));
+      if (selfBg) {
+        // Arka plan, kök veya tam tuval şekli hareket etmez: animasyonu
+        // sessizce kaldır ve sabit tut; geriye kalan nesneler hareket edebilir.
+        for (const k of animAttrs) delete a[k];
+        note(
+          `${n.tag}${a.id ? '#' + a.id : ''} içindeki data-anim arka plan sabitliği için temizlendi`,
+        );
+      } else if (
         descend(n).filter((x) => x.tag === 'use').length > 1 ||
         descend(n).some(
           (x) =>
             ['set', 'background', 'layer-bg'].includes(x.attrs.id) ||
             (x.tag === 'rect' &&
-              (x.attrs.width === '100%' || parseFloat(x.attrs.width) >= bw) &&
-              (x.attrs.height === '100%' || parseFloat(x.attrs.height) >= bh)),
+              (x.attrs.width === '100%' || parseFloat(x.attrs.width ?? '0') >= bw) &&
+              (x.attrs.height === '100%' || parseFloat(x.attrs.height ?? '0') >= bh)),
         )
       )
         fail('Kamera ve tam tuval dekoru sabit kalmalı.');
-      if (kind === 'move' && Math.hypot(+(a['data-dx'] ?? 0), +(a['data-dy'] ?? 0)) < 2)
-        fail('move için belirgin bir dx veya dy ver.');
-      if (kind === 'draw') {
-        const visibleStroke = (e: Geometry, inherited: string | undefined): boolean => {
-          const ink = e.attrs.stroke ?? inherited;
-          return e.tag === 'g'
-            ? e.children.some((c) => visibleStroke(c, ink))
-            : !!ink &&
-                ink !== 'none' &&
-                ink !== 'transparent' &&
-                Number(e.attrs['stroke-width'] ?? 1) > 0;
-        };
-        if (!visibleStroke(n, pen)) fail('draw için görünür stroke ve bir çizgi/yol gerekli.');
-      }
-      if (descend(n).some((x) => x.tag !== 'g')) {
-        motions.add(n);
-        owner = n;
-        if (loops.has(kind) && !Number(a['data-delay'] ?? 0)) continuous = true;
+      else {
+        if (kind === 'move' && Math.hypot(+(a['data-dx'] ?? 0), +(a['data-dy'] ?? 0)) < 2)
+          fail('move için belirgin bir dx veya dy ver.');
+        if (kind === 'draw') {
+          const visibleStroke = (e: Geometry, inherited: string | undefined): boolean => {
+            const ink = e.attrs.stroke ?? inherited;
+            return e.tag === 'g'
+              ? e.children.some((c) => visibleStroke(c, ink))
+              : !!ink &&
+                  ink !== 'none' &&
+                  ink !== 'transparent' &&
+                  Number(e.attrs['stroke-width'] ?? 1) > 0;
+          };
+          if (!visibleStroke(n, pen)) fail('draw için görünür stroke ve bir çizgi/yol gerekli.');
+        }
+        if (descend(n).some((x) => x.tag !== 'g')) {
+          motions.add(n);
+          owner = n;
+          if (loops.has(kind) && !Number(a['data-delay'] ?? 0)) continuous = true;
+        }
       }
     }
     if (n.tag === 'use') {
@@ -190,5 +220,11 @@ export function parseStage(xml: string, rig: Geometry) {
     )
   )
     fail('Baştan sona süren bir döngü kullan: fall, rise, pulse, swing veya wiggle.');
-  return { root, actors: instances, objects: motions.size, canonical: canonical(root, cleanup) };
+  return {
+    root,
+    actors: instances,
+    objects: motions.size,
+    canonical: canonical(root, cleanup),
+    cleanup,
+  };
 }

@@ -21,7 +21,7 @@ const shotRule =
   ` {"title":"...","svg":"..."}. Sen anadili Türkçe olan bir editörsün. title anlatımla doğrudan ilgili, tek başına TAM ve doğal 2–3 sözcüklük bir ifade. Cümleden ilk sözcükleri kesme. “Donan Toprakta Kimler” ve “Karıncalar Kışın Uykusuna” gibi yarım sorular/yüklemsiz parçalar yasaktır. Tamlık kontrolünü oku: “Güvenli Derinlikler”, “Kış Uykusu Değil” türünde bitmiş anlam gerekir.
 SABİT KAMERA: svg viewBox="0 0 1080 1920"; sabit ortamı g id="set" içine koy. Düz veya gradyan zemin geçerli. Büyük okunaklı sahne, üstte başlık ve altta altyazı için sakin alan. Özne şablonu uygulamada eklenecek: yeniden tanımlama. Farklı konumlarda, en az iki bağımsız hareketli <use href="#subject-main">; uygun sahnelerde 4-5 tane, biri büyük ve net. Yerleşim için dış g transform="translate(...) scale(...)" kullan. En az 5, tercihen 8 veya daha çok AYRI görünür nesne/grubu anlamlı biçimde oynat. Tüm dekoru ya da genel katmanları oynatma. Aynı hareketi her nesneye verme.
 Protokol: data-anim="move" data-dx/dy, data-delay ve data-duration saniye; fall/rise: sürekli döngü, data-phase ile dağıt; draw: görünür stroke, fill="none" olan yol (stroke-dashoffset); pulse: ısı halkası; swing/wiggle: eklem pivotunda salınım (data-pivot-x, data-pivot-y, data-angle derece); pop: data-delay ile kademeli yaylanma. Şeffaflıkla gizleme; hareketler ilk kareden son kareye kadar görünür kalsın. En az bir sürekli döngü baştan çalışsın. Anlatıma göre ör. aşağı yürüyen karıncalar, yağan kar, çizilen tüneller, ısı dalgaları. Her sahne anlatıma uygun belirgin bir çevre/dekor katmanı içermeli: kesit halinde toprak katmanları, kıvrımlı yuva tünelleri, yeraltı odaları, kar yüzeyi, ağaç kökleri, yağan kar taneleri, don sınırı çizgisi veya ısı dalgaları. Anlamsız rastgele daireler veya bulanık lekeler eklenmesin.
-Kare ve altyazı bölümü: 1080×1920 dikey karede ana özneler ve hareketli nesneler y:220 ile y:1420 arasında dengeli dağılmalı; ekran alt kısmı (y > 1480) altyazı güvenli bölgesi olarak boş tutulmalı; ekranın yarısı boş kalmasın ve altyazılar öznelerin üzerine binmesin. Sayılar sonlu, yalnız kısa ve yalın geometri.`;
+Kare ve altyazı bölümü: 1080×1920 dikey karede ana özneler ve hareketli nesneler y:220 ile y:1420 arasında dengeli dağılmalı; ekran alt kısmı (y > 1480) altyazı güvenli bölgesi olarak boş tutulmalı; ekranın yarısı boş kalmasın ve altyazılar öznelerin üzerine binmesin. <svg> kökü, <g id="set"> dekor grubu ve tam ekran arka plan şekillerine kesinlikle data-anim yazılmayacaktır; animasyon yalnız bağımsız sahne nesnelerine ait olmalı. Sayılar sonlu, yalnız kısa ve yalın geometri.`;
 const svg = z.string().min(1).max(MAX_XML),
   rigReply = z.strictObject({ subject: rigSchema.shape.subject, svg }),
   stageReply = z.strictObject({ title: motionHeading, svg });
@@ -259,7 +259,7 @@ export class ObjectPlanner {
         this.store.save(p);
       } catch (e) {
         checkpoint();
-        const detail = `${label}: ${e instanceof Issue ? e.message : 'Yerel çizim işlenemedi veya diske kaydedilemedi.'}`;
+        const detail = `${label}: ${e instanceof Error ? e.message : String(e)}`;
         work[s.id] = { ...work[s.id], detail };
         this.store.save(p);
         if (!(e instanceof Issue && ['motion-drawing', 'temporary-response'].includes(e.code)))
