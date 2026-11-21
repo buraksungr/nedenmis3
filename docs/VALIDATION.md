@@ -1,5 +1,17 @@
 # Doğrulama kaydı
 
+## 1.6.3 — `<use>` kabulü ve sessiz SVG temizleme
+
+**[Windows kurucu · v1.6.3](https://github.com/buraksungr/nedenmis3/releases/tag/v1.6.3)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44843143507) · Kaynak: [`907880b25ba2`](https://github.com/buraksungr/nedenmis3/commit/907880b25ba2b85361063f1103a17bf913d42908).
+
+- **`<use>` tam izinli:** hem ana özne şablonunun (`defs` içindeki `subject-main`) sahne üzerindeki çoğaltımı için hem de sahne SVG doğrulayıcısında `<svg>` ve `<g>` içinde `<use>` accepted. `href` yalnız yerel bir `#id` referansı olabilir; dış `http://` bağlantısı özniteliği olarak çıkarılır.
+- **Yanlış yerleşim artık reddetmez:** LLM bir izinli çizim öğesini (`use`, `circle`, `rect`, `mask` gibi) doğrudan `<svg>` altına (bir `<g>` katmanının dışına) koyarsa sanitizer içeriği sessizce temizler ve `x-nedenmis-clean` notu kaydeder; sahne 2 onarım döngüsüne sokulmaz ve diske kaydedilir.
+- **Güvenlik kalıyor:** `script`, `iframe`, `foreignObject`, `image`, `object`, `embed`, `video`/`audio`, JS olay öznitelikleri (`onload`, `onclick` …) ve dış bağlantılar çıkarılır; kalan çizim kabul edilir.
+- **<defs> genişletildi:** sahne doğrulayıcısında (`objects` modu) `<defs>` içinde `<g>` ve `<symbol>` de kabul edilir, böylece model özne şablonunu sahnede yeniden tanımlamazsa sadece temizlenir, reddedilmez.
+- **Hata mesajı:** gerçek bir doğrulama hatası kaldığında mesaj sorunlu etiketi ve özniteliği tam olarak adlandırır (ör. `<circle> için geçersiz r değeri`).
+- **Kanıt:** yeni birim testi (`tests/object-motion.test.ts`) — `<use href="#subject-main">` doğrudan `<svg>` altında olan sahne, dış bağlantılı bir `<use>` karışımıyla birlikte hatasız geçer ve tekrarda bit-bit aynı canonical üretir. `tests/svg-planner.test.ts` ve `tests/object-motion.test.ts` JS olayı/harici bağlantı/gereksiz yerleşimleri artık reddetmeden temizleyici. Toplam 72 test yeşil.
+- **Yayın:** `v1.6.3` etiketiyle otomatik GitHub Release, `Nedenmis-Studio-1.6.3-Setup.exe` eklendi; GitHub repoyu izleyenlere e-posta bildirimi gönderir. **EXE SHA-256:** `076ca96cfe147a86840ac6947df3b6a08fa3034855e81c7f4939e45a2a795e5f`.
+
 ## 1.6.2 — Zararsız SVG'yi temizle, yalnız etkin içeriği çıkar
 
 **[Windows kurucu · v1.6.2](https://github.com/buraksungr/nedenmis3/releases/tag/v1.6.2)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44791127982) · [Kurulum ve render raporları](https://github.com/buraksungr/nedenmis3/actions/runs/44791127982/artifacts/14658897404). Kurulan kaynak: `5794f8ed2aa5f2b2b6f9698d321eab31f048ec7e`.
