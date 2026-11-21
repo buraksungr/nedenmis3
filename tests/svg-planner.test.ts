@@ -149,7 +149,7 @@ test('headings are validated, not cut to fit or rebuilt from narration', () => {
   for (const s of [
     'Devlerin Karadaki',
     'Yapar ve nefes',
-    'Devasa Efendileri Olan Balinalar',
+    'Devasa Efendileri Olan Balinalar Gözleri',
     'Kuvvet',
     'Etkiler ve',
     '<g>Basınç</g>',

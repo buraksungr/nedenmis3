@@ -41,7 +41,7 @@ test('complete Turkish titles, never cropped from narration', () => {
     'Toprağın Altındaki',
     'Yuvanın',
     'Kış Gelirken Ve',
-    'Bu Başlık Çok Uzun',
+    'Bu Başlık Çok Uzun Olsun Artık',
   ])
     assert.ok(!motionHeading.safeParse(s).success, s);
 });
@@ -265,6 +265,45 @@ test('frame renderer: unchanged camera and set; non-colliding rig references on 
   assert.ok(
     b.some((n) => n.tag === 'path' && n.pathLength === '1' && Number(n['stroke-dashoffset']) < 1),
   );
+});
+
+test('tekrarlanan sahne başlığı otomatik benzersiz başlıkla değiştirilir', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-title-')),
+    store = new Store(dir, false);
+  t.after(() => {
+    store.db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const models = new SceneModels(
+    store,
+    { groq: memoryVault(), openrouter: memoryVault() },
+    async (_url, o) => {
+      const sahne = JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne ?? 0;
+      return completion(
+        sahne === 0
+          ? rigReply()
+          : sahne === 1 || sahne === 2
+            ? { ...stageReply(0), title: 'Kışın Eşiğinde' }
+            : stageReply(sahne - 1),
+      );
+    },
+  );
+  models.key('openrouter', 'unique-title-test');
+  const planner = new ObjectPlanner(store, models, async () => {});
+  let p = store.create(makeProject(topic, lines.slice(0, 2).join(' ')));
+  p.scriptApproval = scriptSig(p);
+  await planner.plan(p, () => {});
+  const saved = store.get(p.id);
+  assert.ok(saved.scenes[0].choreography && saved.scenes[1].choreography);
+  assert.notEqual(saved.scenes[0].choreography!.title, saved.scenes[1].choreography!.title);
+  for (const scene of saved.scenes) {
+    assert.ok(motionHeading.safeParse(scene.choreography!.title).success);
+    assert.ok(
+      scene.choreography!.title.trim().split(' ').length >= 2 &&
+        scene.choreography!.title.trim().split(' ').length <= 4,
+    );
+  }
+  assert.equal(saved.motionWork, undefined);
 });
 test('content address binds scene to narration and the exact project rig; offline tampering cannot become a rendered frame', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-files-'));

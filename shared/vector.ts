@@ -13,7 +13,7 @@ export const heading = z
   .string()
   .trim()
   .max(40)
-  .regex(/^\p{L}[\p{L}\p{M}\p{N}'’-]*(?: \p{L}[\p{L}\p{M}\p{N}'’-]*){1,2}$/u)
+  .regex(/^\p{L}[\p{L}\p{M}\p{N}'’-]*(?: \p{L}[\p{L}\p{M}\p{N}'’-]*){1,3}$/u)
   .refine((s) => {
     const w = s.toLocaleLowerCase('tr').split(' ');
     return (

@@ -21,6 +21,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -40,6 +41,7 @@ import {
   useStudio,
   type Page,
 } from './lib';
+import { nextTopic } from '../../shared/topics';
 function openAt(p: ProjectSummary): Page {
   return p.exported
     ? 'preview'
@@ -428,7 +430,9 @@ export function NewProject() {
   const [topic, setTopic] = useState(''),
     [instructions, setInstructions] = useState(''),
     [script, setScript] = useState(''),
-    [existing, setExisting] = useState(false);
+    [existing, setExisting] = useState(false),
+    [suggestion, setSuggestion] = useState(() => nextTopic()),
+    refreshTopic = () => setSuggestion(nextTopic(suggestion));
   return (
     <>
       <Head
@@ -472,8 +476,12 @@ export function NewProject() {
           </label>
           <div className="example-hint">
             <Sparkles size={13} />
-            <button type="button" onClick={() => setTopic('Karıncalar kışın nereye gider?')}>
-              Örnek: Karıncalar kışın nereye gider?
+            <button type="button" onClick={() => setTopic(suggestion)}>
+              {suggestion}
+            </button>
+            <button type="button" onClick={refreshTopic}>
+              <RefreshCw size={13} />
+              Yeni öneri
             </button>
           </div>
           <label>
