@@ -287,7 +287,8 @@ export function parseGeometry(
             ? defsTags.has(tag) ||
               filterTags.has(tag) ||
               mergeTags.has(tag) ||
-              (lower === 'g' && mode === 'rig')
+              tag === 'g' ||
+              tag === 'symbol'
             : ['linearGradient', 'radialGradient'].includes(parent.tag)
               ? tag === 'stop'
               : parent.tag === 'filter'
@@ -306,14 +307,17 @@ export function parseGeometry(
                           ? shapes.has(tag) || tag === 'g' || use || tag === 'defs'
                           : tag === 'defs' || tag === 'g' || shapes.has(tag) || tag === 'text'
                         : false;
-    if (!allowed)
-      bad(
+    if (!allowed) {
+      // Yanlış konumdaki veya desteklenmeyen standart bir SVG etiketi asla sahneyi
+      // reddetmez: içeriği temizlenir, not kaydedilir ve üretim devam eder.
+      note(
         parent
-          ? `Desteklenmeyen SVG öğesi: <${token(tag)}> (<${token(parent.tag)}> içinde).`
-          : `Desteklenmeyen SVG kökü: <${token(tag)}>. Belgenin tek kökü <svg> olmalı.`,
+          ? `${token(tag)} <${token(parent.tag)}> içinde kullanılmaz, içeriği temizlendi`
+          : `Kökte <${token(tag)}> kabul edilmez; tek kök <svg> olmalı.`,
       );
-    if (use && t.prefix && !isXlink(t))
-      at(tag, 'SVG', 'yalnız yerel #subject-main hedefini örnekleyebilir.');
+      skip = 1;
+      return;
+    }
     const a: Record<string, string> = {},
       unsupported: string[] = [];
     for (const attr of Object.values(t.attributes)) {
@@ -328,28 +332,34 @@ export function parseGeometry(
         continue;
       }
       if (n === 'href' && tag === 'use') {
-        if (v !== '#subject-main')
-          at(tag, 'SVG', `yalnız yerel #subject-main hedefini örnekleyebilir (${token(v)}).`);
-        a.href = v;
+        // Yalnız yerel #id referansı geçerli; dış bağlantı özniteliği olarak silinir.
+        const id = localOnly.exec(v);
+        if (!id) {
+          note(`${token(tag)} dış href temizlendi`);
+          continue;
+        }
+        refs.add(id[1] ?? id[2]);
+        a.href = `#${id[1] ?? id[2]}`;
         continue;
       }
-      if (/^on[a-z]+$/.test(n))
-        at(tag, 'Güvenlik', `etkin ${token(k)} olay özniteliği kabul edilmez.`);
+      if (/^on[a-z]+$/.test(n)) {
+        note(`${token(k)} etkin olay özniteliği temizlendi`);
+        continue;
+      }
       if (hrefs.has(n)) {
         if (n === 'href' && tag !== 'use') {
           const id = localOnly.exec(v),
             ref = id?.[1] ?? id?.[2];
-          if (!ref)
-            return at(
-              tag,
-              'Güvenlik',
-              `harici ${token(k)} bağlantısı kabul edilmez (${token(v)}).`,
-            );
+          if (!ref) {
+            note(`harici ${token(k)} bağlantısı temizlendi`);
+            continue;
+          }
           refs.add(ref);
           a[k] = `#${ref}`;
           continue;
         }
-        at(tag, 'Güvenlik', `harici ${token(k)} bağlantısı kabul edilmez.`);
+        note(`harici ${token(k)} bağlantısı temizlendi`);
+        continue;
       }
       if (n === 'x-nedenmis-clean') {
         // Our own recorded note: keep it so a sanitized file re-validates byte for byte.

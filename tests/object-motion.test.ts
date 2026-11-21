@@ -59,9 +59,12 @@ test('rig is a coherent reusable group: morphology and articulated parts, no rec
     /antenna/,
   );
   assert.throws(() => parseRig(template.svg.replace('id="subject-main"', 'id="colony"')));
-  assert.throws(() =>
-    parseRig(template.svg.replace('</g></defs>', '<use href="#subject-main"/></g></defs>')),
+  const recursive = parseRig(
+    template.svg.replace('</g></defs>', '<use href="#subject-main"/></g></defs>'),
+    template.subject,
   );
+  assert.ok(!/<use/.test(recursive.canonical));
+  assert.match(recursive.canonical, /x-nedenmis-clean=/);
   const whale =
     '<svg><defs><g id="subject-main"><path id="body" d="M5 70 Q90 20 190 75 L240 79 Q90 120 5 70Z"/><path id="tail" d="M190 75 L244 54 239 78 252 96Z"/><path id="flipper" d="M80 86 Q94 121 124 111 L105 83Z"/></g></defs></svg>';
   assert.ok(parseRig(whale, 'Mavi balina'));
@@ -90,10 +93,6 @@ test('flat or gradient sets are preserved untouched; old layer wrappers, hidden 
 });
 test('only the fixed local rig can be instantiated, and the error names the exact element', () => {
   const rejects: [string, RegExp][] = [
-    [
-      scene(actor(42, 'move', 'http://example.test/s.svg#subject-main') + actor(500), '', flakes),
-      /<use> yalnız yerel #subject-main/,
-    ],
     [scene(actors, '', flakes.replace('fall', 'invented')), /<circle> için bilinmeyen data-anim/],
     [
       scene(actors, '', flakes.replace('r="10"', 'r="10" data-delay="-1"')),
@@ -103,12 +102,56 @@ test('only the fixed local rig can be instantiated, and the error names the exac
       scene(actors, '', flakes.replace('r="10"', 'r="10" data-dx="Infinity"')),
       /<circle> için geçersiz data-dx/,
     ],
-    [
-      scene(actors, '', flakes.replace('r="10"', 'r="10" onclick="0"')),
-      /Güvenlik: <circle> etkin onclick/,
-    ],
   ];
   for (const [xml, message] of rejects) assert.throws(() => parseStage(xml, rig), message);
+
+  // JS olay özniteliği ve harici bağlantı silinir; sahne reddedilmez.
+  const cleanedEvent = parseStage(
+    scene(actors, '', flakes.replace('r="10"', 'r="10" onclick="0"')),
+    rig,
+  );
+  assert.ok(!/onclick\s*=/.test(cleanedEvent.canonical));
+  assert.match(cleanedEvent.canonical, /x-nedenmis-clean=/);
+  const cleanedHref = parseStage(
+    scene(actor(42, 'move', 'http://example.test/s.svg#subject-main') + actor(500), '', flakes),
+    rig,
+  );
+  assert.ok(!cleanedHref.canonical.includes('example.test'));
+  assert.ok(!cleanedHref.canonical.includes('href="http'));
+  assert.match(cleanedHref.canonical, /x-nedenmis-clean=/);
+});
+
+test('<use> doğrudan <svg> altında yerel referansla sorunsuz geçer; dış bağlantı temizlenir', () => {
+  const v = parseStage(
+    `<svg viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+      <defs><g id="subject-main"><circle id="bug" cx="5" cy="5" r="3" fill="#000"/></g></defs>
+      <g id="set"><rect width="1080" height="1920" fill="#194057"/></g>
+      <use href="#subject-main" x="140" y="1020" data-anim="move" data-dx="120" data-duration="2"/>
+      <use href="#subject-main" x="610" y="1050" data-anim="move" data-dx="80" data-duration="3"/>
+      <circle cx="240" cy="420" r="12" data-anim="fall" data-duration="4"/>
+      <circle cx="580" cy="340" r="9" data-anim="fall" data-duration="5"/>
+      <circle cx="810" cy="520" r="14" data-anim="wiggle" data-pivot-x="7" data-pivot-y="7" data-angle="12" data-duration="6"/>
+      <g id="a1" data-anim="swing" data-pivot-x="10" data-pivot-y="10" data-angle="10" data-duration="4"><rect x="10" y="10" width="40" height="40" fill="blue"/></g>
+      <g id="a2" data-anim="pulse" data-delay="0" data-duration="3"><rect x="110" y="110" width="40" height="40" fill="yellow"/></g>
+    </svg>`,
+    rig,
+  );
+  assert.equal(v.actors, 2);
+  assert.ok(v.objects >= 5);
+  assert.ok(v.canonical.includes('href="#subject-main"'));
+  assert.equal(parseStage(v.canonical, rig).canonical, v.canonical);
+
+  // Yer dışındaki use href silinir, sahne reddedilmez.
+  const external = parseStage(
+    v.canonical.replace(
+      'href="#subject-main" x="140"',
+      'href="http://example.test/x#subject-main" x="140"',
+    ),
+    rig,
+  );
+  assert.ok(!external.canonical.includes('example.test'));
+  assert.ok(!external.canonical.includes('href="http'));
+  assert.match(external.canonical, /x-nedenmis-clean=/);
 });
 test('unsupported but harmless SVG is sanitized into a signed scene; only active content is removed', () => {
   const dirty = scene(
@@ -388,14 +431,12 @@ test('the reported regression: title/style/animate/text no longer stop a storybo
   assert.match(file, /x-nedenmis-clean=/);
   assert.doesNotMatch(file, /<(?:style|animate|text|title|desc|metadata)/);
 
-  // A structurally invalid <mask> (directly under <svg>) is still rejected, but the message
-  // names it instead of the old opaque counter.
-  assert.throws(
-    () =>
-      parseStage(
-        replied.replace('<defs>', '<mask><g/></mask><defs>'),
-        parseRig(template.svg, template.subject).root,
-      ),
-    /<mask>/,
+  // Yanlış yerleştirilmiş <mask> (doğrudan <svg> altında) sahneyi reddetmez;
+  // sanitizer içeriği temizleyip kaydeder.
+  const cleanedMask = parseStage(
+    replied.replace('<defs>', '<mask><g/></mask><defs>'),
+    parseRig(template.svg, template.subject).root,
   );
+  assert.ok(!/<mask/.test(cleanedMask.canonical));
+  assert.match(cleanedMask.canonical, /x-nedenmis-clean=/);
 });

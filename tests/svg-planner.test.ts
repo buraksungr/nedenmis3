@@ -85,8 +85,6 @@ test('clean safe SVG instead of rejecting it: styles, SMIL, metadata, text, unkn
       /layer-bg, layer-main ve layer-fx/,
     ],
     [v + ' '.repeat(MAX_XML), /boyutu/],
-    [inject('<g onload="1"/>'), /Güvenlik: <g> etkin onload/],
-    [inject('<g href="https://evil.test/x"/>'), /Güvenlik: <g> harici href/],
     [inject('<circle r="1e999"/>'), /<circle> r/],
     [inject('<path d="M3 4 C90"/>'), /<path> path/],
     [inject('<rect width="-1" height="10"/>'), /<rect> width/],
@@ -95,6 +93,10 @@ test('clean safe SVG instead of rejecting it: styles, SMIL, metadata, text, unkn
     [inject('<g>'.repeat(20) + '</g>'.repeat(20)), /çok derin/],
   ];
   for (const [x, message] of rejects) assert.throws(() => parseIllustration(x), message);
+
+  // JS olay özniteliği ve harici bağlantı silinir; parça reddedilmez.
+  assert.ok(parseIllustration(inject('<g onload="1"/>')).drawing);
+  assert.ok(parseIllustration(inject('<g href="https://evil.test/x"/>')).drawing);
 });
 const flat = (paint: string) =>
   `<svg viewBox="0 0 1080 1350"><defs><linearGradient id="sky"><stop stop-color="#7ac"/><stop offset="100%" stop-color="#8bc"/></linearGradient></defs><g id="layer-bg"><rect width="100%" height="100%" fill="${paint}"/></g><g id="layer-main"/><g id="layer-fx" opacity="0"/></svg>`;
