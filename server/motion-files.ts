@@ -9,7 +9,7 @@ import {
 } from '../shared/object-motion';
 import { digestSchema } from '../shared/vector';
 import { hash, atomic, Issue, requireThat } from './store';
-import { parseRig, parseStage } from './motion-svg';
+import { parseSubjectRig, parseStage } from './motion-svg';
 import { MAX_XML } from './layered-svg';
 import { narrationHash } from './vector-files';
 import { checkpoint } from './operation';
@@ -26,7 +26,7 @@ const rigId = (r: Omit<RigRef, 'digest'>, s: string) =>
 const shotId = (r: Omit<MotionRef, 'digest'>, s: string) =>
   hash(r.kind, r.title, r.rigDigest, r.narrationHash, r.provider, r.model, r.actors, r.objects, s);
 export function saveRig(root: string, info: Omit<RigRef, 'digest'>, svg: string) {
-  const data = parseRig(svg, info.subject),
+  const data = parseSubjectRig(svg),
     ref = rigSchema.parse({ ...info, digest: rigId(info, data.canonical) });
   checkpoint();
   atomic(file(root, ref.digest), data.canonical);
@@ -36,7 +36,7 @@ export function loadRig(root: string, ref: RigRef) {
   const r = rigSchema.parse(ref),
     s = xml(root, r.digest);
   requireThat(rigId(r, s) === r.digest, 'Özne şablonu doğrulanamadı.', 422);
-  return parseRig(s, r.subject);
+  return parseSubjectRig(s);
 }
 export function saveMotion(
   root: string,

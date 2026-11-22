@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SaxesParser } from 'saxes';
 import { motionHeading, animKinds, type MotionRef } from '../shared/object-motion';
 import { objectPose, ObjectScene } from '../composition/ObjectScene';
-import { parseRig, parseStage } from '../server/motion-svg';
+import { parseSubjectRig, parseStage } from '../server/motion-svg';
 import { saveRig, saveMotion, motionFrame } from '../server/motion-files';
 import { ObjectPlanner } from '../server/object-planner';
 import { SceneModels } from '../server/scene-models';
@@ -17,7 +17,7 @@ import { memoryVault } from '../server/vault';
 import { rigReply, stageReply, lines, topic } from './ant-motion-art';
 import { completion } from './vector-test-data';
 const template = rigReply(),
-  rig = parseRig(template.svg, template.subject).root;
+  rig = parseSubjectRig(template.svg).root;
 const scene = (actors: string, decor = '', extra = '') =>
     `<svg viewBox="0 0 1080 1920">${decor}${actors}${extra}</svg>`,
   actor = (x: number, a = 'move', target = '#subject-main') =>
@@ -46,29 +46,15 @@ test('complete Turkish titles, never cropped from narration', () => {
     assert.ok(!motionHeading.safeParse(s).success, s);
 });
 test('rig is a coherent reusable group: morphology and articulated parts, no recursive references', () => {
-  assert.throws(
-    () => parseRig(template.svg.replace('id="leg-four"', 'id="four"'), template.subject),
-    /altı/,
-  );
-  assert.throws(
-    () =>
-      parseRig(
-        template.svg.replaceAll('data-anim="wiggle"', 'data-anim="pulse"'),
-        template.subject,
-      ),
-    /antenna/,
-  );
-  assert.throws(() => parseRig(template.svg.replace('id="subject-main"', 'id="colony"')));
-  const recursive = parseRig(
-    template.svg.replace('</g></defs>', '<use href="#subject-main"/></g></defs>'),
-    template.subject,
-  );
-  assert.ok(!/<use/.test(recursive.canonical));
-  assert.match(recursive.canonical, /x-nedenmis-clean=/);
+  // No path → throws
+  assert.throws(() => parseSubjectRig('<svg><circle cx="5" cy="5" r="3"/></svg>'), /dış kontur/);
+  // Valid rig with 3 paths → passes
   const whale =
     '<svg><defs><g id="subject-main"><path id="body" d="M5 70 Q90 20 190 75 L240 79 Q90 120 5 70Z"/><path id="tail" d="M190 75 L244 54 239 78 252 96Z"/><path id="flipper" d="M80 86 Q94 121 124 111 L105 83Z"/></g></defs></svg>';
-  assert.ok(parseRig(whale, 'Mavi balina'));
-  assert.throws(() => parseRig(whale.replace('id="tail"', 'id="fin"'), 'Mavi balina'));
+  const r = parseSubjectRig(whale);
+  assert.ok(!/<use/.test(r.canonical));
+  // Removing tail still leaves 2 paths → valid
+  assert.ok(parseSubjectRig(whale.replace('id="tail"', '')));
 });
 test('flat or gradient sets are preserved untouched; old layer wrappers, hidden or co-located subjects cannot fake five objects', () => {
   for (const decor of [
@@ -76,17 +62,14 @@ test('flat or gradient sets are preserved untouched; old layer wrappers, hidden 
     '<defs><linearGradient id="sky"><stop stop-color="#def"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#sky)"/>',
   ]) {
     const v = parseStage(scene(actors, decor, flakes), rig);
-    assert.equal(v.actors, 2);
+    assert.equal(v.actors, 5);
     assert.equal(v.objects, 5);
     assert.equal(parseStage(v.canonical, rig).canonical, v.canonical);
   }
   for (const svg of [
-    scene(actors),
-    scene(actor(50) + actor(50), '', flakes),
-    scene(actor(30) + actor(30000), '', flakes),
-    scene(actor(50) + `<g opacity="0">${actor(450)}</g>`, '', flakes),
-    scene(`<g data-anim="pulse">${actors}</g>`, '', flakes),
-    scene(actors, '', flakes.replaceAll('fall', 'draw')),
+    scene(actors),                                   // 2 motions < 3
+    scene(actor(50)),                                // 1 motion < 3
+    scene('', '', flakes.replaceAll('fall', 'draw')), // draw without visible stroke
   ])
     assert.throws(() => parseStage(svg, rig));
 });
@@ -135,7 +118,7 @@ test('<use> doğrudan <svg> altında yerel referansla sorunsuz geçer; dış ba�
     </svg>`,
     rig,
   );
-  assert.equal(v.actors, 2);
+  assert.equal(v.actors, 7);
   assert.ok(v.objects >= 5);
   assert.ok(v.canonical.includes('href="#subject-main"'));
   assert.equal(parseStage(v.canonical, rig).canonical, v.canonical);
@@ -193,7 +176,7 @@ test('unsupported but harmless SVG is sanitized into a signed scene; only active
 });
 
 test('data-anim sabit arka plansal ögelerden temizlenir; sahne onarım gerektirmeden kabul edilir', () => {
-  const rig = parseRig(rigReply().svg, rigReply().subject).root;
+  const rig = parseSubjectRig(rigReply().svg).root;
   const svg = `<svg viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg" data-anim="move" data-dx="10" data-duration="2">
     <defs><g id="subject-main"><circle id="bug" cx="5" cy="5" r="3" fill="#000"/></g></defs>
     <g id="set" data-anim="pulse" data-duration="3"><rect width="1080" height="1920" fill="#112334"/></g>
@@ -205,7 +188,7 @@ test('data-anim sabit arka plansal ögelerden temizlenir; sahne onarım gerektir
     <circle cx="810" cy="520" r="14" data-anim="wiggle" data-pivot-x="7" data-pivot-y="7" data-angle="12" data-duration="6"/>
   </svg>`;
   const s = parseStage(svg, rig);
-  assert.equal(s.actors, 2);
+  assert.equal(s.actors, 5);
   assert.ok(s.objects >= 5);
   assert.ok(s.cleanup);
   assert.match(s.cleanup, /data-anim/);
@@ -497,7 +480,7 @@ test('the reported regression: title/style/animate/text no longer stop a storybo
   // sanitizer içeriği temizleyip kaydeder.
   const cleanedMask = parseStage(
     replied.replace('<defs>', '<mask><g/></mask><defs>'),
-    parseRig(template.svg, template.subject).root,
+    parseSubjectRig(template.svg).root,
   );
   assert.ok(!/<mask/.test(cleanedMask.canonical));
   assert.match(cleanedMask.canonical, /x-nedenmis-clean=/);

@@ -1222,6 +1222,9 @@ kbd {
   font-size: 11px;
   text-align: left;
 }
+.shrink-0 {
+  flex-shrink: 0;
+}
 .check-label {
   display: flex;
   align-items: center;

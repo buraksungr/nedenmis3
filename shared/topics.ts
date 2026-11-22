@@ -128,3 +128,15 @@ export function uniqueSceneTitle(narration: string, taken: Set<string>): string 
     if (!taken.has(fallback.toLocaleLowerCase('tr'))) return fallback;
   return 'Gizli Derinlikler';
 }
+
+/** Havuzdan rastgele, henüz kullanılmayan bir konu önerisi döndürür. */
+let recentTopics = new Set<string>();
+export function randomTopic(): string {
+  const available = DOCUMENTARY_TOPICS.filter((t) => !recentTopics.has(t));
+  const pool = available.length > 0 ? available : DOCUMENTARY_TOPICS;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  recentTopics.add(pick);
+  if (recentTopics.size > DOCUMENTARY_TOPICS.length * 0.7)
+    recentTopics = new Set([...recentTopics].slice(-Math.floor(DOCUMENTARY_TOPICS.length / 2)));
+  return pick;
+}

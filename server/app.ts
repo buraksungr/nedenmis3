@@ -1,7 +1,7 @@
 import type { PlannerWait } from './planner-pacing';
 import { ObjectPlanner } from './object-planner';
 import { motionFrame } from './motion-files';
-export { parseRig, parseStage } from './motion-svg';
+export { parseSubjectRig, parseStage } from './motion-svg';
 import { isDeepStrictEqual } from 'node:util';
 export { parseIllustration } from './layered-svg';
 import { Operation, checkpoint } from './operation';
@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { validWords } from '../shared/captions';
+import { randomTopic } from '../shared/topics';
 import {
   STOPPED,
   STOPPING,
@@ -239,6 +240,20 @@ export function createStudio(
     checkpoint();
     changeScript(p, text); // Only after a complete, validated response.
   }
+  app.get('/api/topics/suggest', async (_q, r) => {
+    let suggestion: string;
+    try {
+      const ai = await g.text(
+        'Rastgele bir Türkçe belgesel konusu öner. Sadece bir soru cümlesi yaz, açıklama ekleme. 6-12 kelime, doğa/bilim/uzay/tarih temalı.',
+      );
+      suggestion = ai.trim().replace(/^[\"']|[\"']$/g, '');
+      if (!suggestion || suggestion.length < 5) throw new Error('Geçersiz AI yanıtı');
+    } catch {
+      suggestion = randomTopic();
+    }
+    r.json({ suggestion });
+  });
+
   app.get('/api/projects', (_q, r) => r.json(store.list()));
   app.post('/api/projects', (q, r) => {
     const b = z

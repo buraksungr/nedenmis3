@@ -432,7 +432,19 @@ export function NewProject() {
     [script, setScript] = useState(''),
     [existing, setExisting] = useState(false),
     [suggestion, setSuggestion] = useState(() => nextTopic()),
-    refreshTopic = () => setSuggestion(nextTopic(suggestion));
+    [refreshing, setRefreshing] = useState(false),
+    refreshTopic = async () => {
+      setRefreshing(true);
+      try {
+        const res = await fetch('/api/topics/suggest');
+        const data = await res.json();
+        setSuggestion(data.suggestion);
+      } catch {
+        setSuggestion(nextTopic(suggestion));
+      } finally {
+        setRefreshing(false);
+      }
+    };
   return (
     <>
       <Head
@@ -479,19 +491,19 @@ export function NewProject() {
             <button type="button" onClick={() => setTopic(suggestion)}>
               {suggestion}
             </button>
-            <button type="button" onClick={refreshTopic}>
+            <button type="button" onClick={refreshTopic} className="shrink-0">
               <RefreshCw size={13} />
-              Yeni öneri
+              {refreshing ? 'Yenileniyor…' : 'Yeni öneri'}
             </button>
           </div>
           <label>
-            Yönetmen notları <small>İsteğe bağlı</small>
+            Çizim yönlendirmesi <small>İsteğe bağlı</small>
             <textarea
               rows={4}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               maxLength={10000}
-              placeholder="Vurgulanacak ayrıntılar, anlatım tonu veya görsel tercihler…"
+              placeholder="Çizim tarzı, renk paleti, kamera açısı veya görsel tercihler…"
             />
           </label>
           <label className="check-label">
