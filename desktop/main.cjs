@@ -22,7 +22,7 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
-      const { createStudio, parseRig, parseStage } = require('../build/server.cjs');
+      const { createStudio, parseSubjectRig, parseStage } = require('../build/server.cjs');
       const state = app.getPath('userData');
       const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
       // Local OS association lookup; does not open the URL or contact the network.
@@ -139,7 +139,7 @@ if (!app.requestSingleInstanceLock()) {
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,
         );
-        const rig = parseRig(
+        const rig = parseSubjectRig(
           '<svg viewBox="0 0 40 30"><defs><g id="subject-main"><path d="M0 8 Q15 0 28 9 L11 20Z" fill="#fca"/><circle cx="20" cy="9" r="3"/></g></defs></svg>',
         );
         const flat = parseStage(
