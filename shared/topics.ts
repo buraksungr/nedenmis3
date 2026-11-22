@@ -129,6 +129,30 @@ export function uniqueSceneTitle(narration: string, taken: Set<string>): string 
   return 'Gizli Derinlikler';
 }
 
+/** Bir başlığın yarım / kırpılmış değil, tamamlanmış 2–4 kelimelik Türkçe ad tamlaması olup olmadığını doğrular. */
+export function isCompleteTitle(title: string): boolean {
+  const t = title.trim();
+  const words = t.split(/\s+/);
+  if (words.length < 2 || words.length > 4) return false;
+  // Son kelime soru kelimesi, bağbağcılar veya kısımda biten eklerse → yarı başlık
+  const last = words[words.length - 1].toLocaleLowerCase('tr');
+  const HALF_ENDINGS = new Set([
+    'kim', 'kimler', 'kimi', 'hangi', 'hangisi', 'neler', 'neden', 'niçin',
+    'nerede', 'nereye', 'nasıl', 'ne', 'mi', 'mı', 'mu', 'mü', 'ki',
+    've', 'veya', 'ile', 'olan', 'olarak', 'ise', 'ama', 'çünkü',
+    'bir', 'için', 'ıçin', 'gibi', 'kadar', 'de', 'da', 'ya',
+  ]);
+  if (HALF_ENDINGS.has(last)) return false;
+  // Ekli bitişler (cümle parçası işareti)
+  if (/(?:sına|sine|suna|süne|daki|deki|taki|teki|nın|nin|nun|nün)$/u.test(last))
+    return false;
+  // Tek tek yumuşak/kısımda biten kelimeler
+  if (/^(yapar|eder|olur|olan|giden|yapan|eden)$/u.test(words[0].toLocaleLowerCase('tr')))
+    return false;
+  // Tüm kelimeler en az 2 harfli ve harf içermeli
+  return words.every((w) => w.length >= 2 && /^[A-Za-zÇçĞğİıÖöŞşÜü]/.test(w));
+}
+
 /** Havuzdan rastgele, henüz kullanılmayan bir konu önerisi döndürür. */
 let recentTopics = new Set<string>();
 export function randomTopic(): string {
