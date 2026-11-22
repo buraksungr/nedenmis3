@@ -156,7 +156,7 @@ if (!app.requestSingleInstanceLock()) {
             '</svg>',
           rig.root,
         );
-        if (flat.actors !== 2 || flat.objects !== 5)
+        if (flat.actors !== 5 || flat.objects !== 5)
           throw Error('Installed object compositor input failed validation');
         if (!loaded) throw new Error('Installed renderer or SQLite unavailable');
         const r = await fetch(origin + '/api/settings/checks', {

@@ -33,7 +33,7 @@ try {
   if ($process.ExitCode -ne 0) { throw "Installed app exit code $($process.ExitCode): $rawReport" }
   $report = $rawReport | ConvertFrom-Json
   if (!$report.secureStorage -or !$report.plannerSecureStorage) { throw 'Provider credential isolation not verified' }
-  if ($report.fixedMotionStage.actors -ne 2 -or $report.fixedMotionStage.objects -ne 5) { throw 'Packaged flat SVG object scene not verified' }
+  if ($report.fixedMotionStage.actors -ne 5 -or $report.fixedMotionStage.objects -ne 5) { throw 'Packaged flat SVG object scene not verified' }
   $remotion = $report.checks | Where-Object id -eq 'remotion'
   if (!$report.installed -or !$remotion.ok -or $remotion.detail -notmatch '(msedge|chrome|chromium)\.exe$') {
     throw "Expected a connected system browser: $rawReport"
