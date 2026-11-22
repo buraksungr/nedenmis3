@@ -34,8 +34,8 @@ export const motionRefSchema = z.strictObject({
   rigDigest: digestSchema,
   narrationHash: digestSchema,
   ...source,
-  actors: z.number().int().min(2).max(40),
-  objects: z.number().int().min(5).max(160),
+  actors: z.number().int().min(1).max(40),
+  objects: z.number().int().min(1).max(160),
   digest: digestSchema,
 });
 export type RigRef = z.infer<typeof rigSchema>;

@@ -3,6 +3,81 @@ import { SaxesParser } from 'saxes';
 import { SVGPathData } from 'svg-pathdata';
 import { layers, type Drawing, type Geometry, type Layer } from '../shared/vector';
 export const MAX_XML = 96 * 1024;
+
+/** LLM tarafından üretilen yaygın SVG yazım hatalarını otomatik onarır.
+ * Katı XML ayrıştırıcıya gitmeden önce çağrılır. Sıfır onarım isteğiyle bozuk XML'i
+ * temiz corrected eder, böylece modele tekrar sorulmadan sahne geçerli hale getirilir. */
+export function healXml(xml: string): { xml: string; repairs: string[] } {
+  const repairs: string[] = [];
+  let s = xml;
+
+  // 1. Kod blok işaretlerini temizle (```svg, ```xml, ```)
+  const before = s;
+  s = s.replace(/```svg\s*/gi, '').replace(/```xml\s*/gi, '').replace(/```\s*/g, '');
+  if (s !== before) repairs.push('kod blok işaretleri temizlendi');
+
+  // 2. Önceki/sonraki fazlalık metni temizle — ilk <svg ve son </svg> arasında kal
+  const svgStart = s.indexOf('<svg');
+  const svgEnd = s.lastIndexOf('</svg>');
+  if (svgStart >= 0 && svgEnd >= 0 && svgEnd > svgStart) {
+    s = s.slice(svgStart, svgEnd + 6);
+    if (s !== before) repairs.push('fazlalık metin temizlendi');
+  } else if (svgStart >= 0 && svgEnd < 0) {
+    s = s.slice(svgStart) + '</svg>';
+    repairs.push('eksik </svg> tamamlandı');
+  }
+
+  // 3. Çıplak & karakterlerini &amp; ile değiştir (zaten varolan entity'leri bozma)
+  const before2 = s;
+  s = s.replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
+  if (s !== before2) repairs.push('çıplak & karakterleri &amp; olarak düzeltildi');
+
+  // 4. Bitişik özniteliklere boşluk ekle: fill="#fff"stroke="#000" → fill="#fff" stroke="#000"
+  const before3 = s;
+  s = s.replace(/"\s*([A-Za-z][A-Za-z0-9:_-]*)\s*=/g, '" $1=');
+  if (s !== before3) repairs.push('bitişik özniteliklere boşluk eklendi');
+
+  // 5. Aynı etikette tekrarlanan öznitelikleri tekilleştir (ilk değer kazanır).
+  // Sadece name="value" kalıbına uyan özniteliklere uygulanır; path d= gibi
+  // boşluk içeren değerler bölünmez.
+  const before4 = s;
+  s = s.replace(/<([A-Za-z][A-Za-z0-9:_\-]*)([^>]*?)>/g, (_match, tag, attrs) => {
+    const seen = new Set<string>();
+    const cleaned: string[] = [];
+    const attrRe = /\s*([A-Za-z][A-Za-z0-9:_\-]*)\s*=\s*("[^"]*"|'[^']*')/g;
+    let m: RegExpExecArray | null;
+    let lastIndex = 0;
+    while ((m = attrRe.exec(attrs)) !== null) {
+      const gap = attrs.slice(lastIndex, m.index);
+      if (gap.trim()) cleaned.push(gap.trim());
+      const name = m[1];
+      if (!seen.has(name)) {
+        seen.add(name);
+        cleaned.push(m[0].trim());
+      }
+      lastIndex = attrRe.lastIndex;
+    }
+    const tail = attrs.slice(lastIndex).trim();
+    if (tail && tail !== '/') cleaned.push(tail);
+    // /' > için ön ek boşluk ekleme: self-closing etiketlerde ' />' değil '/>' olmalı
+    const body = cleaned.join(' ');
+    return `<${tag}${body ? ' ' + body : ''}${tail === '/' ? '/' : ''}>`;
+  });
+  if (s !== before4) repairs.push('tekrarlanan öznitelikler tekilleştirildi');
+
+  // 6. Kapatılmamış şekil etiketlerini otomatik kapat (self-closing)
+  const before5 = s;
+  const selfCloseTags = ['path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'stop', 'use'];
+  for (const tag of selfCloseTags) {
+    // /' > ile biten (zaten self-closing) etiketleri atla: [^>/] '/' karakterini de hariç tutar
+    s = s.replace(new RegExp('<' + tag + '(\\s[^>/]*?)>(?!.*</' + tag + '>)', 'g'), '<$1/>');
+  }
+  if (s !== before5) repairs.push('kapatılmamış şekil etiketleri kapatıldı');
+
+  return { xml: s, repairs };
+}
+
+
 const ns = 'http://www.w3.org/2000/svg',
   stage = '0 0 1080 1350';
 const shapes = new Set(['path', 'polygon', 'polyline', 'rect', 'circle', 'ellipse', 'line']);
@@ -228,13 +303,20 @@ export function parseGeometry(
   mode: 'layers' | 'rig' | 'objects',
   editorial?: { title: string; narration: string },
 ) {
-  if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(xml)) bad('SVG belge türü geçersiz (DOCTYPE/ENTITY).');
-  if (Buffer.byteLength(xml) > MAX_XML) bad('SVG boyutu sınır dışında.');
   const c = cleanup(),
     note = (why: string) => c.add(why),
     at = (tag: string, scope: string, why: string): never =>
-      bad(`${scope}: <${token(tag)}> ${why}`),
-    p = new SaxesParser({ xmlns: true }),
+      bad(`${scope}: <${token(tag)}> ${why}`);
+
+  // Otomatik XML ön-onarıcı: LLM yazım hatalarını sıfır onarım ile düzelt
+  const healed = healXml(xml);
+  if (healed.repairs.length > 0) {
+    note(`XML ön-onarım: ${healed.repairs.join("; ")}`);
+  }
+  xml = healed.xml;
+  if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(xml)) bad('SVG belge türü geçersiz (DOCTYPE/ENTITY).');
+  if (Buffer.byteLength(xml) > MAX_XML) bad('SVG boyutu sınır dışında.');
+  const p = new SaxesParser({ xmlns: true }),
     stack: Geometry[] = [],
     ids = new Set<string>(),
     refs = new Set<string>();

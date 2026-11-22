@@ -39,6 +39,20 @@ const knownReasons = new Set<string>([
   ...Object.values(FinishReason),
 ]);
 const maxScriptRetries = 3;
+
+// Ücretsiz katmanda olan Gemini metin modelleri; kota aşımında sırayla denenir.
+const FREE_TEXT_MODELS = [
+  'gemini-1.5-flash-8b',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash-lite',
+];
+
+/** 429 kota hatası olduğu an çalıştırılan fallback zinciri.
+ * Mevcut modelden sonra ücretsiz modelleri sırayla dener. */
+export function geminiFallbackModels(current: string): string[] {
+  const seen = new Set<string>([current]);
+  return FREE_TEXT_MODELS.filter((m) => !seen.has(m));
+}
 const maxTimerMs = 2_147_483_647; // Larger Node timeouts fire immediately; never retry early.
 function retryAfterMs(header: string | null, rpcDelay: unknown) {
   if (header) {
@@ -357,79 +371,99 @@ export class Gemini {
     );
   }
   async text(prompt: string, schema?: object, onRetry?: RetryNotice): Promise<string> {
-    const model = this.allowed('text');
-    // Explicit backend, origin and version: never pick up Vertex, another host or
-    // an API-version override from the user's environment. No SDK-level retry loop.
-    const ai = new GoogleGenAI({
-      apiKey: this.apiKey('text'),
-      enterprise: false,
-      apiVersion: schema ? mediaVersion : scriptVersion,
-      httpOptions: {
-        baseUrl: origin,
-        fetch: (url, init) =>
-          this.send(String(url), init ?? {}, 'text', schema ? undefined : { onRetry }),
-      },
-    });
-    let out: GenerateContentResponse;
-    try {
-      out = await ai.models.generateContent({
-        model,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        ...(schema
-          ? {
-              config: {
-                responseMimeType: 'application/json',
-                responseJsonSchema: schema,
-                maxOutputTokens: svgOutputTokens,
-              },
-            }
-          : {}),
+    const primaryModel = this.allowed('text');
+    const fallbackModels = geminiFallbackModels(primaryModel);
+    const modelsToTry = [primaryModel, ...fallbackModels];
+    let lastError: unknown;
+
+    for (const model of modelsToTry) {
+      // Explicit backend, origin and version: never pick up Vertex, another host or
+      // an API-version override from the user's environment. No SDK-level retry loop.
+      const ai = new GoogleGenAI({
+        apiKey: this.apiKey('text'),
+        enterprise: false,
+        apiVersion: schema ? mediaVersion : scriptVersion,
+        httpOptions: {
+          baseUrl: origin,
+          fetch: (url, init) =>
+            this.send(String(url), init ?? {}, 'text', schema ? undefined : { onRetry }),
+        },
       });
-    } catch (e) {
+      let out: GenerateContentResponse;
+      try {
+        out = await ai.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          ...(schema
+            ? {
+                config: {
+                  responseMimeType: 'application/json',
+                  responseJsonSchema: schema,
+                  maxOutputTokens: svgOutputTokens,
+                },
+              }
+            : {}),
+        });
+      } catch (e) {
+        checkpoint();
+        lastError = e;
+        // 429 kota aşımında sıradaki ücretsiz modele geç
+        if (e instanceof ProviderHttpIssue && e.status === 429) {
+          this.record(
+            'quota',
+            'Model ' + model + ' kota aşıldı, sıradaki ücretsiz modele geçiliyor.',
+            'text',
+          );
+          continue;
+        }
+        if (e instanceof Issue) throw e;
+        // Do not expose raw SDK exceptions (may contain provider payload or credentials).
+        this.noOutput(
+          'text',
+          schema
+            ? e instanceof SyntaxError
+              ? 'JSON Hatası - Gemini yanıt gövdesi geçerli JSON değil.'
+              : 'Gemini yanıtı SDK tarafından okunamadı.'
+            : undefined,
+        );
+      }
       checkpoint();
-      if (e instanceof Issue) throw e;
-      // Do not expose raw SDK exceptions (may contain provider payload or credentials).
-      this.noOutput(
-        'text',
-        schema
-          ? e instanceof SyntaxError
-            ? 'JSON Hatası - Gemini yanıt gövdesi geçerli JSON değil.'
-            : 'Gemini yanıtı SDK tarafından okunamadı.'
-          : undefined,
-      );
+      const candidate = out?.candidates?.[0];
+      const parts = candidate?.content?.parts;
+      const block = out?.promptFeedback?.blockReason;
+      if (schema && candidate?.finishReason === 'MAX_TOKENS') {
+        const detail =
+          'MAX_TOKENS - Yanıt Yarım Kaldı (Gemini). Daha az geometriyle SVG’yi eksiksiz bitir.';
+        this.record('unavailable', detail, 'text');
+        throw new Issue(502, detail, 'incomplete');
+      }
+      if (
+        !Array.isArray(parts) ||
+        (block && !['BLOCK_REASON_UNSPECIFIED', 'BLOCKED_REASON_UNSPECIFIED'].includes(block)) ||
+        (candidate?.finishReason && candidate.finishReason !== 'STOP')
+      ) {
+        const reason = block || candidate?.finishReason;
+        this.noOutput(
+          'text',
+          schema
+            ? `Gemini çizim yanıtı tamamlanmadı: ${reason && knownReasons.has(reason) ? reason : 'içerik yok'}.`
+            : undefined,
+        );
+      }
+      // Never write a thought summary into the script or concatenate alternative candidates.
+      const text = parts
+        .map((p) => (!p?.thought && typeof p?.text === 'string' ? p.text : ''))
+        .join('')
+        .trim();
+      if (!text)
+        this.noOutput('text', schema ? 'Boş yanıt - Gemini çizim için metin döndürmedi.' : undefined);
+      this.record('connected', 'Geçerli servis yanıtı alındı.', 'text');
+      return text;
     }
-    checkpoint();
-    const candidate = out?.candidates?.[0];
-    const parts = candidate?.content?.parts;
-    const block = out?.promptFeedback?.blockReason;
-    if (schema && candidate?.finishReason === 'MAX_TOKENS') {
-      const detail =
-        'MAX_TOKENS - Yanıt Yarım Kaldı (Gemini). Daha az geometriyle SVG’yi eksiksiz bitir.';
-      this.record('unavailable', detail, 'text');
-      throw new Issue(502, detail, 'incomplete');
-    }
-    if (
-      !Array.isArray(parts) ||
-      (block && !['BLOCK_REASON_UNSPECIFIED', 'BLOCKED_REASON_UNSPECIFIED'].includes(block)) ||
-      (candidate?.finishReason && candidate.finishReason !== 'STOP')
-    ) {
-      const reason = block || candidate?.finishReason;
-      this.noOutput(
-        'text',
-        schema
-          ? `Gemini çizim yanıtı tamamlanmadı: ${reason && knownReasons.has(reason) ? reason : 'içerik yok'}.`
-          : undefined,
-      );
-    }
-    // Never write a thought summary into the script or concatenate alternative candidates.
-    const text = parts
-      .map((p) => (!p?.thought && typeof p?.text === 'string' ? p.text : ''))
-      .join('')
-      .trim();
-    if (!text)
-      this.noOutput('text', schema ? 'Boş yanıt - Gemini çizim için metin döndürmedi.' : undefined);
-    this.record('connected', 'Geçerli servis yanıtı alındı.', 'text');
-    return text;
+
+    // Tüm modellerden sonra da hata devam ediyorsa son hatayı fırlat
+    if (lastError instanceof Issue) throw lastError;
+    throw lastError;
   }
   async voice(text: string, voice: Speaker, style: string) {
     const model = this.allowed('tts');

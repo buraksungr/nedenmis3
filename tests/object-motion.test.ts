@@ -6,10 +6,12 @@ import fs from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SaxesParser } from 'saxes';
-import { motionHeading, animKinds, type MotionRef } from '../shared/object-motion';
+import { motionHeading, animKinds, motionRefSchema, type MotionRef } from '../shared/object-motion';
 import { isCompleteTitle } from '../shared/topics';
 import { objectPose, ObjectScene } from '../composition/ObjectScene';
 import { parseSubjectRig, parseStage } from '../server/motion-svg';
+import { healXml } from '../server/layered-svg';
+import { geminiFallbackModels } from '../server/gemini';
 import { saveRig, saveMotion, motionFrame } from '../server/motion-files';
 import { ObjectPlanner } from '../server/object-planner';
 import { SceneModels } from '../server/scene-models';
@@ -536,3 +538,62 @@ test('başlık tutarlılığı: 2–4 kelime, tam anlamlı, tek tek kelime kontr
     assert.equal(isCompleteTitle(title), expected, title);
   }
 });
+
+test('XML ön-onarıcı: kod blok işaretleri, çıplak &, bitişik öznitelikler ve eksik kapanış etiketleri düzeltir', () => {
+  // Kod blok işaretleri temizlenir
+  let r = healXml('```svg\n<svg><rect width="100" height="100"/></svg>\n```');
+  assert.ok(!r.xml.includes('```'), 'kod blok işaretleri kaldırılmalı');
+  assert.ok(r.repairs.length > 0, 'onarım kaydı tutulmalı');
+
+  // Çıplak & karakteri &amp; olarak düzeltir
+  r = healXml('<svg><text>Tom & Jerry</text></svg>');
+  assert.ok(r.xml.includes('&amp;'), 'çaprak &amp; ile değiştirilmeli');
+
+  // Bitişik özniteliklere boşluk eklenir
+  r = healXml('<svg><rect fill="#fff"stroke="#000"/></svg>');
+  assert.ok(r.xml.includes('fill="#fff" stroke="#000"'), 'bitişik özniteliklere boşluk eklenmeli');
+
+  // Eksik </svg> tamamlanır
+  r = healXml('<svg><rect width="100" height="100"/>');
+  assert.ok(r.xml.endsWith('</svg>'), 'eksik kapanış etiketi tamamlanmalı');
+
+  // Geçerli XML aynen geçer
+  r = healXml('<svg viewBox="0 0 1080 1920"><rect width="100" height="100"/></svg>');
+  assert.equal(r.repairs.length, 0, 'geçerli XML için onarım kaydı olmamalı');
+});
+
+test('Gemini fallback zinciri: mevcut model hariç ücretsiz modelleri sırayla döndürür', () => {
+  const fallbacks = geminiFallbackModels('gemini-1.5-pro');
+  assert.ok(Array.isArray(fallbacks), 'dizi döndürmeli');
+  assert.ok(!fallbacks.includes('gemini-1.5-pro'), 'mevcut model tekrar edilmemeli');
+  assert.ok(fallbacks.length > 0, 'en az bir ücretsiz fallback modeli olmalı');
+  for (const m of fallbacks) {
+    assert.ok(m.startsWith('gemini-'), 'model adı gemini- ile başlamalı: ' + m);
+  }
+});
+
+test('objects şeması artık min(1) kabul eder: min(5) kısıtı kalkmış olmalı', () => {
+  const base = {
+    kind: 'objects-v1',
+    title: 'Güvenli Derinlikler',
+    rigDigest: 'a'.repeat(64),
+    narrationHash: 'b'.repeat(64),
+    provider: 'gemini',
+    model: 'gemini-1.5-flash',
+    actors: 2,
+    digest: 'c'.repeat(64),
+  };
+  // objects: 1 artık geçerli (eski kısıt: min 5)
+  const ok1 = motionRefSchema.safeParse({ ...base, objects: 1 });
+  assert.ok(ok1.success, 'objects=1 kabul edilmeli');
+  // objects: 0 veya negatif yine de geçersiz (int ve min(1))
+  const bad0 = motionRefSchema.safeParse({ ...base, objects: 0 });
+  assert.ok(!bad0.success, 'objects=0 reddedilmeli');
+  const badNeg = motionRefSchema.safeParse({ ...base, objects: -3 });
+  assert.ok(!badNeg.success, 'objects negatif reddedilmeli');
+  // objects: 5 yine de geçerli
+  const ok5 = motionRefSchema.safeParse({ ...base, objects: 5 });
+  assert.ok(ok5.success, 'objects=5 kabul edilmeli');
+});
+
+

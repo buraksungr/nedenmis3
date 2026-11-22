@@ -1,5 +1,5 @@
 import type { Geometry } from '../shared/vector';
-import { parseGeometry, serialize, InvalidDrawing, MAX_XML } from './layered-svg';
+import { parseGeometry, serialize, InvalidDrawing, MAX_XML, healXml } from './layered-svg';
 const fail = (s: string): never => {
   throw new InvalidDrawing(s);
 };
@@ -160,4 +160,29 @@ export function parseStage(xml: string, rig: Geometry) {
     canonical: canonical(root, cleanup),
     cleanup,
   };
+}
+
+/** Toleranslı yedek ayrıştırıcı: parseStage InvalidDrawing fırlatırsa,
+ * bozuk SVG'yi mümkün olan kadar temizleyip ikinci denemede parçalı ancak
+ * işlenebilir bir sonuç döndürür. Hiçbir şey kurtarılamazsa hatayi yeniden fırlatır. */
+export function parseStageTolerant(xml: string, rig: Geometry) {
+  try {
+    return parseStage(xml, rig);
+  } catch (e) {
+    if (!(e instanceof InvalidDrawing)) throw e;
+    const healed = healXml(xml);
+    let repaired = healed.xml;
+    // İkinci deneme: daha agresif temizleme — kalan bozuk etiketleri kaldır
+    repaired = repaired.replace(/<[A-Za-z][^>]*>[^<]*<\/\s*[^>]*>/g, ''); // boş/bozuk çift etiketleri sil
+    repaired = repaired.replace(/<[^>]*>[^<]*$/g, ''); // kapanmayan son etiketi sil
+    try {
+      const result = parseStage(repaired, rig);
+      return {
+        ...result,
+        cleanup: (result.cleanup ? result.cleanup + '; ' : '') + 'toleranslı yedek ayrıştırıcı kullanıldı (' + healed.repairs.join('; ') + ')',
+      };
+    } catch (e2) {
+      throw e; // İlk hatayı fırlat
+    }
+  }
 }
