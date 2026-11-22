@@ -308,13 +308,17 @@ export function parseGeometry(
     at = (tag: string, scope: string, why: string): never =>
       bad(`${scope}: <${token(tag)}> ${why}`);
 
+  // Güvenlik kontrolleri ön-onarımdan önce: DOCTYPE/ENTITY ve boyut
+  if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(xml)) bad('SVG belge türü geçersiz (DOCTYPE/ENTITY).');
+  if (Buffer.byteLength(xml) > MAX_XML) bad('SVG boyutu sınır dışında.');
+
   // Otomatik XML ön-onarıcı: LLM yazım hatalarını sıfır onarım ile düzelt
   const healed = healXml(xml);
   if (healed.repairs.length > 0) {
     note(`XML ön-onarım: ${healed.repairs.join("; ")}`);
   }
   xml = healed.xml;
-  if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(xml)) bad('SVG belge türü geçersiz (DOCTYPE/ENTITY).');
+  // Onarımdan sonra boyutu tekrar kontrol et (onarım çok az büyültür)
   if (Buffer.byteLength(xml) > MAX_XML) bad('SVG boyutu sınır dışında.');
   const p = new SaxesParser({ xmlns: true }),
     stack: Geometry[] = [],

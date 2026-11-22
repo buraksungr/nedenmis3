@@ -102,7 +102,8 @@ test('script-only retry policy never replays non-503/network failures or adds re
   await assert.rejects(g.voice('Ses.', 'Charon', 'Sakin'), /HTTP 503/);
   g.configure('text', { model, consent: 'blocked' });
   await assert.rejects(g.text('Senaryo'), /kullanım iznini/);
-  assert.equal(posts.length, 8);
+  // 429 triggers model fallback: 3 models × 1 attempt each instead of 1
+  assert.equal(posts.length, 11);
   assert.deepEqual(delays, []);
   assert.ok(!JSON.stringify(g.settings()).includes(key));
 });
