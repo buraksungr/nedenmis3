@@ -254,7 +254,7 @@ try {
   );
   const f = second.locator('[data-object="ant-lead"] > g').first(),
     prev = await f.getAttribute('transform'),
-    cam = second.locator('[data-fixed-camera]'),
+    cam = second.locator('[data-fixed-camera]').first(),
     box = await cam.getAttribute('viewBox');
   await second.getByLabel('Nesne animasyonu karesi').press('End');
   assert.notEqual(await f.getAttribute('transform'), prev);
