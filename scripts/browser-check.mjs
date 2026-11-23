@@ -231,9 +231,10 @@ try {
     await page.locator('.job-note.cancelled').waitFor();
   }
   await stopWhile('Sonraki sahne için bekleniyor...');
+  // Production starts directly with Sahne 1; no common rig (scene 0) call anymore.
   assert.deepEqual(
     plannerCalls.map((q) => q.sahne ?? 0),
-    [0, 1],
+    [1],
   ); // no second POST
   await page.reload();
   await card.locator('[data-motion-stage]').waitFor();
@@ -241,7 +242,7 @@ try {
   await stopWhile(/HTTP 429 - Kota\/Hız Sınırı.*10 sn.*1\/3/);
   assert.deepEqual(
     plannerCalls.map((q) => q.sahne ?? 0),
-    [0, 1, 2],
+    [1, 2],
   ); // no retry POST
   assert.equal(ctx.store.get(id).scenes[0].choreography.digest, first);
   quotaOnSecond = false;
@@ -249,7 +250,7 @@ try {
   await second.locator('[data-motion-stage]').waitFor();
   assert.deepEqual(
     plannerCalls.map((q) => q.sahne ?? 0),
-    [0, 1, 2, 2],
+    [1, 2, 2],
   );
   const f = second.locator('[data-object="ant-lead"] > g'),
     prev = await f.getAttribute('transform'),
@@ -291,7 +292,7 @@ try {
   assert.ok(finished.final);
   assert.deepEqual(
     plannerCalls.map((q) => q.sahne ?? 0),
-    [0, 1, 2, 2, 2],
+    [1, 2, 2, 2],
   );
   await page.getByRole('button', { name: 'Sahne üretim araçları' }).first().click();
   await page.getByRole('button', { name: 'Altyazıyı düzenle' }).click();
