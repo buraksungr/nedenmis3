@@ -11,7 +11,7 @@ import { Gemini } from '../server/gemini';
 import { probe, verifyVideo } from '../server/media';
 import { motionFrame } from '../server/motion-files';
 import { completion } from './vector-test-data';
-import { lines, topic, rigReply, stageReply, titles } from './ant-motion-art';
+import { lines, topic, stageReply, titles } from './ant-motion-art';
 import { objectPixels } from './object-pixels';
 async function main() {
   const out = path.resolve('out/ant-motion-control'),
@@ -33,12 +33,10 @@ async function main() {
         assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
         const q = JSON.parse(JSON.parse(String(o?.body)).messages[1].content);
         textCalls.push(q.sahne ?? 0);
-        if (q.sahne) {
-          assert.ok(q.şablon.includes('subject-main'));
-          assert.equal(q.anlatım, lines[q.sahne - 1]);
-          return completion(stageReply(q.sahne - 1, !!q.yönlendirme));
-        }
-        return completion(rigReply());
+        // Production starts directly with Sahne 1/5; no common rig (scene 0) call anymore.
+        assert.ok(q.sahne, 'expected a scene number, no rig request');
+        assert.equal(q.anlatım, lines[q.sahne - 1]);
+        return completion(stageReply(q.sahne - 1, !!q.yönlendirme));
       },
     );
     models.key('openrouter', 'offline-motion-replay');
@@ -48,7 +46,7 @@ async function main() {
     await planner.plan(p, () => {});
     approveBoard(p);
     store.save(p);
-    assert.deepEqual(textCalls, [0, 1, 2, 3, 4, 5]);
+    assert.deepEqual(textCalls, [1, 2, 3, 4, 5]);
     assert.deepEqual(
       p.scenes.map((s) => s.choreography!.title),
       titles,
@@ -141,13 +139,13 @@ async function main() {
         path.join(projectDir, 'media', 'motion', d + '.svg'),
         path.join(drawings, name + '.svg'),
       );
-    copy(p.subjectRig!.digest, 'subject');
+    // No common rig (scene 0) anymore; only per-scene drawings are copied.
     p.scenes.forEach((s, i) => copy(s.choreography!.digest, 'scene-' + (i + 1)));
     const original = structuredClone(p.assets),
       refs = p.scenes.map((s) => s.choreography!.digest),
       direction = 'Tüneldeki öncü karıncayı daha büyük göster.';
     await planner.plan(p, () => {}, p.scenes[1], direction);
-    assert.deepEqual(textCalls, [0, 1, 2, 3, 4, 5, 2]);
+    assert.deepEqual(textCalls, [1, 2, 3, 4, 5, 2]);
     assert.equal(p.boardApproval, null);
     assert.equal(p.final, undefined);
     assert.notEqual(refs[1], p.scenes[1].choreography!.digest);
@@ -167,7 +165,6 @@ async function main() {
       JSON.stringify(
         {
           topic,
-          rig: p.subjectRig,
           plannerSource:
             'Original authored SVG and Turkish title responses replayed at the text transport; no live drawing model or image API.',
           voiceSource: JSON.parse(fs.readFileSync(path.join(speech, 'source.json'), 'utf8')),
