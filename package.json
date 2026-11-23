@@ -13,7 +13,7 @@
     "dev": "tsx server/dev.ts",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --no-cache --test tests/*.test.ts",
     "desktop": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win nsis --x64",
     "test:render": "tsx tests/render-smoke.ts",
