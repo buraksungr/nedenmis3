@@ -252,7 +252,7 @@ try {
     plannerCalls.map((q) => q.sahne ?? 0),
     [1, 2, 2],
   );
-  const f = second.locator('[data-object="ant-lead"] > g'),
+  const f = second.locator('[data-object="ant-lead"] > g').first(),
     prev = await f.getAttribute('transform'),
     cam = second.locator('[data-fixed-camera]'),
     box = await cam.getAttribute('viewBox');
