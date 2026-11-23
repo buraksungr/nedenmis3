@@ -139,6 +139,7 @@ jobs:
           path: dist/installer/*Setup.exe
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Local-render-QA-not-Gemini-acceptance
           path: |
@@ -153,6 +154,7 @@ jobs:
             out/render-control/cancellation.json
             out/render-control/fallback-control.*
             out/render-control/fallback-diagnostics.ndjson
+            out/render-control/npm-test-output.txt
             out/render-control/release-notes.md
 
   acoustic-control:
