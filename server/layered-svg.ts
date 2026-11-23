@@ -308,9 +308,12 @@ export function parseGeometry(
     at = (tag: string, scope: string, why: string): never =>
       bad(`${scope}: <${token(tag)}> ${why}`);
 
-  // Güvenlik kontrolleri ön-onarımdan önce: DOCTYPE/ENTITY, boyut ve çoklu kök <svg>
+  // Güvenlik kontrolleri ön-onarımdan önce: DOCTYPE/ENTITY, boyut ve kök <svg> yapısı
   if (/<!\s*(?:DOCTYPE|ENTITY)/i.test(xml)) bad('SVG belge türü geçersiz (DOCTYPE/ENTITY).');
   if (Buffer.byteLength(xml) > MAX_XML) bad('SVG boyutu sınır dışında.');
+  const trimmed = xml.trim();
+  if (!trimmed.startsWith('<svg')) bad('XML Hatası - Satır 1, sütun 1: geçersiz SVG kök etiketi.');
+  if (!trimmed.endsWith('</svg>')) bad('XML Hatası - Satır 1, sütun 1: eksik kapanış etiketi.');
   const svgKokSayisi = (xml.match(/<svg\b/g) || []).length;
   if (svgKokSayisi > 1) bad('XML Hatası - birden fazla kök <svg> öğesi.');
 
