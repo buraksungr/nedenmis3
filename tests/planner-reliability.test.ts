@@ -178,7 +178,7 @@ for (const provider of ['gemini', 'openrouter'] as const) {
       t,
       provider,
       1,
-      (i) => (shot++ < 3 ? http(429) : undefined),
+      (_i) => (shot++ < 3 ? http(429) : undefined),
       async (ms) => {
         waits.push(ms);
       },

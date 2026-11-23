@@ -316,7 +316,7 @@ test('persistent script HTTP 503 stops the background job after four real SDK re
   const model = 'gemini-test-script',
     secret = 'private-test-credential';
   let posts = 0;
-  const { req, g, settle, store } = await app(t, undefined, async (url, init) => {
+    const { req, g, settle, store } = await app(t, undefined, async (_url, init) => {
     if (init?.method === 'GET')
       return Response.json({
         models: [{ name: `models/${model}`, supportedGenerationMethods: ['generateContent'] }],

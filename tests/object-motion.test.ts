@@ -12,7 +12,7 @@ import { objectPose, ObjectScene } from '../composition/ObjectScene';
 import { parseSubjectRig, parseStage } from '../server/motion-svg';
 import { healXml } from '../server/layered-svg';
 import { geminiFallbackModels } from '../server/gemini';
-import { saveRig, saveMotion, motionFrame } from '../server/motion-files';
+import { saveMotion, motionFrame } from '../server/motion-files';
 import { ObjectPlanner } from '../server/object-planner';
 import { SceneModels } from '../server/scene-models';
 import { Store, makeProject, scriptSig, approveBoard, hash } from '../server/store';
@@ -235,8 +235,8 @@ test('eight deterministic frame-based primitives: travel in units, looping weath
     ).some((v) => v > 1),
   );
 });
-test('frame renderer: unchanged camera and set; non-colliding rig references on a dissolve; draw normalizes the actual path', () => {
-  const stage = parseStage(stageReply(1).svg, rig).root,
+test('frame renderer: unchanged camera and set; draw normalizes the actual path', () => {
+  const stage = parseStage(stageReply(1).svg).root,
     ref = { title: 'Güvenli Derinlikler', digest: 'demo' } as MotionRef;
   const nodes = (frame: number) => {
       const tree = renderToStaticMarkup(
@@ -264,13 +264,11 @@ test('frame renderer: unchanged camera and set; non-colliding rig references on 
   );
   assert.equal(b.filter((n) => 'data-fixed-camera' in n).length, 2);
   assert.deepEqual(
-    a.filter((n) => n.id?.endsWith('set-set')),
-    b.filter((n) => n.id?.endsWith('set-set')),
+    a.filter((n) => n.id?.endsWith('layer-bg')),
+    b.filter((n) => n.id?.endsWith('layer-bg')),
   );
   const ids = b.map((n) => n.id).filter(Boolean);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(new Set(b.filter((n) => n.tag === 'use').map((n) => n.href)).size, 2);
-  for (const n of b.filter((n) => n.tag === 'use')) assert.ok(ids.includes(n.href.slice(1)));
   assert.ok(
     b.some((n) => n.tag === 'path' && n.pathLength === '1' && Number(n['stroke-dashoffset']) < 1),
   );
@@ -314,15 +312,10 @@ test('tekrarlanan sahne başlığı otomatik benzersiz başlıkla değiştirilir
   }
   assert.equal(saved.motionWork, undefined);
 });
-test('content address binds scene to narration and the exact project rig; offline tampering cannot become a rendered frame', (t) => {
+test('content address binds scene to narration; offline tampering cannot become a rendered frame', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-files-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const source = { provider: 'openrouter' as const, model: 'qa' },
-    r = saveRig(
-      root,
-      { kind: 'subject-rig-v1', subject: template.subject, scriptHash: hash(topic), ...source },
-      template.svg,
-    ),
     s = stageReply(),
     ref = saveMotion(
       root,
@@ -331,9 +324,8 @@ test('content address binds scene to narration and the exact project rig; offlin
     );
   assert.equal(motionFrame(root, ref, lines[0]).ref.objects, 23);
   assert.throws(() => motionFrame(root, ref, lines[1]));
-  assert.throws(() => motionFrame(root, ref, lines[0]));
   assert.throws(() => motionFrame(root, { ...ref, title: 'Sahte Çizim' }, lines[0]));
-  fs.appendFileSync(path.join(root, 'media', 'motion', r.digest + '.svg'), ' ');
+  fs.appendFileSync(path.join(root, 'media', 'motion', ref.digest + '.svg'), ' ');
   assert.throws(() => motionFrame(root, ref, lines[0]));
 });
 test('one broken middle heading: two repairs, later sibling saved, reload and retry only the missing shot and never request the rig again', async (t) => {
@@ -372,13 +364,13 @@ test('one broken middle heading: two repairs, later sibling saved, reload and re
     /1 sahne/,
   );
   p = store.get(p.id);
-  assert.deepEqual(calls, [0, 1, 2, 2, 2, 3]);
+  assert.deepEqual(calls, [1, 2, 2, 2, 3]);
   const before = p.scenes.map((s) => s.choreography?.digest);
   assert.ok(before[0] && !before[1] && before[2]);
   assert.throws(() => approveBoard(p));
   bad = false;
   await planner.plan(p, () => {}, p.scenes[1]);
-  assert.deepEqual(calls, [0, 1, 2, 2, 2, 3, 2]);
+  assert.deepEqual(calls, [1, 2, 2, 2, 3, 2]);
   assert.equal(p.motionWork, undefined);
   approveBoard(p);
   const sig = p.boardApproval;
@@ -386,7 +378,7 @@ test('one broken middle heading: two repairs, later sibling saved, reload and re
   assert.equal(p.boardApproval, sig);
   assert.equal(p.scenes[0].choreography?.digest, before[0]);
   assert.equal(p.scenes[2].choreography?.digest, before[2]);
-  assert.equal(calls.length, 7);
+  assert.equal(calls.length, 6);
 });
 test('an allowed filter/clip/mask/pattern is rendered by React, never stripped to text or rejected', () => {
   const stage = parseStage(

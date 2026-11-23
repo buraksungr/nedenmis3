@@ -65,7 +65,7 @@ test('stable script endpoint: 503, 503, 503, success resends the same authorized
   // Model fallback handles 503 internally; no script-level retry delays
   assert.deepEqual(delays, []);
   assert.equal(notices.length, 3);
-  for (const [i, msg] of notices.entries())
+  for (const [_, msg] of notices.entries())
     assert.ok(msg.includes('yedek modele geçiliyor') && !msg.includes(key));
   assert.equal(posts.length, 4);
   assert.deepEqual(Object.values(g.settings().requests), [4]);
