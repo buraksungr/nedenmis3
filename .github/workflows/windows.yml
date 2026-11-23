@@ -39,6 +39,16 @@ jobs:
           $clock = Get-Content -Raw out/render-control/planner-clock.json | ConvertFrom-Json
           Write-Output "::notice title=SVG planner timing::Actual elapsed ms (scene gap, retry 1, 2, 3): $($clock.observedMs -join ' / '). Two scenes saved; fixture responses, production timers."
         env: { QA_PLANNER_REAL_CLOCK: '1' }
+      - name: Upload npm test output on failure
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path out/render-control/npm-test-output.txt) {
+            $content = Get-Content -Raw out/render-control/npm-test-output.txt
+            Write-Output "=== CAPTURED NPM TEST OUTPUT ==="
+            Write-Output $content
+            Write-Output "=== END CAPTURED OUTPUT ==="
+          }
       - run: npm run build
       - name: Verify release notes are generated only from installed installer facts
         shell: pwsh
