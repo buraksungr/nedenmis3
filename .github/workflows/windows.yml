@@ -28,8 +28,14 @@ jobs:
       - name: Verify scene persistence, actual SVG retry timers and regressions
         shell: pwsh
         run: |
-          npm test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test 2>&1 | Tee-Object -Variable npmOutput
+          if ($LASTEXITCODE -ne 0) {
+            $npmOutput | Out-File -FilePath out/render-control/npm-test-output.txt -Encoding utf8
+            Write-Output "=== NPM TEST OUTPUT ==="
+            $npmOutput | Select-Object -Last 200
+            Write-Output "=== END ==="
+            exit $LASTEXITCODE
+          }
           $clock = Get-Content -Raw out/render-control/planner-clock.json | ConvertFrom-Json
           Write-Output "::notice title=SVG planner timing::Actual elapsed ms (scene gap, retry 1, 2, 3): $($clock.observedMs -join ' / '). Two scenes saved; fixture responses, production timers."
         env: { QA_PLANNER_REAL_CLOCK: '1' }
