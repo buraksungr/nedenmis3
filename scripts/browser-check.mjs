@@ -216,7 +216,7 @@ try {
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
   const card = page.locator('.scene-card').first(),
     second = page.locator('.scene-card').nth(1);
-  await card.locator('[data-fixed-camera]').waitFor();
+  await card.locator('[data-fixed-camera]').first().waitFor();
   const id = page.url().split('/').at(-1),
     initial = ctx.store.get(id),
     first = initial.scenes[0].choreography.digest;
@@ -318,7 +318,7 @@ try {
       fs.cpSync(path.join(previous, rendered.id), ctx.store.dir(rendered.id), { recursive: true });
       ctx.store.index(rendered);
       await page.goto(origin + '/#/preview/' + rendered.id);
-      const video = page.locator('video');
+      const video = page.locator('video').first();
       await video.waitFor();
       const info = await video.evaluate(async (vid) => {
         vid.muted = true;
