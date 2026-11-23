@@ -300,7 +300,7 @@ export function createStudio(
     const p = store.get(q.params.id),
       s = find(p, q.params.scene);
     requireThat(s.visualMode === 'motion-svg', 'Bu sahnede hareket planı yok.', 404);
-    r.json(motionFrame(store.dir(p.id), p.subjectRig, s.choreography, s.narration));
+    r.json(motionFrame(store.dir(p.id), s.choreography, s.narration));
   });
   app.post('/api/projects/:id/board', (q, r) => {
     const p = writable(q);
@@ -330,7 +330,7 @@ export function createStudio(
           422,
         );
         if (b.approve && s.visualMode === 'motion-svg')
-          motionFrame(store.dir(p.id), p.subjectRig, s.choreography, s.narration);
+          motionFrame(store.dir(p.id), s.choreography, s.narration);
       }
       if (s.cinema) {
         const stored = p.scenes.find((v) => v.id === s.id)?.cinema;
@@ -389,9 +389,6 @@ export function createStudio(
           JSON.stringify(
             {
               ...b,
-              ...(p.subjectRig && p.scenes.some((s) => s.visualMode === 'motion-svg')
-                ? { subjectRig: p.subjectRig }
-                : {}),
               ...(p.scenes.some((s) => s.visualMode === 'illustration')
                 ? { cinema: p.cinema }
                 : {}),

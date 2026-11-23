@@ -113,7 +113,7 @@ async function main() {
       out,
       mp4,
       p.scenes.map((s, i) => ({
-        v: motionFrame(store.dir(p.id), p.subjectRig, s.choreography, s.narration),
+        v: motionFrame(store.dir(p.id), s.choreography, s.narration),
         frames: scenes[i].frames,
       })),
     );

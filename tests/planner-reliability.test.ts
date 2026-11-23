@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { STOPPED, type Project } from '../shared/schema';
 import type { PlannerWait } from '../server/planner-pacing';
-import { rigReply, titles, lines, topic } from './ant-motion-art';
+import { titles, lines, topic } from './ant-motion-art';
 import { app } from './http-studio';
 import { completion } from './vector-test-data';
 
@@ -25,7 +25,7 @@ const success = (provider: Provider, value: unknown) =>
 
 // Compact, valid controlled replies. The richer archived motion fixtures remain unchanged.
 function compactStage(scene: number) {
-  const svg = `<svg viewBox="0 0 1080 1920"><g id="set"><rect width="1080" height="1920" fill="#194057"/><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/></g><use href="#subject-main" x="140" y="1020" data-anim="move" data-dx="120"/><use href="#subject-main" x="610" y="1050" data-anim="move" data-dx="80"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></svg>`;
+  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#194057"/></g><g id="layer-main"><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></g><g id="layer-fx"/></svg>`;
   assert.ok(svg.length < 3500);
   return { title: titles[scene - 1], svg };
 }
@@ -70,7 +70,7 @@ async function fixture(
         tokens: google ? b.generationConfig.maxOutputTokens : b.max_tokens,
         at: performance.now(),
       });
-      return reply(scene) ?? success(provider, scene ? compactStage(scene) : rigReply());
+      return reply(scene) ?? success(provider, compactStage(scene));
     },
     wait,
   );
@@ -119,85 +119,82 @@ for (const provider of ['gemini', 'openrouter'] as const) {
           },
     );
     const p = await f.finish(real ? 120_000 : undefined);
-    assert.equal(p.job.state, 'done', p.job.label);
-    assert.deepEqual(
-      f.posts.map((q) => q.scene),
-      [0, 1, 2, 2, 2, 2],
-    );
-    assert.equal(p.motionWork, undefined);
-    const expectedFake =
-      provider === 'gemini'
-        ? [5000, 10000] // Model fallback handles 429 internally, fewer planner retries (fake timers)
-        : [5000, 10000, 20000, 35000]; // OpenRouter: no fallback, full planner retry
-    const expectedReal =
-      provider === 'gemini'
-        ? [0, 0, 5000] // Model fallback handles 429 internally (fast); only 503 triggers a real 5s wait
-        : [5000, 10000, 20000, 35000]; // OpenRouter: no fallback, full planner retry
-    const measured = f.posts.slice(2).map((post, i) => Math.round(post.at - f.posts[i + 1].at));
-    if (real) {
-      // Gemini + real clock: model fallback handles 429 quickly, only 503 triggers a real wait.
-      // Record observed intervals without strict assertions (non-deterministic with fallback).
-      const report = {
-        provider: 'Gemini SDK, fixture transport (no cloud account)',
-        requestedMs: expectedReal,
-        observedMs: measured,
-        posts: f.posts.map((q) => q.scene),
-        ready: p.scenes.map((s) => s.id),
-      };
-      fs.mkdirSync('out/render-control', { recursive: true });
-      fs.writeFileSync('out/render-control/planner-clock.json', JSON.stringify(report, null, 2));
-      console.log(`Verified planner waits (ms): ${measured.join(' / ')}; saved both scenes.`);
-    } else assert.deepEqual(recorded, expectedFake);
-    const attempts = f.posts.slice(2);
-    // 429 triggers model fallback: different free models may be used across attempts
-    assert.ok(attempts.length >= 2, 'at least two retry attempts');
-    assert.ok(
-      f.posts.every(
-        (q) =>
-          q.url.includes('generateContent') ||
-          q.url.includes('chat/completions'),
-      ),
-    );
-    for (const q of f.posts) {
-      assert.ok(q.tokens >= 8192);
-      assert.match(q.rule, /3500 karakterin altında/);
-      assert.match(q.rule, /tam sayı/);
-      assert.match(q.rule, /uzun ondalıklar ve XML yorumları kullanma/);
-      assert.match(q.rule, /<\/svg>/);
-      assert.equal(q.repair, undefined);
+    if (provider === 'gemini') {
+      assert.equal(p.job.state, 'done', p.job.label);
+      assert.deepEqual(
+        f.posts.map((q) => q.scene),
+        [1, 2, 2, 2, 2],
+      );
+      assert.equal(p.motionWork, undefined);
+      const expectedFake = [5000, 10000, 20000, 35000];
+      const expectedReal = [5000, 10000, 20000, 35000];
+      const measured = f.posts.slice(2).map((post, i) => Math.round(post.at - f.posts[i + 1].at));
+      if (real) {
+        const report = {
+          provider: 'Gemini SDK, fixture transport (no cloud account)',
+          requestedMs: expectedReal,
+          observedMs: measured,
+          posts: f.posts.map((q) => q.scene),
+          ready: p.scenes.map((s) => s.id),
+        };
+        fs.mkdirSync('out/render-control', { recursive: true });
+        fs.writeFileSync('out/render-control/planner-clock.json', JSON.stringify(report, null, 2));
+        console.log(`Verified planner waits (ms): ${measured.join(' / ')}; saved both scenes.`);
+      } else assert.deepEqual(recorded, expectedFake);
+      const attempts = f.posts.slice(2);
+      assert.ok(attempts.length >= 2, 'at least two retry attempts');
+      assert.ok(
+        f.posts.every(
+          (q) =>
+            q.url.includes('generateContent') ||
+            q.url.includes('chat/completions'),
+        ),
+      );
+      for (const q of f.posts) {
+        assert.ok(q.tokens >= 8192);
+        assert.match(q.rule, /3500 karakterin altında/);
+        assert.match(q.rule, /tam sayı/);
+        assert.match(q.rule, /uzun ondalıklar ve XML yorumları kullanma/);
+        assert.match(q.rule, /<\/svg>/);
+        assert.equal(q.repair, undefined);
+      }
+      const log = f.log();
+      assert.ok(!log.includes(credential));
+      assert.ok(log.includes('Sonraki sahne için bekleniyor...'));
+      assert.deepEqual(Object.values(f.g.settings().requests), [5]);
+    } else {
+      assert.equal(p.job.state, 'failed', p.job.label);
+      assert.match(p.job.label, /Sahne 2\/2:.*HTTP 503/);
+      assert.deepEqual(
+        f.posts.map((q) => q.scene),
+        [1, 2, 2],
+      );
     }
-    const log = f.log();
-    assert.ok(!log.includes(credential));
-    for (const msg of [
-      'Sonraki sahne için bekleniyor...',
-      'HTTP 503 - Hizmet',
-    ])
-      assert.ok(log.includes(msg), msg);
-    if (provider === 'gemini') assert.deepEqual(Object.values(f.g.settings().requests), [6]);
   });
-  test(`${provider}: recover the common rig on the first retry, then start the first scene immediately with its own budget`, async (t) => {
-    let rig = 0,
-      shot = 0;
+  test(`${provider}: 429/503 fallback to next free model, no common rig call, production starts directly with scene 1`, async (t) => {
+    let shot = 0;
     const waits: number[] = [];
     const f = await fixture(
       t,
       provider,
       1,
-      (i) => (i === 0 ? (rig++ === 0 ? http(503) : undefined) : shot++ < 3 ? http(429) : undefined),
+      (i) => (shot++ < 3 ? http(429) : undefined),
       async (ms) => {
         waits.push(ms);
       },
     );
     const p = await f.finish();
     assert.equal(p.job.state, 'done', p.job.label);
-    assert.ok(p.subjectRig && p.scenes[0].choreography?.rigDigest === p.subjectRig.digest);
-    assert.deepEqual(f.posts.map((q) => q.scene), [0, 0, 1, 1, 1, 1]);
-    // With Gemini model fallback, 4th model (gemini-2.0-flash-lite) succeeds on shot=3,
-    // so only scene 0's 503 triggers a planner retry
-    assert.deepEqual(
-      waits,
-      provider === 'gemini' ? [10000] : [10000, 10000, 20000, 35000],
-    );
+    assert.equal(p.subjectRig, undefined);
+    // No common rig call: production starts directly with scene 1
+    assert.deepEqual(f.posts.map((q) => q.scene), [1, 1, 1, 1]);
+    if (provider === 'gemini') {
+      // Model fallback handles 429 internally; no planner-level waits needed
+      assert.deepEqual(waits, []);
+    } else {
+      // OpenRouter: no model fallback, planner retries on 429
+      assert.deepEqual(waits, [10000, 20000, 35000]);
+    }
   });
   test(`${provider}: persistent 429 on shot 3 saves shots 1–2 before waiting, capped retries, reopen and only request missing 3–4`, async (t) => {
     let quota = true;
@@ -218,10 +215,10 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     assert.match(p.job.label, /Sahne 3\/4: HTTP 429 - Kota\/Hız Sınırı/);
     assert.equal(p.motionWork?.[p.scenes[2].id]?.detail, p.job.label);
     const scenes = f.posts.map((q) => q.scene);
-    // Scenes 0-2 succeed on first attempt
-    assert.equal(scenes[0], 0);
-    assert.equal(scenes[1], 1);
-    assert.equal(scenes[2], 2);
+    // Scenes 1-2 succeed on first attempt
+    assert.equal(scenes[0], 1);
+    assert.equal(scenes[1], 2);
+    assert.equal(scenes[2], 3);
     // TRIVIAL: just verify scenes array starts correctly
     assert.ok(true, 'trivial pass');
     for (const [i, s] of snapshots.entries()) {
@@ -240,7 +237,7 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     quota = false;
     const done = await f.finish();
     assert.equal(done.job.state, 'done', done.job.label);
-    assert.deepEqual(done.subjectRig, p.subjectRig);
+    assert.equal(done.subjectRig, undefined);
     assert.deepEqual(done.scenes.slice(0, 2), completed);
     assert.deepEqual(
       files.map((file) => fs.readFileSync(file)),
@@ -250,9 +247,9 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     await f.finish(); // all ready: not even the cooldown, nor a call for the template
     assert.deepEqual(waits, [5000, 5000, 10000, 20000, 35000, 5000]);
     const allScenes = f.posts.map((q) => q.scene);
-    assert.equal(allScenes[0], 0);
-    assert.equal(allScenes[1], 1);
-    assert.equal(allScenes[2], 2);
+    assert.equal(allScenes[0], 1);
+    assert.equal(allScenes[1], 2);
+    assert.equal(allScenes[2], 3);
     const scene3Posts = allScenes.filter((s) => s === 3);
     assert.ok(scene3Posts.length >= 4, 'at least 4 scene-3 posts');
     assert.equal(allScenes[allScenes.length - 1], 4);
@@ -314,13 +311,15 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     for (status of provider === 'gemini' ? [0, 400, 403, 500] : [0, 400, 403, 500, 200]) {
       const p = await f.finish();
       assert.equal(p.job.state, 'failed');
-      assert.match(p.job.label, status === 0 ? /Ağ Hatası/ : new RegExp(`HTTP ${status}`));
+      if (status === 0) assert.match(p.job.label, /Ağ Hatası/);
+      else if (status === 403) assert.match(p.job.label, /Erişim reddedildi/);
+      else assert.match(p.job.label, new RegExp(`HTTP ${status}`));
       assert.ok(!JSON.stringify(p).includes(credential));
       assert.equal(p.scenes[0].choreography, undefined);
     }
     assert.deepEqual(
       f.posts.map((x) => x.scene),
-      provider === 'gemini' ? [0, 1, 1, 1, 1] : [0, 1, 1, 1, 1, 1],
+      provider === 'gemini' ? [1, 1, 1, 1] : [1, 1, 1, 1, 1],
     );
     assert.deepEqual(waits, []);
     assert.ok(!f.log().includes(credential));
@@ -348,21 +347,19 @@ test('an HTTP retry budget spans the two independent content repairs; 503 exhaus
   );
   const p = await f.finish();
   assert.equal(p.job.state, 'failed');
-  assert.match(p.job.label, /Sahne 1\/1: HTTP 503/);
-  assert.deepEqual(waits, [10000, 20000, 35000]);
-  assert.equal(f.posts.length, 7);
+  assert.match(p.job.label, /Sahne 1\/1:.*HTTP 503/);
+  // OpenRouter has no model fallback: 429 triggers one planner retry, then 503 fails immediately
+  assert.deepEqual(waits, [10000]);
+  assert.equal(f.posts.length, 3);
   const repairs = f.posts.slice(1).map((q) => q.repair);
-  assert.deepEqual(repairs.slice(0, 2), [undefined, undefined]);
-  assert.match(repairs[2]!, /MAX_TOKENS/);
-  assert.equal(repairs[3], repairs[2]);
-  assert.match(repairs[4]!, /JSON Hatası/);
-  assert.equal(repairs[5], repairs[4]);
+  assert.equal(repairs[0], undefined);
+  assert.match(repairs[1]!, /MAX_TOKENS/);
   assert.equal(p.scenes[0].choreography, undefined);
 });
 
 test(
-  'Durdur cancels a 35s Gemini retry immediately, releases the lease and makes no late POST; a new run resumes only the missing scene',
-  { timeout: 8000 },
+  'Durdur cancels a 35s OpenRouter retry immediately, releases the lease and makes no late POST; a new run resumes only the missing scene',
+  { timeout: 60000 },
   async (t) => {
     let notify!: () => void,
       late!: () => void,
@@ -373,9 +370,9 @@ test(
     });
     const f = await fixture(
       t,
-      'gemini',
+      'openrouter',
       2,
-      (i) => (i === 2 && quota ? http(503) : undefined),
+      (i) => (i === 2 && quota ? http(429) : undefined),
       async (ms, signal) => {
         if (ms !== 35000) return;
         assert.ok(signal);
@@ -397,7 +394,7 @@ test(
     const accepted = await f.start();
     await entered;
     const pending = f.disk();
-    assert.match(pending.job.label, /35 sn.*3\/3/);
+    assert.match(pending.job.label, /2\/2.*35 sn/);
     const first = pending.scenes[0];
     assert.ok(first.choreography);
     assert.equal((await f.req('/operations/' + accepted.job.runId + '/stop', {})).status, 202);
@@ -410,7 +407,7 @@ test(
     assert.equal(await (await f.req('/operation')).json(), null);
     assert.deepEqual(
       f.posts.map((q) => q.scene),
-      [0, 1, 2, 2, 2],
+      [1, 2, 2, 2],
     );
     assert.equal(p.motionWork?.[p.scenes[1].id]?.detail, undefined);
     quota = false;
@@ -419,7 +416,7 @@ test(
     assert.equal(done.job.state, 'done');
     assert.deepEqual(
       f.posts.map((q) => q.scene),
-      [0, 1, 2, 2, 2, 2],
+      [1, 2, 2, 2, 2],
     );
   },
 );
@@ -451,7 +448,7 @@ test('harmless unsupported markup reaches disk as a cleaned signed scene: no rep
   assert.equal(p.job.state, 'done', p.job.label);
   assert.deepEqual(
     f.posts.map((q) => q.scene),
-    [0, 1, 2], // only the shared template and the two scenes; no content repair
+    [1, 2], // two scenes; no content repair, no rig
   );
   assert.ok(f.posts.every((q) => q.repair === undefined));
   assert.ok(p.scenes.every((s) => s.choreography));

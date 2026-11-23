@@ -24,7 +24,7 @@ function xml(root: string, d: string) {
 const rigId = (r: Omit<RigRef, 'digest'>, s: string) =>
   hash(r.kind, r.subject, r.scriptHash, r.provider, r.model, s);
 const shotId = (r: Omit<MotionRef, 'digest'>, s: string) =>
-  hash(r.kind, r.title, r.rigDigest, r.narrationHash, r.provider, r.model, r.actors, r.objects, s);
+  hash(r.kind, r.title, r.narrationHash, r.provider, r.model, r.actors, r.objects, s);
 export function saveRig(root: string, info: Omit<RigRef, 'digest'>, svg: string) {
   const data = parseSubjectRig(svg),
     ref = rigSchema.parse({ ...info, digest: rigId(info, data.canonical) });
@@ -40,12 +40,11 @@ export function loadRig(root: string, ref: RigRef) {
 }
 export function saveMotion(
   root: string,
-  rig: RigRef,
-  info: Omit<MotionRef, 'digest' | 'actors' | 'objects' | 'rigDigest'>,
+  info: Omit<MotionRef, 'digest' | 'actors' | 'objects'>,
   svg: string,
 ) {
-  const data = parseStage(svg, loadRig(root, rig).root),
-    meta = { ...info, rigDigest: rig.digest, actors: data.actors, objects: data.objects },
+  const data = parseStage(svg),
+    meta = { ...info, actors: data.actors, objects: data.objects },
     ref = motionRefSchema.parse({ ...meta, digest: shotId(meta, data.canonical) });
   checkpoint();
   atomic(file(root, ref.digest), data.canonical);
@@ -53,23 +52,21 @@ export function saveMotion(
 }
 export function motionFrame(
   root: string,
-  rig: RigRef | undefined,
   ref: MotionRef | undefined,
   narration: string,
 ): ObjectFrame {
   requireThat(
-    rig && ref && ref.rigDigest === rig.digest && ref.narrationHash === narrationHash(narration),
-    'Anlatım veya özne değişti; bu sahneyi yeniden planlayın.',
+    ref && ref.narrationHash === narrationHash(narration),
+    'Anlatım değişti; bu sahneyi yeniden planlayın.',
   );
   motionRefSchema.parse(ref);
   const s = xml(root, ref.digest);
   requireThat(shotId(ref, s) === ref.digest, 'Hareket çizimi doğrulanamadı.', 422);
-  const template = loadRig(root, rig).root,
-    stage = parseStage(s, template);
+  const stage = parseStage(s);
   requireThat(
     stage.actors === ref.actors && stage.objects === ref.objects,
     'Koreografi doğrulanamadı.',
     422,
   );
-  return { ref, rig: template, stage: stage.root };
+  return { ref, stage: stage.root };
 }

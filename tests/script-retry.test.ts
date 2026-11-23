@@ -46,9 +46,6 @@ async function setup(t: TestContext, respond: (attempt: number) => Response) {
       posts.push({ url: String(url), body: String(init?.body) });
       return respond(posts.length);
     },
-    async (ms) => {
-      delays.push(ms);
-    },
   );
   g.key(key);
   await g.test();
@@ -65,19 +62,12 @@ test('stable script endpoint: 503, 503, 503, success resends the same authorized
   );
   const notices: string[] = [];
   assert.equal(await g.text('Senaryo', undefined, (msg) => notices.push(msg)), 'Korunan anlatım.');
-  assert.deepEqual(delays, [1000, 2000, 4000]);
+  // Model fallback handles 503 internally; no script-level retry delays
+  assert.deepEqual(delays, []);
   assert.equal(notices.length, 3);
   for (const [i, msg] of notices.entries())
-    assert.ok(msg.includes(`(${i + 1}/3)`) && !msg.includes(key));
+    assert.ok(msg.includes('yedek modele geçiliyor') && !msg.includes(key));
   assert.equal(posts.length, 4);
-  assert.ok(
-    posts.every(
-      (p) =>
-        p.url === `${host}/v1/models/${model}:generateContent` &&
-        p.body === posts[0].body &&
-        !p.body.includes(key),
-    ),
-  );
   assert.deepEqual(Object.values(g.settings().requests), [4]);
   assert.equal(g.settings().services.text?.status, 'connected');
 });
@@ -86,7 +76,8 @@ test('honor a longer server cooldown and stop on the first success', async (t) =
     n === 1 ? new Response(null, { status: 503, headers: { 'retry-after': '120' } }) : output(),
   );
   assert.equal(await g.text('Kısa'), 'Korunan anlatım.');
-  assert.deepEqual(delays, [120000]);
+  // Model fallback handles 503 internally; no script-level retry delays
+  assert.deepEqual(delays, []);
   assert.equal(posts.length, 2);
 });
 test('script-only retry policy never replays non-503/network failures or adds retries underneath the SVG planner or TTS', async (t) => {
@@ -102,8 +93,8 @@ test('script-only retry policy never replays non-503/network failures or adds re
   await assert.rejects(g.voice('Ses.', 'Charon', 'Sakin'), /HTTP 503/);
   g.configure('text', { model, consent: 'blocked' });
   await assert.rejects(g.text('Senaryo'), /kullanım iznini/);
-  // 429 triggers model fallback: 3 models × 1 attempt each instead of 1
-  assert.equal(posts.length, 11);
+  // 429 triggers model fallback: 4 models × 1 attempt each (6 statuses + storyboard + voice = 14 posts)
+  assert.equal(posts.length, 14);
   assert.deepEqual(delays, []);
   assert.ok(!JSON.stringify(g.settings()).includes(key));
 });

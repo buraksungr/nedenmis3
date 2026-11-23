@@ -3,7 +3,7 @@ import { imageKey, voiceKey } from './production';
 import { hash } from './store';
 const visualKey = (p: Project, s: Scene) =>
   s.visualMode === 'motion-svg'
-    ? hash(s.choreography, p.subjectRig?.digest)
+    ? hash(s.choreography)
     : s.visualMode === 'svg'
       ? hash('svg', s.vector ?? s.svgPlan)
       : s.visualMode === 'illustration'

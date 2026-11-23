@@ -1,4 +1,4 @@
-import { rigSchema, motionRefSchema } from '../shared/object-motion';
+import { motionRefSchema } from '../shared/object-motion';
 import { subjectSchema, cinematicPlan } from '../shared/cinema';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -51,7 +51,7 @@ export const boardSig = (p: Project) =>
     scriptSig(p),
     p.scenes,
     p.styleGuide,
-    ...(p.scenes.some((s) => s.visualMode === 'motion-svg') ? [p.subjectRig] : []),
+    // subjectRig kaldırıldı: ortak özne şablonu artık kullanılmıyor
     ...(p.scenes.some((s) => s.visualMode === 'illustration') ? [p.cinema] : []),
   );
 export function approved(p: Project) {
@@ -69,11 +69,8 @@ export function approveBoard(p: Project) {
         (s) =>
           s.narration &&
           (s.visualMode === 'motion-svg'
-            ? rigSchema.safeParse(p.subjectRig).success &&
-              p.subjectRig?.scriptHash === p.scriptApproval &&
-              motionRefSchema.safeParse(s.choreography).success &&
-              s.choreography?.rigDigest === p.subjectRig!.digest &&
-              s.choreography.narrationHash === hash(normalize(s.narration))
+            ? motionRefSchema.safeParse(s.choreography!).success &&
+              s.choreography!.narrationHash === hash(normalize(s.narration))
             : s.visualMode === 'illustration'
               ? p.cinema?.scriptHash === p.scriptApproval &&
                 subjectSchema.safeParse(p.cinema?.subject).success &&

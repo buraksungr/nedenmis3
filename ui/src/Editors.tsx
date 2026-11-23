@@ -336,10 +336,7 @@ export function BoardEditor({ p }: { p: Project }) {
   const d = useDraft(p, 'board', { scenes: p.scenes, styleGuide: p.styleGuide }, (v) => v);
   const invalidPlan = d.v.scenes.some(
     (s) =>
-      (s.visualMode === 'motion-svg' &&
-        (!s.choreography ||
-          s.choreography.rigDigest !== p.subjectRig?.digest ||
-          p.subjectRig?.scriptHash !== p.scriptApproval)) ||
+      (s.visualMode === 'motion-svg' && !s.choreography) ||
       (s.visualMode === 'svg' && !s.svgPlan && !s.vector) ||
       (s.visualMode === 'illustration' && (!s.cinema || p.cinema?.scriptHash !== p.scriptApproval)),
   );

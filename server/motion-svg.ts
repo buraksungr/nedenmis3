@@ -76,12 +76,10 @@ const animAttrs = [
   'data-pivot-y',
   'data-angle',
 ];
-export function parseStage(xml: string, rig: Geometry) {
+export function parseStage(xml: string, _rig?: Geometry) {
   const { root, cleanup: baseCleanup } = parseGeometry(xml, 'objects'),
     [, , bw, bh] = root.attrs.viewBox.split(' ').map(Number);
   const motions = new Set<Geometry>();
-  // rigid parametresi geriye uyumluluk için korunur; #subject-main bağımlılığı kaldırıldı.
-  void rig;
   let continuous = false,
     cleanup = baseCleanup;
   const note = (why: string) => {
@@ -165,9 +163,9 @@ export function parseStage(xml: string, rig: Geometry) {
 /** Toleranslı yedek ayrıştırıcı: parseStage InvalidDrawing fırlatırsa,
  * bozuk SVG'yi mümkün olan kadar temizleyip ikinci denemede parçalı ancak
  * işlenebilir bir sonuç döndürür. Hiçbir şey kurtarılamazsa hatayi yeniden fırlatır. */
-export function parseStageTolerant(xml: string, rig: Geometry) {
+export function parseStageTolerant(xml: string) {
   try {
-    return parseStage(xml, rig);
+    return parseStage(xml);
   } catch (e) {
     if (!(e instanceof InvalidDrawing)) throw e;
     const healed = healXml(xml);
@@ -176,7 +174,7 @@ export function parseStageTolerant(xml: string, rig: Geometry) {
     repaired = repaired.replace(/<[A-Za-z][^>]*>[^<]*<\/\s*[^>]*>/g, ''); // boş/bozuk çift etiketleri sil
     repaired = repaired.replace(/<[^>]*>[^<]*$/g, ''); // kapanmayan son etiketi sil
     try {
-      const result = parseStage(repaired, rig);
+      const result = parseStage(repaired);
       return {
         ...result,
         cleanup: (result.cleanup ? result.cleanup + '; ' : '') + 'toleranslı yedek ayrıştırıcı kullanıldı (' + healed.repairs.join('; ') + ')',

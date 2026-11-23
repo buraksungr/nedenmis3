@@ -115,7 +115,7 @@ export function ObjectScene({
 }) {
   const scope = 'm' + useId().replace(/[^\w-]/g, '') + '-',
     r = scope + 'rig-',
-    { rig, stage } = scene;
+    { stage } = scene;
   return (
     <svg
       data-motion-stage={scene.ref.digest}
@@ -127,7 +127,7 @@ export function ObjectScene({
       style={{ display: 'block', background: '#112334' }}
     >
       <defs>
-        {rig.children.flatMap((n) => n.children).map((n, i) => object(n, r, r, i, frame, fps))}
+        {stage.children.flatMap((n) => n.children).map((n, i) => object(n, r, r, i, frame, fps))}
         <linearGradient id={scope + 'scrim'} x1="0" x2="0" y1="0" y2="1">
           <stop stopColor="#081528" stopOpacity=".82" />
           <stop offset=".2" stopColor="#081528" stopOpacity="0" />

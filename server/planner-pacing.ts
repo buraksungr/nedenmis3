@@ -32,17 +32,17 @@ export function svgSender(wait: PlannerWait | undefined, progress: (message: str
       } catch (e) {
         checkpoint();
         if (!(e instanceof ProviderHttpIssue)) throw e;
-        if (e.status !== 429 && e.status !== 503) {
-          if (e.message.includes(`HTTP ${e.status}`)) throw e;
-          throw new Issue(e.status, `HTTP ${e.status} - ${e.message}`, e.code);
+        if (e.status !== 429) {
+          // 503 (hizmet dışı) zaten text() içindeki model fallback zinciriyle ele alınıyor;
+          // buraya tekrar gitmeye gerek yok. Diğer hatalar doğrudan iletilir.
+          throw e;
         }
-        const reason = `HTTP ${e.status} - ${e.status === 429 ? 'Kota/Hız Sınırı' : 'Hizmet Geçici Olarak Kullanılamıyor'}`;
+        const reason = `HTTP ${e.status} - Kota/Hız Sınırı`;
         if (retries === backoffs.length) {
-          // A persistent quota is account-wide: don't spend the budget on every queued scene.
           throw new Issue(
             e.status,
             `${reason}. 3 otomatik yeniden deneme hakkı kullanıldı.`,
-            e.status === 429 ? 'quota' : 'temporary-response',
+            'quota',
           );
         }
         const ms = backoffs[retries++];

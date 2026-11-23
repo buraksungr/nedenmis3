@@ -1,6 +1,5 @@
 import { svgOutputTokens } from './planner-pacing';
-import { checkpoint, operation, requestSignal } from './operation';
-import { setTimeout as sleep } from 'node:timers/promises';
+import { checkpoint, requestSignal } from './operation';
 import {
   BlockedReason,
   FinishReason,
@@ -38,8 +37,6 @@ const knownReasons = new Set<string>([
   ...Object.values(BlockedReason),
   ...Object.values(FinishReason),
 ]);
-const maxScriptRetries = 3;
-
 // Ücretsiz katmanda olan Gemini metin modelleri; kota aşımında sırayla denenir.
 const FREE_TEXT_MODELS = [
   'gemini-1.5-flash-8b',
@@ -53,7 +50,6 @@ export function geminiFallbackModels(current: string): string[] {
   const seen = new Set<string>([current]);
   return FREE_TEXT_MODELS.filter((m) => !seen.has(m));
 }
-const maxTimerMs = 2_147_483_647; // Larger Node timeouts fire immediately; never retry early.
 function retryAfterMs(header: string | null, rpcDelay: unknown) {
   if (header) {
     if (/^\d+(?:\.\d+)?$/.test(header)) return Math.ceil(Number(header) * 1000);
@@ -124,8 +120,6 @@ export class Gemini {
     private store: Store,
     private vault: Vault,
     private transport: typeof fetch = fetch,
-    private wait: (ms: number, signal?: AbortSignal) => Promise<void> = (ms, signal) =>
-      sleep(ms, undefined, { signal }),
   ) {}
   raw() {
     return this.store.setting('gemini', fresh());
@@ -228,18 +222,9 @@ export class Gemini {
       );
       let msg: string = reason;
       if (script && r.status === 503 && status === 'unavailable') {
-        const delay = Math.max(1000 * 2 ** retry, after);
-        if (retry < maxScriptRetries && delay <= maxTimerMs) {
-          script.onRetry?.(
-            `Gemini HTTP 503 · ${Math.ceil(delay / 1000)} sn sonra aynı modelle yeniden denenecek (${retry + 1}/${maxScriptRetries}).`,
-          );
-          await this.wait(delay, operation()?.signal);
-          continue;
-        }
-        msg =
-          retry === maxScriptRetries
-            ? `Gemini hizmeti 4 isteğe de HTTP 503 döndürdü. Senaryo değiştirilmedi; daha sonra tekrar deneyin.`
-            : `Gemini HTTP 503 döndürdü ve otomatik zamanlayıcının desteklediğinden uzun bekleme istedi. Senaryo değiştirilmedi; daha sonra tekrar deneyin.`;
+        // 503'de aynı modele dönüp 10/20/35 sn beklemek yerine, text() zincirindeki
+        // bir sonraki ücretsiz modele geçiş yapılır. Burada sadece kaydı tutar ve fırlatır.
+        msg = `Gemini HTTP 503 · model ${kind ?? 'text'} hizmet dışı, yedek modele geçiliyor...`;
       }
       this.record(status, msg, kind);
       throw new ProviderHttpIssue(
@@ -386,7 +371,7 @@ export class Gemini {
         httpOptions: {
           baseUrl: origin,
           fetch: (url, init) =>
-            this.send(String(url), init ?? {}, 'text', schema ? undefined : { onRetry }),
+            this.send(String(url), init ?? {}, 'text', { onRetry }),
         },
       });
       let out: GenerateContentResponse;
@@ -408,12 +393,14 @@ export class Gemini {
         checkpoint();
         lastError = e;
         // 429 kota aşımında sıradaki ücretsiz modele geç
-        if (e instanceof ProviderHttpIssue && e.status === 429) {
+        if (e instanceof ProviderHttpIssue && (e.status === 429 || e.status === 503)) {
+          const reason = e.status === 503 ? 'hizmet dışı (HTTP 503)' : 'kota aşıldı (HTTP 429)';
           this.record(
             'quota',
-            'Model ' + model + ' kota aşıldı, sıradaki ücretsiz modele geçiliyor.',
+            'Model ' + model + ' ' + reason + ', sıradaki ücretsiz modele geçiliyor.',
             'text',
           );
+          onRetry?.(`Model ${model} ${reason}, yedek modele geçiliyor...`);
           continue;
         }
         if (e instanceof Issue) throw e;

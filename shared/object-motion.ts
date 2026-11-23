@@ -31,7 +31,6 @@ export const rigSchema = z.strictObject({
 export const motionRefSchema = z.strictObject({
   kind: z.literal('objects-v1'),
   title: motionHeading,
-  rigDigest: digestSchema,
   narrationHash: digestSchema,
   ...source,
   actors: z.number().int().min(1).max(40),
@@ -40,4 +39,4 @@ export const motionRefSchema = z.strictObject({
 });
 export type RigRef = z.infer<typeof rigSchema>;
 export type MotionRef = z.infer<typeof motionRefSchema>;
-export type ObjectFrame = { ref: MotionRef; rig: Geometry; stage: Geometry };
+export type ObjectFrame = { ref: MotionRef; stage: Geometry };

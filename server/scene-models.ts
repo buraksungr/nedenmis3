@@ -188,9 +188,9 @@ export class SceneModels {
     return {
       provider: 'gemini' as const,
       model,
-      draw: async (input: string) => ({
+      draw: async (input: string, onRetry?: (msg: string) => void) => ({
         model,
-        text: await g.text(system + '\nSahne verisi:\n' + input, schema),
+        text: await g.text(system + '\nSahne verisi:\n' + input, schema, onRetry),
       }),
     };
   }

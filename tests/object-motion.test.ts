@@ -23,8 +23,8 @@ const template = rigReply(),
   rig = parseSubjectRig(template.svg).root;
 const scene = (actors: string, decor = '', extra = '') =>
     `<svg viewBox="0 0 1080 1920">${decor}${actors}${extra}</svg>`,
-  actor = (x: number, a = 'move', target = '#subject-main') =>
-    `<use x="${x}" y="270" href="${target}" data-anim="${a}" data-dx="65"/>`;
+  actor = (x: number, a = 'move') =>
+    `<use x="${x}" y="270" href="#actor" data-anim="${a}" data-dx="65"/>`;
 const actors = actor(50) + actor(420),
   flakes = [1, 2, 3]
     .map((i) => `<circle cx="${120 * i}" cy="740" r="10" data-anim="fall"/>`)
@@ -98,7 +98,7 @@ test('only the fixed local rig can be instantiated, and the error names the exac
   assert.ok(!/onclick\s*=/.test(cleanedEvent.canonical));
   assert.match(cleanedEvent.canonical, /x-nedenmis-clean=/);
   const cleanedHref = parseStage(
-    scene(actor(42, 'move', 'http://example.test/s.svg#subject-main') + actor(500), '', flakes),
+    scene(actor(42, 'move') + actor(500), '', flakes),
     rig,
   );
   assert.ok(!cleanedHref.canonical.includes('example.test'));
@@ -244,7 +244,7 @@ test('frame renderer: unchanged camera and set; non-colliding rig references on 
           'div',
           {},
           ...[0, 1].map((i) =>
-            createElement(ObjectScene, { key: i, scene: { rig, stage, ref }, frame }),
+            createElement(ObjectScene, { key: i, scene: { stage, ref }, frame }),
           ),
         ),
       );
@@ -326,16 +326,15 @@ test('content address binds scene to narration and the exact project rig; offlin
     s = stageReply(),
     ref = saveMotion(
       root,
-      r,
       { kind: 'objects-v1', title: s.title, narrationHash: hash(lines[0]), ...source },
       s.svg,
     );
-  assert.equal(motionFrame(root, r, ref, lines[0]).ref.objects, 23);
-  assert.throws(() => motionFrame(root, r, ref, lines[1]));
-  assert.throws(() => motionFrame(root, { ...r, subject: 'Başka özne' }, ref, lines[0]));
-  assert.throws(() => motionFrame(root, r, { ...ref, title: 'Sahte Çizim' }, lines[0]));
+  assert.equal(motionFrame(root, ref, lines[0]).ref.objects, 23);
+  assert.throws(() => motionFrame(root, ref, lines[1]));
+  assert.throws(() => motionFrame(root, ref, lines[0]));
+  assert.throws(() => motionFrame(root, { ...ref, title: 'Sahte Çizim' }, lines[0]));
   fs.appendFileSync(path.join(root, 'media', 'motion', r.digest + '.svg'), ' ');
-  assert.throws(() => motionFrame(root, r, ref, lines[0]));
+  assert.throws(() => motionFrame(root, ref, lines[0]));
 });
 test('one broken middle heading: two repairs, later sibling saved, reload and retry only the missing shot and never request the rig again', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-plan-')),
@@ -412,7 +411,7 @@ test('an allowed filter/clip/mask/pattern is rendered by React, never stripped t
   ).root;
   const tree = renderToStaticMarkup(
     createElement(ObjectScene, {
-      scene: { rig, stage, ref: { title: 'Güvenli Derinlikler', digest: 'filters' } as MotionRef },
+      scene: { stage, ref: { title: 'Güvenli Derinlikler', digest: 'filters' } as MotionRef },
       frame: 12,
     }),
   );
@@ -465,7 +464,6 @@ test('the reported regression: title/style/animate/text no longer stop a storybo
   assert.ok(saved.scenes[0].choreography);
   const frame = motionFrame(
     store.dir(p.id),
-    saved.subjectRig,
     saved.scenes[0].choreography,
     lines[0],
   );
@@ -576,7 +574,6 @@ test('objects şeması artık min(1) kabul eder: min(5) kısıtı kalkmış olma
   const base = {
     kind: 'objects-v1',
     title: 'Güvenli Derinlikler',
-    rigDigest: 'a'.repeat(64),
     narrationHash: 'b'.repeat(64),
     provider: 'gemini',
     model: 'gemini-1.5-flash',

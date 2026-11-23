@@ -358,7 +358,7 @@ export class Production {
         : undefined;
     const readMotion = (v?: Scene) =>
       v?.visualMode === 'motion-svg'
-        ? motionFrame(this.store.dir(p.id), p.subjectRig, v.choreography, v.narration)
+        ? motionFrame(this.store.dir(p.id), v.choreography, v.narration)
         : undefined;
     const objects = readMotion(s),
       nextObjects = readMotion(next);
@@ -504,7 +504,7 @@ export class Production {
       // Verify saved display lists before spending a voice request on a board with missing art.
       for (const s of scenes)
         if (s.visualMode === 'motion-svg')
-          motionFrame(this.store.dir(p.id), p.subjectRig, s.choreography, s.narration);
+          motionFrame(this.store.dir(p.id), s.choreography, s.narration);
       let needWhisper = false;
       for (const s of scenes) {
         const m = p.assets[s.id];
