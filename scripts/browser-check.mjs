@@ -177,9 +177,11 @@ try {
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
   // Rig'siz akışta üretim asenkron başlar (setImmediate ile). Editör
-  // yüklendiğinde skript üretimi zaten tamamlanmış olmalı.
+  // yüklendikten sonra skript üretimi de tamamlanmış olmalı.
   await editor.waitFor();
   const projectId = page.url().split('/').at(-1);
+  // setImmediate zincirinin tamamlanması için kısa bir bekleme.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   assert.equal(scriptAttempts, 2);
   assert.ok(await editor.isEditable());
   assert.equal(ctx.store.get(projectId).script, fixtureScript);
