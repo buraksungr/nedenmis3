@@ -213,10 +213,6 @@ try {
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
   const lines = ['Karıncalar ormanda ilerler.', 'İşçiler yuvalarına döner.'];
   await page.getByLabel('Mevcut senaryo').fill(lines.join(' '));
-  // İkinci proje: scriptAttempts sayacını sıfırla ki generateScript ilk
-  // çağrısında 503 döndürsün ve sahne 1 yarım kalsın, 'Eksik sahneleri
-  // tamamla' butonu görünsün.
-  scriptAttempts = 0;
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
   await page.getByText('Sabit kamera · Hareketli SVG', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
@@ -244,7 +240,7 @@ try {
   ); // no second POST
   await page.reload();
   await card.locator('[data-motion-stage]').waitFor();
-  await page.getByRole('button', { name: 'Eksik sahneleri tamamla' }).click();
+  await page.getByRole('button', { name: 'Hareketli sahneleri planla' }).click();
   await stopWhile(/HTTP 429 - Kota\/Hız Sınırı.*10 sn.*1\/3/);
   assert.deepEqual(
     plannerCalls.map((q) => q.sahne ?? 0),
