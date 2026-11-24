@@ -74,7 +74,8 @@ const ctx = studio.createStudio(
         });
       if (
         opts.method === 'POST' &&
-        url === `${base}/${textModel}:generateContent` &&
+        url.startsWith(`${base}/`) &&
+        url.endsWith(':generateContent') &&
         JSON.parse(opts.body).contents?.[0]?.parts?.[0]?.text
       ) {
         if (++scriptAttempts === 1) return new Response(null, { status: 503 });
