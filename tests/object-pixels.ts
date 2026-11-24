@@ -160,7 +160,10 @@ export async function objectPixels(
       await heading.evaluate((n) => (n.style.visibility = 'visible'));
       const objects = [];
       for (const id of targets[i]) {
-        const node = pg.locator(`[data-object="${id}"]`).first(),
+        const node = pg
+          .locator('[data-fixed-camera]')
+          .locator(`[data-object="${id}"]`)
+          .first(),
           current = await node.innerHTML();
         await node.evaluate((n, html) => {
           n.innerHTML = html;
