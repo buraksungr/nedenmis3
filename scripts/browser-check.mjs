@@ -276,7 +276,7 @@ try {
   assert.notEqual(await f.getAttribute('transform'), prev);
   assert.equal(await cam.getAttribute('viewBox'), box);
   assert.equal(await cam.getAttribute('transform'), null);
-  assert.equal(await second.locator('svg use').count(), 5);
+  assert.equal(await second.locator('svg use').count(), 10);
   const old = ctx.store.get(id).scenes[1].choreography.digest;
   await second
     .getByLabel('Çizim yönlendirmesi (isteğe bağlı)')
