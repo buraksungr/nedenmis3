@@ -228,11 +228,22 @@ try {
   assert.equal(initial.scenes[0].visualMode, 'motion-svg');
   assert.equal(initial.scenes[1].choreography, undefined);
   async function stopWhile(label) {
-    await page
+    // Önce exact label ile dene; uyuşmazsa herhangi bir working job-notedaki
+    // 'Durdur' butonuna bas (label akış sırasında değişebilir: 'Sonraki sahne...'
+    // → 'Sahne X/5 çiziliyor · HTTP 429...').
+    const exact = page
       .locator('.job-note.working')
       .filter({ hasText: label })
-      .getByRole('button', { name: 'Durdur', exact: true })
-      .click();
+      .getByRole('button', { name: 'Durdur', exact: true });
+    const any = page
+      .locator('.job-note.working')
+      .getByRole('button', { name: 'Durdur', exact: true });
+    const count = await exact.count();
+    if (count > 0) {
+      await exact.first().click();
+    } else {
+      await any.first().click();
+    }
     await page.locator('.job-note.cancelled').waitFor();
   }
   await stopWhile('Sonraki sahne için bekleniyor...');
