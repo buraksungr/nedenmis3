@@ -176,14 +176,13 @@ try {
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
-  // Rig'siz akışta üretim asenkron başlar (setImmediate ile). Editör
-  // yüklendikten sonra generateScript zincirinin tamamlanmasını store'dan bekle.
-  await page.waitForURL(/#\/script\//);
+  // Rig'siz akışta üretim asenkron başlar (setImmediate ile). Editörün
+  // yüklenmesini ve generateScript'in store'a yazmasını bekle.
   await editor.waitFor();
   const projectId = page.url().split('/').at(-1);
   let retries = 0;
-  while (ctx.store.get(projectId)?.script !== fixtureScript && retries++ < 200) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
+  while (ctx.store.get(projectId)?.script !== fixtureScript && retries++ < 400) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
   assert.equal(scriptAttempts, 2);
   assert.ok(await editor.isEditable());
