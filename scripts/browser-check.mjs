@@ -377,3 +377,4 @@ try {
   ctx.store.db.close();
   fs.rmSync(home, { recursive: true, force: true });
 }
+# v1.6.9 CI retry
