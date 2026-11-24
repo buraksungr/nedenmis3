@@ -28,6 +28,13 @@ const p = (d: string, fill: string, more = '') => `<path d="${d}" fill="${fill}"
   g = (x: string, b: string) => `<g ${x}>${b}</g>`;
 const gradient = (id: string, colors: string[]) =>
   `<linearGradient id="${id}" x1="0" y1="0" x2=".18" y2="1">${colors.map((c, i) => `<stop offset="${i / (colors.length - 1)}" stop-color="${c}"/>`).join('')}</linearGradient>`;
+
+// #subject-main şablonu kaldırıldı (rig'siz akış), ancak test fixture'ları
+// hala <use href="#subject-main"> kullanıyor. ObjectScene bu referansı
+// '#<rigScope>subject-main' olarak yeniden yazar, bu yüzden defs'te
+// #subject-main'in tanımlı olması gerekir. url(#...) gradyan referansları
+// sabit renge çevrildi çünkü ilgili gradyanlar bu test bağlamında tanımlı değil.
+const subjectMainDefs = `<g id="subject-main" stroke-linecap="round" stroke-linejoin="round"><g id="far-legs" stroke="#9e634f" stroke-width="5" fill="none"><path id="leg-one" d="M148 92 L129 112 100 130 82 128" data-anim="swing" data-angle="9" data-pivot-x="148" data-pivot-y="92" data-duration=".73"/><path id="leg-two" d="M158 94 L153 115 177 132 190 130" data-anim="swing" data-angle="-10" data-pivot-x="158" data-pivot-y="94" data-duration=".73"/><path id="leg-three" d="M168 92 L202 98 220 119 240 116" data-anim="swing" data-angle="9" data-pivot-x="168" data-pivot-y="92" data-duration=".73"/></g><g stroke="#4f2b32" stroke-width="3"><path id="abdomen" fill="#eb7546" d="M110 86 C98 72 82 64 57 65 34 66 18 77 11 94 L6 99 12 101 C22 115 44 121 66 119 90 116 107 105 115 96 Z"/><path fill="none" stroke="#f6b37b" stroke-width="3" d="M31 81 Q50 68 69 73 M77 75 Q90 77 98 84"/><path fill="none" stroke="#894642" d="M45 68 Q27 87 37 112 M76 68 Q55 89 65 117"/><path id="waist" fill="#9b775b" d="M107 87 Q112 75 118 78 L123 88 127 84 Q132 79 136 87 L142 94 137 99 119 95 111 96Z"/><path id="thorax" fill="#9b775b" d="M132 87 Q136 71 146 69 Q156 70 161 65 Q175 55 184 68 L190 82 200 80 201 90 184 94 Q176 104 160 102 L140 98Z"/><path id="head" fill="#9b775b" d="M188 75 Q185 58 198 48 213 38 229 47 241 54 241 67 L236 79 228 87 Q212 96 199 88 L187 84Z"/><path id="jaws" fill="#a95740" d="M230 74 Q245 79 254 68 251 81 241 85 L252 84 Q246 94 232 89 L224 83Z"/></g><path fill="#4b2930" d="M211 59 Q218 53 225 60 Q226 66 220 69 Q213 68 211 62Z"/><circle cx="220" cy="60" r="2.6" fill="#fff3cf"/><path d="M201 52 Q206 48 214 48 M140 82 Q142 76 151 75" fill="none" stroke="#ffcf91" stroke-width="3"/><g id="near-legs" stroke="#d9865e" stroke-width="5.5" fill="none"><path id="leg-four" d="M146 95 Q138 102 128 112 L109 144 Q104 150 93 150" data-anim="swing" data-angle="-12" data-pivot-x="146" data-pivot-y="95" data-duration=".73"/><path id="leg-five" d="M158 97 L164 115 154 148 Q153 155 167 155" data-anim="swing" data-angle="12" data-pivot-x="158" data-pivot-y="97" data-duration=".73"/><path id="leg-six" d="M172 93 L192 107 207 139 222 140" data-anim="swing" data-angle="-12" data-pivot-x="172" data-pivot-y="93" data-duration=".73"/></g><g id="feelers" fill="none" stroke="#e39b68" stroke-width="3.8"><path id="antenna-far" d="M210 49 Q208 41 210 24 L219 15 Q226 13 229 15" data-anim="wiggle" data-pivot-x="210" data-pivot-y="49" data-angle="-10" data-duration="1.21"/><path id="antenna-near" d="M225 53 Q234 46 238 27 L263 13 Q273 13 278 18" data-anim="wiggle" data-pivot-x="225" data-pivot-y="53" data-angle="10" data-phase=".25" data-duration="1.37"/></g></g>`;
 // Some featured stones have faceted faces and mineral inclusions. Two near the margins in
 // each scene stay completely unobstructed; use the actual edges, not an artificial fiducial.
 function stone(x: number, y: number, k: number, col = ['#536676', '#839790', '#344655']) {
@@ -304,7 +311,7 @@ export function stageReply(i = 0, revised = false) {
   const s = [winter, () => tunnel(revised), shelter, chamber, springField][i % 5]();
   return {
     title: titles[i % 5],
-    svg: `<svg viewBox="0 0 1080 1920"><defs>${s.defs}</defs><g id="set">${s.set}</g>${s.objects}</svg>`,
+    svg: `<svg viewBox="0 0 1080 1920"><defs>${subjectMainDefs}${s.defs}</defs><g id="set">${s.set}</g>${s.objects}</svg>`,
   };
 }
 export const landmarks = [

@@ -213,6 +213,10 @@ try {
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
   const lines = ['Karıncalar ormanda ilerler.', 'İşçiler yuvalarına döner.'];
   await page.getByLabel('Mevcut senaryo').fill(lines.join(' '));
+  // İkinci proje: scriptAttempts sayacını sıfırla ki generateScript ilk
+  // çağrısında 503 döndürsün ve sahne 1 yarım kalsın, 'Eksik sahneleri
+  // tamamla' butonu görünsün.
+  scriptAttempts = 0;
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
   await page.getByText('Sabit kamera · Hareketli SVG', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Onayla ve devam et' }).click();
