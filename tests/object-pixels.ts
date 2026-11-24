@@ -136,7 +136,7 @@ export async function objectPixels(
           Object.fromEntries(els.map((n) => [n.getAttribute('data-object')!, n.innerHTML])),
         );
       await show(f);
-      const heading = pg.locator('[data-shot-title]');
+      const heading = pg.locator('[data-shot-title]').first();
       assert.equal(await heading.textContent(), title);
       const bounds = await heading.evaluate((n) => {
         const r = document.createRange();
@@ -160,7 +160,7 @@ export async function objectPixels(
       await heading.evaluate((n) => (n.style.visibility = 'visible'));
       const objects = [];
       for (const id of targets[i]) {
-        const node = pg.locator(`[data-object="${id}"]`),
+        const node = pg.locator(`[data-object="${id}"]`).first(),
           current = await node.innerHTML();
         await node.evaluate((n, html) => {
           n.innerHTML = html;
