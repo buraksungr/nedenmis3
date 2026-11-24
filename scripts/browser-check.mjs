@@ -177,7 +177,6 @@ try {
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
   // Rig'siz akışta üretim asenkron başlar: editör yüklendiğinde senaryo
   // henüz oluşmuş olmayabilir. Sunucu store'dan skriptin düşmesini bekle.
-  const editor = page.getByRole('textbox', { name: 'Senaryo metni' });
   await editor.waitFor();
   const projectId = page.url().split('/').at(-1);
   let retries = 0;
