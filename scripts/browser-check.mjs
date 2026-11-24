@@ -176,8 +176,8 @@ try {
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın neden ortadan kaybolur?');
   await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
-  // Rig'siz akışta üretim asenkron başlar (setImmediate ile). Editör
-  // yüklendikten sonra skript üretimi de tamamlanmış olmalı.
+  // Rig'siz akışta üretim asenkron başlar (setImmediate ile).
+  await page.waitForURL(/#\/script\//);
   await editor.waitFor();
   const projectId = page.url().split('/').at(-1);
   // setImmediate zincirinin tamamlanması için kısa bir bekleme.
