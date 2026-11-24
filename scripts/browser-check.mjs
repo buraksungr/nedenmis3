@@ -74,7 +74,7 @@ const ctx = studio.createStudio(
         });
       if (
         opts.method === 'POST' &&
-        url.startsWith(`${base}/`) &&
+        url.includes('/models/') &&
         url.endsWith(':generateContent') &&
         JSON.parse(opts.body).contents?.[0]?.parts?.[0]?.text
       ) {
