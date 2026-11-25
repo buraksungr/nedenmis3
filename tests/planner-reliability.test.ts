@@ -25,7 +25,7 @@ const success = (provider: Provider, value: unknown) =>
 
 // Compact, valid controlled replies. The richer archived motion fixtures remain unchanged.
 function compactStage(scene: number) {
-  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#194057"/></g><g id="layer-main"><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></g><g id="layer-fx"/></svg>`;
+  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#194057"/></g><g id="layer-main"><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/><path d="M180 850Q260 780 340 850L330 900H190Z" fill="#c87d55"/><path d="M400 960Q510 870 620 960L610 1010H410Z" fill="#ab6f50"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></g><g id="layer-fx"/></svg>`;
   assert.ok(svg.length < 3500);
   return { title: titles[scene - 1], svg };
 }
@@ -126,28 +126,31 @@ for (const provider of ['gemini', 'openrouter'] as const) {
         [1, 2, 2, 2, 2],
       );
       assert.equal(p.motionWork, undefined);
-      const expectedFake = [5000, 10000, 20000, 35000];
-      const expectedReal = [5000, 10000, 20000, 35000];
-      const measured = f.posts.slice(2).map((post, i) => Math.round(post.at - f.posts[i + 1].at));
+      // Gemini falls back to another model immediately on 429/503, without the
+      // OpenRouter retry backoff. Only the gap BETWEEN scenes is a planner wait.
+      const gap = Math.round(f.posts[1].at - f.posts[0].at);
+      const fallbackMs = f.posts.slice(2).map((post, i) => Math.round(post.at - f.posts[i + 1].at));
       if (real) {
+        assert.ok(gap >= 4_900, `scene gap was too short: ${gap}ms`);
         const report = {
           provider: 'Gemini SDK, fixture transport (no cloud account)',
-          requestedMs: expectedReal,
-          observedMs: measured,
+          requestedMs: [5000],
+          observedMs: [gap],
+          fallbackMs,
           posts: f.posts.map((q) => q.scene),
           ready: p.scenes.map((s) => s.id),
         };
         fs.mkdirSync('out/render-control', { recursive: true });
         fs.writeFileSync('out/render-control/planner-clock.json', JSON.stringify(report, null, 2));
-        console.log(`Verified planner waits (ms): ${measured.join(' / ')}; saved both scenes.`);
-      } else assert.deepEqual(recorded, expectedFake);
+        console.log(
+          `Verified scene gap: ${gap}ms; model fallback intervals: ${fallbackMs.join(' / ')}ms.`,
+        );
+      } else assert.deepEqual(recorded, [5000]);
       const attempts = f.posts.slice(2);
       assert.ok(attempts.length >= 2, 'at least two retry attempts');
       assert.ok(
         f.posts.every(
-          (q) =>
-            q.url.includes('generateContent') ||
-            q.url.includes('chat/completions'),
+          (q) => q.url.includes('generateContent') || q.url.includes('chat/completions'),
         ),
       );
       for (const q of f.posts) {
@@ -187,7 +190,10 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     assert.equal(p.job.state, 'done', p.job.label);
     assert.equal(p.subjectRig, undefined);
     // No common rig call: production starts directly with scene 1
-    assert.deepEqual(f.posts.map((q) => q.scene), [1, 1, 1, 1]);
+    assert.deepEqual(
+      f.posts.map((q) => q.scene),
+      [1, 1, 1, 1],
+    );
     if (provider === 'gemini') {
       // Model fallback handles 429 internally; no planner-level waits needed
       assert.deepEqual(waits, []);

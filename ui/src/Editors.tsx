@@ -58,7 +58,7 @@ import {
 import { legacyPlate } from '../../shared/legacy-atlas';
 import { providerNames } from '../../shared/vector';
 
-import { sceneCaptions, unvoicedSvg, captionEntries } from '../../shared/captions';
+import { captionGroupAt, sceneCaptions, unvoicedSvg, captionEntries } from '../../shared/captions';
 import { SpeakerSelect } from './SpeakerSelect';
 // Photo-only projects do not need to load the diagram renderer.
 const VectorEditor = lazy(() =>
@@ -1210,11 +1210,20 @@ export function Preview({ p }: { p: Project }) {
   let offset = 0;
   const timeline = p.scenes.map((s) => {
     const at = offset;
-    offset += p.assets[s.id]?.clip?.duration ?? 0;
+    // Export concatenates whole 30 fps clips and computes each offset in frames.
+    offset += Math.round((p.assets[s.id]?.clip?.duration ?? 0) * 30) / 30;
     return { s, at, end: offset };
   });
   const current = timeline.find((x) => time >= x.at && time < x.end);
-  const words = current ? sceneCaptions(current.s, p.assets[current.s.id]) : [];
+  const mediaForCurrent = current && p.assets[current.s.id];
+  const words = current ? sceneCaptions(current.s, mediaForCurrent) : [];
+  const caption = current
+    ? captionGroupAt(
+        words,
+        time - current.at,
+        unvoicedSvg(current.s, mediaForCurrent) || mediaForCurrent?.align?.method === 'estimated',
+      )
+    : undefined;
 
   const estimatedCount = p.scenes.filter(
     (s) => p.assets[s.id]?.align?.method === 'estimated',
@@ -1247,6 +1256,8 @@ export function Preview({ p }: { p: Project }) {
               playsInline
               src={media(p, p.final.file)}
               onTimeUpdate={() => setTime(vid.current?.currentTime ?? 0)}
+              onSeeking={() => setTime(vid.current?.currentTime ?? 0)}
+              onSeeked={() => setTime(vid.current?.currentTime ?? 0)}
             />
             <div className="player-meta">
               <Badge tone="green">Doğrulandı</Badge>
@@ -1281,16 +1292,7 @@ export function Preview({ p }: { p: Project }) {
                   </small>
                 </button>
               ))}
-              <p className="muted">
-                Altyazı:{' '}
-                {words
-                  .filter(
-                    (w) =>
-                      time - (current?.at ?? 0) >= w.start && time - (current?.at ?? 0) <= w.end,
-                  )
-                  .map((w) => w.text)
-                  .join(' ') || '—'}
-              </p>
+              <p className="muted">Altyazı: {caption?.map((w) => w.text).join(' ') || '—'}</p>
               <div className="actions">
                 <a className="btn primary" href={media(p, p.final.file) + '?download=1'} download>
                   <Download size={15} />

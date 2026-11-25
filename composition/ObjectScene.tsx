@@ -135,15 +135,24 @@ export function ObjectScene({
           <stop offset="1" stopColor="#081528" stopOpacity=".87" />
         </linearGradient>
       </defs>
-      <svg
-        data-fixed-camera=""
-        width="1080"
-        height="1920"
-        viewBox={stage.attrs.viewBox}
-        preserveAspectRatio="xMidYMid slice"
-      >
-        {stage.children.map((n, i) => object(n, scope + 'set-', r, i, frame, fps))}
-      </svg>
+      <defs>
+        <clipPath id={scope + 'safe-frame'}>
+          <rect x="0" y="220" width="1080" height="1240" />
+        </clipPath>
+      </defs>
+      {/* Clip in output coordinates, outside the fitted SVG. This also constrains
+          paths, transforms and every animated frame, even with an alternate viewBox. */}
+      <g clipPath={`url(#${scope}safe-frame)`}>
+        <svg
+          data-fixed-camera=""
+          width="1080"
+          height="1920"
+          viewBox={stage.attrs.viewBox}
+          preserveAspectRatio="xMidYMid slice"
+        >
+          {stage.children.map((n, i) => object(n, scope + 'set-', r, i, frame, fps))}
+        </svg>
+      </g>
       <rect width="1080" height="1920" fill={`url(#${scope}scrim)`} />
     </svg>
   );

@@ -11,8 +11,9 @@ export const animKinds = [
   'pop',
 ] as const;
 export type AnimKind = (typeof animKinds)[number];
-// Do not change the validator for already signed layered-v1 projects.
-export const motionHeading = heading.refine((s) => {
+// Existing signed references keep the validator they were saved with. The stricter
+// editorial rules below are applied to new model replies, not to archived projects.
+const archivedMotionHeading = heading.refine((s) => {
   const last = s.toLocaleLowerCase('tr').split(' ').at(-1)!;
   return (
     !/^(kim|kimler|kimi|hangi|hangisi|neler|neden|niçin|nerede|nereye|nasıl|ne|mi|mı|mu|mü|ki|henüz|daha|çok|hem|yahut)$/u.test(
@@ -20,6 +21,15 @@ export const motionHeading = heading.refine((s) => {
     ) && !/(?:sına|sine|suna|süne)$/u.test(last)
   );
 }, 'Soru veya cümle parçası değil, tamamlanmış bir Türkçe başlık kullan.');
+export const motionHeading = archivedMotionHeading.refine((s) => {
+  const words = s.toLocaleLowerCase('tr').split(' '),
+    last = words.at(-1)!;
+  return (
+    !/^(de|da|ya|ıçin)$/u.test(last) &&
+    !/^(yapan|eden|giden|olan)$/u.test(words[0]) &&
+    !/(?:larca|lerce|larça|lerçe|larına|lerine|yınca|yince|yunca|yünce)$/u.test(last)
+  );
+}, 'Başlık kesilmiş bir cümle değil, tamamlanmış bir Türkçe ad öbeği olmalı.');
 const source = { provider: vectorProvider, model: z.string().min(1).max(120) };
 export const rigSchema = z.strictObject({
   kind: z.literal('subject-rig-v1'),
@@ -30,7 +40,7 @@ export const rigSchema = z.strictObject({
 });
 export const motionRefSchema = z.strictObject({
   kind: z.literal('objects-v1'),
-  title: motionHeading,
+  title: archivedMotionHeading,
   narrationHash: digestSchema,
   ...source,
   actors: z.number().int().min(1).max(40),

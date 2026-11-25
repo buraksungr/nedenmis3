@@ -309,9 +309,13 @@ function springField() {
 }
 export function stageReply(i = 0, revised = false) {
   const s = [winter, () => tunnel(revised), shelter, chamber, springField][i % 5]();
+  // Wrap the same authored geometry in the new production layer contract without
+  // changing its paint order, objects, landmarks, or the archived subject fixture.
+  const background = /^<rect[^>]*\/>/.exec(s.set)?.[0];
+  if (!background) throw new Error('QA stage is missing its full-canvas background');
   return {
     title: titles[i % 5],
-    svg: `<svg viewBox="0 0 1080 1920"><defs>${subjectMainDefs}${s.defs}</defs><g id="set">${s.set}</g>${s.objects}</svg>`,
+    svg: `<svg viewBox="0 0 1080 1920"><defs>${subjectMainDefs}${s.defs}</defs><g id="layer-bg">${background}</g><g id="layer-main"><g id="set">${s.set.slice(background.length)}</g>${s.objects}</g><g id="layer-fx"/></svg>`,
   };
 }
 export const landmarks = [

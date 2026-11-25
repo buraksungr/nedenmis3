@@ -9,7 +9,7 @@ import {
 } from '../shared/object-motion';
 import { digestSchema } from '../shared/vector';
 import { hash, atomic, Issue, requireThat } from './store';
-import { parseSubjectRig, parseStage } from './motion-svg';
+import { parseSubjectRig, parseStage, validateNewStage } from './motion-svg';
 import { MAX_XML } from './layered-svg';
 import { narrationHash } from './vector-files';
 import { checkpoint } from './operation';
@@ -42,9 +42,11 @@ export function saveMotion(
   root: string,
   info: Omit<MotionRef, 'digest' | 'actors' | 'objects'>,
   svg: string,
+  options: { requireDetailedArt?: boolean } = {},
 ) {
-  const data = parseStage(svg),
-    meta = { ...info, actors: data.actors, objects: data.objects },
+  const data = parseStage(svg);
+  if (options.requireDetailedArt) validateNewStage(data.root);
+  const meta = { ...info, actors: data.actors, objects: data.objects },
     ref = motionRefSchema.parse({ ...meta, digest: shotId(meta, data.canonical) });
   checkpoint();
   atomic(file(root, ref.digest), data.canonical);

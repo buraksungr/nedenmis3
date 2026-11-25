@@ -1,3 +1,5 @@
+import { motionHeading } from './object-motion';
+
 /** Belgesel konu öneri havuzu: doğa, bilim, uzay, insan vücudu, tarih ve günlük
  * merak konularından oluşan Türkçe başlıklar. Havuz, "Yeni video" ekranındaki
  * dinamik öneri metnini ve planlayıcının yedek başlık havuzunu besler. */
@@ -47,56 +49,17 @@ export function nextTopic(current?: string): string {
   return next === current ? DOCUMENTARY_TOPICS[(i + 2) % DOCUMENTARY_TOPICS.length] : next;
 }
 
-const STOPWORDS = new Set([
-  've',
-  'veya',
-  'ile',
-  'olan',
-  'olarak',
-  'ise',
-  'ama',
-  'çünkü',
-  'bir',
-  'için',
-  'gibi',
-  'kadar',
-  'örneğin',
-  'nasıl',
-  'böylece',
-  'de',
-  'da',
-  'ya',
-  'ne',
-  'neden',
-  'niçin',
-  'nerede',
-  'nereye',
-  'kim',
-  'kimler',
-  'hangi',
-  'hangisi',
-  'neler',
-  'mi',
-  'mı',
-  'mu',
-  'mü',
-  'ki',
-  'henüz',
-  'daha',
-  'çok',
-  'hem',
-  'bu',
-  'şu',
-  'o',
-  'bunlar',
-  'şunlar',
-  'onlar',
-  'birçok',
-  'bazı',
-  'her',
-]);
-
 const TITLE_FALLBACKS = [
+  'Sürecin Ayrıntıları',
+  'Yakından Bakış',
+  'Öne Çıkan Ayrıntılar',
+  'Değişimin İzleri',
+  'Farklı Bir Bakış',
+  'Sürecin Dinamikleri',
+  'Dikkat Çeken Noktalar',
+  'Bağlantıların İzinde',
+  'Temel Özellikler',
+  'Bir Başka Perspektif',
   'Gizli Derinlikler',
   'Karanlık Katmanlar',
   'Yeraltı Yaşamı',
@@ -109,48 +72,24 @@ const TITLE_FALLBACKS = [
   'Beyaz Kar',
 ];
 
-/** Anlatıdan türetilmiş, alınmamış, 2–4 kelimelik doğal Türkçe bir başlık döndürür. */
-export function uniqueSceneTitle(narration: string, taken: Set<string>): string {
-  const words = narration
-    .toLocaleLowerCase('tr')
-    .split(/\s+/)
-    .filter((w) => w.length > 0 && !STOPWORDS.has(w) && /^\p{L}+$/u.test(w));
-  for (const len of [2, 3, 4]) {
-    for (let i = 0; i + len <= words.length; i++) {
-      const phrase = words
-        .slice(i, i + len)
-        .map((w) => w[0].toLocaleUpperCase('tr') + w.slice(1))
-        .join(' ');
-      if (!taken.has(phrase.toLocaleLowerCase('tr'))) return phrase;
-    }
-  }
+/** Last resort after the model repeats a title. Never cut a phrase out of narration:
+ * doing so creates plausible-looking but incomplete Turkish headings. */
+export function uniqueSceneTitle(_narration: string, taken: Set<string>): string {
+  const used = new Set([...taken].map((s) => s.toLocaleLowerCase('tr')));
   for (const fallback of TITLE_FALLBACKS)
-    if (!taken.has(fallback.toLocaleLowerCase('tr'))) return fallback;
-  return 'Gizli Derinlikler';
+    if (!used.has(fallback.toLocaleLowerCase('tr'))) return fallback;
+  throw new Error('Benzersiz sahne başlığı kalmadı; farklı bir başlık üretin.');
 }
 
-/** Bir başlığın yarım / kırpılmış değil, tamamlanmış 2–4 kelimelik Türkçe ad tamlaması olup olmadığını doğrular. */
+/** Yeni sahnelerde kullanılan başlık denetimiyle aynı kuralları paylaşır. */
 export function isCompleteTitle(title: string): boolean {
-  const t = title.trim();
-  const words = t.split(/\s+/);
-  if (words.length < 2 || words.length > 4) return false;
-  // Son kelime soru kelimesi, bağbağcılar veya kısımda biten eklerse → yarı başlık
-  const last = words[words.length - 1].toLocaleLowerCase('tr');
-  const HALF_ENDINGS = new Set([
-    'kim', 'kimler', 'kimi', 'hangi', 'hangisi', 'neler', 'neden', 'niçin',
-    'nerede', 'nereye', 'nasıl', 'ne', 'mi', 'mı', 'mu', 'mü', 'ki',
-    've', 'veya', 'ile', 'olan', 'olarak', 'ise', 'ama', 'çünkü',
-    'bir', 'için', 'ıçin', 'gibi', 'kadar', 'de', 'da', 'ya',
-  ]);
-  if (HALF_ENDINGS.has(last)) return false;
-  // Ekli bitişler (cümle parçası işareti)
-  if (/(?:sına|sine|suna|süne|daki|deki|taki|teki|nın|nin|nun|nün)$/u.test(last))
-    return false;
-  // Tek tek yumuşak/kısımda biten kelimeler
-  if (/^(yapar|eder|olur|olan|giden|yapan|eden)$/u.test(words[0].toLocaleLowerCase('tr')))
-    return false;
-  // Tüm kelimeler en az 2 harfli ve harf içermeli
-  return words.every((w) => w.length >= 2 && /^[A-Za-zÇçĞğİıÖöŞşÜü]/.test(w));
+  return (
+    motionHeading.safeParse(title).success &&
+    title
+      .trim()
+      .split(' ')
+      .every((w) => w.length >= 2)
+  );
 }
 
 /** Havuzdan rastgele, henüz kullanılmayan bir konu önerisi döndürür. */

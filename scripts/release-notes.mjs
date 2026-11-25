@@ -20,10 +20,14 @@ Windows x64 kurucusu. Yayıncı sertifikası yoktur. FFmpeg, FFprobe ve Remotion
 - Kurucu: \`${name}\` (${(installer.length / 1024 / 1024).toFixed(1)} MB)
 - SHA-256: \`${sha256}\`
 - Kaynak: [\`${process.env.GITHUB_SHA.slice(0, 12)}\`](https://github.com/${process.env.GITHUB_REPOSITORY}/commit/${process.env.GITHUB_SHA})
-- Ölçülen storyboard aralıkları (sahne, 1./2./3. yeniden deneme): **${clock.observedMs.join(' / ')} ms**
+- Ölçülen storyboard sahne aralığı: **${clock.observedMs.join(' / ')} ms** (Gemini model yedekleri bekleme olmadan denenir).
 - Temiz Windows’a kuruldu, kurulu uygulama Edge ile kompozisyonu açtı. Rapor: \`install-report.json\` (iş artefaktında).
 
-Sabit kamera ve nesne bazlı \`data-anim\` hareketi, tek katmanlı sarı altyazı, **Durdur** ve tek tıkla MP4 akışı korunur. "Hareketli sahneleri planla" artık zararsız veya desteklenmeyen SVG etiketlerini (\`title\`, \`desc\`, \`style\`, SMIL, \`text\`, \`metadata\`…) sahneden koddan temizleyip geri kalanı kabul eder. Yalnız \`script\`, \`iframe\`, \`foreignObject\`, \`image\`, JS olay öznitelikleri ve dış bağlantılar güvenlik gerekçesiyle çıkarılır. Hata mesajı sorunlu etiketi adlandırır.
+- Yeni hareketli çizimler üç katman ve ana katmanda en az üç görünür yol ister; eski çizimler açılmaya devam eder.
+- Tam başlık denetimi ve başlık/altyazı bantları için 220–1460 güvenli kadrajı eklenmiştir.
+- Hareketli sahne geçişlerinde, sonraki görsel ve başlık önceki sahnenin altyazısı bitene kadar gösterilmez.
+
+Sabit kamera ve nesne bazlı \`data-anim\` hareketi, tek katmanlı sarı altyazı, **Durdur** ve tek tıkla MP4 akışı korunur. "Hareketli sahneleri planla" zararsız veya desteklenmeyen SVG etiketlerini (\`title\`, \`desc\`, \`style\`, SMIL, \`text\`, \`metadata\`…) temizler. \`script\`, \`iframe\`, \`foreignObject\`, \`image\`, JS olay öznitelikleri ve dış bağlantılar güvenlik gerekçesiyle çıkarılır.
 `;
 fs.writeFileSync('out/render-control/release-notes.md', notes);
 console.log(`release notes: ${name} ${sha256}`);

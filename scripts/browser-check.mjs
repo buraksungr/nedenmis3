@@ -8,6 +8,7 @@ import express from 'express';
 import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
 import { rigReply, stageReply } from '../tests/ant-motion-art.ts';
+import { safeFrameBrowserControl } from '../tests/safe-frame-browser.ts';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
@@ -113,6 +114,7 @@ page.on('request', (r) => {
 });
 page.on('pageerror', (e) => errors.push(e.message));
 try {
+  await safeFrameBrowserControl(browser);
   await page.goto(origin);
   await page.getByRole('heading', { name: 'Son projeler' }).waitFor();
   await page.locator('.project-card').nth(2).waitFor(); // heading can mount before the project list arrives

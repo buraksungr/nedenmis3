@@ -393,6 +393,7 @@ export class Production {
         (next?.visualMode === 'illustration' ? next.cinema?.title : undefined);
     const key = hash(
       'film-5-static-crossfade',
+      ...(objects || nextObjects ? ['object-safe-frame-and-caption-sync-v1'] : []),
       ...(title || nextTitle ? ['fixed-object-stage-v1', title, nextTitle] : []),
       objects
         ? objects.ref

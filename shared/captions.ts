@@ -26,6 +26,13 @@ export function groups(words: Word[], max = 5) {
   if (g.length) out.push(g);
   return out;
 }
+// Use the same scene-local cue selection in the rendered film and its preview.
+// A cue is never borrowed from the previous or next scene.
+export function captionGroupAt(words: Word[], time: number, sentenceCaptions = false) {
+  return (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
+    (g) => time >= g[0].start && time < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
+  );
+}
 const stamp = (v: number) =>
   new Date(Math.round(v * 1000)).toISOString().slice(11, 23).replace('.', ',');
 export function srt(words: Word[]) {

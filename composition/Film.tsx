@@ -10,7 +10,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
-import { groups } from '../shared/captions';
+import { captionGroupAt } from '../shared/captions';
 import type { Word } from '../shared/schema';
 import { dissolveAt } from './fade';
 import type { SvgPlan } from '../shared/svg';
@@ -66,11 +66,17 @@ export function Film({
   const f = useCurrentFrame(),
     { durationInFrames, fps } = useVideoConfig(),
     t = f / fps;
-  const cap = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
-    (g) => t >= g[0].start && t < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
-  );
+  const cap = captionGroupAt(words, t, sentenceCaptions);
+  // Do not show the next motion scene or its title under the outgoing scene's
+  // subtitles. Preserve the normal crossfade for legacy photo/atlas sequences.
+  const motionTransition = !!(objects || nextObjects),
+    afterCaption = words.length
+      ? Math.max(...words.map((w) => w.end)) + (sentenceCaptions ? 0 : 0.04)
+      : Infinity;
   const alpha =
-    next || nextSvg || nextVector || nextObjects ? dissolveAt(f, fps, durationInFrames) : 0;
+    next || nextSvg || nextVector || nextObjects
+      ? dissolveAt(f, fps, durationInFrames, motionTransition ? afterCaption : 0)
+      : 0;
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
       {objects ? (
