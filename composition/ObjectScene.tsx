@@ -3,6 +3,7 @@ import { spring } from 'remotion';
 import type { ObjectFrame, AnimKind } from '../shared/object-motion';
 import type { Geometry } from '../shared/vector';
 import { svgAttrs } from './VectorScene';
+import { fittedSafeRect } from './frame';
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 /** Object-local timeline. All times in seconds; all distances and pivots in this node's SVG units.
  * Nothing depends on wall time, DOM measurement, the browser animation clock or a random seed. */
@@ -72,6 +73,7 @@ function object(
 ): React.ReactElement {
   const a = svgAttrs(n, scope);
   for (const k of Object.keys(a)) if (k.startsWith('data-')) delete a[k];
+  if (n.tag === 'text' && n.attrs['data-keyword'] === 'true') a['data-science-keyword'] = '';
   if (n.tag === 'use') a.href = '#' + rigScope + 'subject-main';
   const animated = !!n.attrs['data-anim'],
     pose = animated ? objectPose(n, frame, fps) : {},
@@ -86,9 +88,10 @@ function object(
   const el = React.createElement(
     n.tag,
     { ...a, key },
-    n.children.length
-      ? n.children.map((c, i) => object(c, scope, rigScope, i, frame, fps, trace))
-      : undefined,
+    n.text ??
+      (n.children.length
+        ? n.children.map((c, i) => object(c, scope, rigScope, i, frame, fps, trace))
+        : undefined),
   );
   if (!animated) return el;
   return (
@@ -104,6 +107,36 @@ function object(
     </g>
   );
 }
+type Piece = { node: Geometry; zone: 'full' | 'foreground' | 'keyword' };
+// Archived scenes can put <defs> inside a group. Bind their subject references
+// without cloning unrelated artwork into <defs> or changing its paint order.
+function definitions(n: Geometry): Geometry[] {
+  return n.tag === 'defs' ? n.children : n.children.flatMap(definitions);
+}
+/** Preserve the authored paint order, but let an old nested #set span the whole
+ * frame. Wrapper attributes are retained when a group needs to be partitioned. */
+function pieces(n: Geometry, box: number[], rootChild = false): Piece[] {
+  const a = n.attrs;
+  if (
+    n.tag === 'defs' ||
+    ['layer-bg', 'set', 'background'].includes(a.id) ||
+    (rootChild &&
+      n.tag === 'rect' &&
+      (a.width === '100%' || parseFloat(a.width ?? '0') >= box[2]) &&
+      (a.height === '100%' || parseFloat(a.height ?? '0') >= box[3]))
+  )
+    return [{ node: n, zone: 'full' }];
+  if (n.tag === 'text') return [{ node: n, zone: 'keyword' }];
+  const children = n.children.flatMap((child) => pieces(child, box));
+  if (!children.some((child) => child.zone !== 'foreground'))
+    return [{ node: n, zone: 'foreground' }];
+  return children.map((piece, i) => {
+    const attrs = { ...a };
+    // A split ancestor is reconstructed around each run. Do not duplicate its DOM id.
+    if (i) delete attrs.id;
+    return { ...piece, node: { ...n, attrs, children: [piece.node] } };
+  });
+}
 export function ObjectScene({
   scene,
   frame,
@@ -115,7 +148,12 @@ export function ObjectScene({
 }) {
   const scope = 'm' + useId().replace(/[^\w-]/g, '') + '-',
     r = scope + 'rig-',
-    { stage } = scene;
+    { stage } = scene,
+    viewBox = stage.attrs.viewBox,
+    box = viewBox.split(' ').map(Number),
+    foreground = fittedSafeRect(viewBox, 1460),
+    keyword = fittedSafeRect(viewBox, 1220),
+    ordered = stage.children.flatMap((n) => pieces(n, box, true));
   return (
     <svg
       data-motion-stage={scene.ref.digest}
@@ -124,36 +162,42 @@ export function ObjectScene({
       viewBox="0 0 1080 1920"
       width="100%"
       height="100%"
-      style={{ display: 'block', background: '#112334' }}
+      style={{ display: 'block', background: '#18231f' }}
     >
       <defs>
-        {stage.children.flatMap((n) => n.children).map((n, i) => object(n, r, r, i, frame, fps))}
-        <linearGradient id={scope + 'scrim'} x1="0" x2="0" y1="0" y2="1">
-          <stop stopColor="#081528" stopOpacity=".82" />
-          <stop offset=".2" stopColor="#081528" stopOpacity="0" />
-          <stop offset=".68" stopColor="#081528" stopOpacity="0" />
-          <stop offset="1" stopColor="#081528" stopOpacity=".87" />
-        </linearGradient>
+        {stage.children.flatMap(definitions).map((n, i) => object(n, r, r, i, frame, fps))}
       </defs>
-      <defs>
-        <clipPath id={scope + 'safe-frame'}>
-          <rect x="0" y="220" width="1080" height="1240" />
-        </clipPath>
-      </defs>
-      {/* Clip in output coordinates, outside the fitted SVG. This also constrains
-          paths, transforms and every animated frame, even with an alternate viewBox. */}
-      <g clipPath={`url(#${scope}safe-frame)`}>
-        <svg
-          data-fixed-camera=""
-          width="1080"
-          height="1920"
-          viewBox={stage.attrs.viewBox}
-          preserveAspectRatio="xMidYMid slice"
-        >
-          {stage.children.map((n, i) => object(n, scope + 'set-', r, i, frame, fps))}
-        </svg>
-      </g>
-      <rect width="1080" height="1920" fill={`url(#${scope}scrim)`} />
+      {/* Backgrounds and legacy sets remain full bleed. Clips are mapped from output
+          pixels into the fitted viewBox, outside all subject/keyword transforms. */}
+      <svg
+        data-fixed-camera=""
+        width="1080"
+        height="1920"
+        viewBox={viewBox}
+        preserveAspectRatio="xMidYMid slice"
+      >
+        <defs>
+          <clipPath id={scope + 'safe-frame'} clipPathUnits="userSpaceOnUse">
+            <rect {...foreground} />
+          </clipPath>
+          <clipPath id={scope + 'keyword-frame'} clipPathUnits="userSpaceOnUse">
+            <rect {...keyword} />
+          </clipPath>
+        </defs>
+        {ordered.map(({ node, zone }, i) => {
+          const art = object(node, scope + 'set-', r, i, frame, fps);
+          return zone === 'full' ? (
+            art
+          ) : (
+            <g
+              key={i}
+              clipPath={`url(#${scope}${zone === 'keyword' ? 'keyword-frame' : 'safe-frame'})`}
+            >
+              {art}
+            </g>
+          );
+        })}
+      </svg>
     </svg>
   );
 }

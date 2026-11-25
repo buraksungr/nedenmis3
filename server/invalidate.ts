@@ -1,5 +1,5 @@
 import { isSvgScene, mediaUrl, type Project, type Scene } from '../shared/schema';
-import { imageKey, voiceKey } from './production';
+import { draftInputs, imageKey, voiceKey } from './production';
 import { hash } from './store';
 const visualKey = (p: Project, s: Scene) =>
   s.visualMode === 'motion-svg'
@@ -11,6 +11,7 @@ const visualKey = (p: Project, s: Scene) =>
         : imageKey(p, s);
 /** Detach stale outputs, don't delete files. Snapshots retain the original versions. */
 export function invalidate(p: Project, old: Project) {
+  if (p.draft && draftInputs(p) !== draftInputs(old)) delete p.draft;
   const active = new Set(p.scenes.map((s) => s.id));
   for (const id of Object.keys(p.assets)) if (!active.has(id)) delete p.assets[id];
   for (const [i, s] of p.scenes.entries()) {

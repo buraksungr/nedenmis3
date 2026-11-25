@@ -10,7 +10,6 @@ import { chromium } from 'playwright-core';
 import { ff } from '../server/media';
 import { browserCandidates, openFirstBrowser } from '../server/render-browser';
 import { ObjectScene } from '../composition/ObjectScene';
-import { ShotTitle } from '../composition/ShotTitle';
 import type { ObjectFrame } from '../shared/object-motion';
 import { reduced, evidence } from './pixel-comparison';
 import { landmarks } from './ant-motion-art';
@@ -125,7 +124,6 @@ export async function objectPixels(
                 'main',
                 { style: { position: 'relative', width: 1080, height: 1920 } },
                 el(ObjectScene, { scene: v, frame }),
-                el(ShotTitle, { title }),
               ),
             ),
         );
@@ -136,34 +134,15 @@ export async function objectPixels(
           Object.fromEntries(els.map((n) => [n.getAttribute('data-object')!, n.innerHTML])),
         );
       await show(f);
-      const heading = pg.locator('[data-shot-title]').first();
-      assert.equal(await heading.textContent(), title);
-      const bounds = await heading.evaluate((n) => {
-        const r = document.createRange();
-        r.selectNodeContents(n);
-        return [...r.getClientRects()].map((v) => v.toJSON());
-      });
-      assert.ok(
-        bounds.length === 1 &&
-          bounds[0].left >= 54 &&
-          bounds[0].right <= 1026 &&
-          bounds[0].top >= 100 &&
-          bounds[0].bottom < 340,
-      );
+      assert.equal(await pg.locator('[data-shot-title]').count(), 0);
       const expected = await capture();
       let sum = 0;
       for (let j = 0; j < film.length; j++) sum += Math.abs(film[j] - expected[j]);
       const fullMAE = sum / film.length;
       assert.ok(fullMAE < 5, `${title}: wrong scene (${fullMAE})`);
-      await heading.evaluate((n) => (n.style.visibility = 'hidden'));
-      const lettering = evidence(film, expected, await capture(), title);
-      await heading.evaluate((n) => (n.style.visibility = 'visible'));
       const objects = [];
       for (const id of targets[i]) {
-        const node = pg
-          .locator('[data-fixed-camera]')
-          .locator(`[data-object="${id}"]`)
-          .first(),
+        const node = pg.locator('[data-fixed-camera]').locator(`[data-object="${id}"]`).first(),
           current = await node.innerHTML();
         await node.evaluate((n, html) => {
           n.innerHTML = html;
@@ -179,7 +158,15 @@ export async function objectPixels(
         frames - (i + 1 === scenes.length ? 0 : Math.min(20, Math.floor((frames - 1) / 3)));
       for (const marker of landmarks[i])
         rocks.push(await fixedRock(file, path.join(out, 'roi.gray'), marker, start, count));
-      report.push({ title, frameInFilm: start + f, frames, fullMAE, lettering, objects, rocks });
+      report.push({
+        title,
+        frameInFilm: start + f,
+        frames,
+        fullMAE,
+        noFixedHeading: true,
+        objects,
+        rocks,
+      });
       start += frames;
     }
     return report;

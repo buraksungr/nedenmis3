@@ -302,6 +302,10 @@ export function createStudio(
     requireThat(s.visualMode === 'motion-svg', 'Bu sahnede hareket planı yok.', 404);
     r.json(motionFrame(store.dir(p.id), s.choreography, s.narration));
   });
+  app.get('/api/projects/:id/draft-status', (q, r) => {
+    const p = store.get(q.params.id);
+    r.json({ ready: prod.draftReadyScenes(p).length, total: p.scenes.length });
+  });
   app.post('/api/projects/:id/board', (q, r) => {
     const p = writable(q);
     requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
@@ -416,6 +420,7 @@ export function createStudio(
           'redraw-vector',
           'retry-vector',
           'all',
+          'draft',
           'image',
           'voice',
           'align',
@@ -430,6 +435,14 @@ export function createStudio(
     if (['board', 'svg-board', 'redraw-vector', 'retry-vector'].includes(b.kind))
       requireThat(p.scriptApproval === scriptSig(p), 'Önce senaryoyu onaylayın.');
     if (['voice', 'align', 'clip', 'all', 'image'].includes(b.kind)) approved(p);
+    if (b.kind === 'draft') {
+      requireThat(p.scriptApproval === scriptSig(p), 'Önce güncel senaryoyu onaylayın.');
+      requireThat(!s, 'Sessiz taslak tüm hazır sahnelerden oluşur.', 400);
+      requireThat(
+        prod.draftReadyScenes(p).length,
+        'Sessiz taslak için en az bir sahne çizimi gerekli.',
+      );
+    }
     requireThat(
       b.kind !== 'image',
       'Fotoğraf üretimi kaldırıldı. Storyboard üzerinden hareketli SVG oluşturun.',
@@ -452,6 +465,7 @@ export function createStudio(
             b.kind === 'redraw-vector' ? (b.instruction ?? '') : undefined,
           );
         }
+        if (b.kind === 'draft') return prod.exportDraft(p);
         return prod.render(p, b.kind as 'all' | 'voice' | 'align' | 'clip', s?.id);
       }),
     );

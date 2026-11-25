@@ -38,6 +38,10 @@ export function TextBlock({
   weight?: number;
   anchor?: 'start' | 'middle' | 'end';
 }) {
+  // Legacy plans are displayed at 2×. Bound even their old long labels to the
+  // same small, upper artwork region as new keywords (captions own the bottom).
+  const fontSize = Math.min(size, 20),
+    safeY = Math.min(y, 570);
   const measure = (line: string) =>
     Array.from(line).reduce(
       (em, ch) =>
@@ -50,19 +54,28 @@ export function TextBlock({
               ? 0.71
               : 0.57),
       0,
-    ) * size;
+    ) * fontSize;
   const rows: string[] = [];
-  for (const word of text.trim().split(/\s+/u).filter(Boolean)) {
+  for (const word of (text ?? '').trim().split(/\s+/u).filter(Boolean)) {
     const last = rows.at(-1);
     if (last && measure(last + ' ' + word) <= maxWidth) rows[rows.length - 1] = last + ' ' + word;
     else rows.push(word);
   }
+  if (!rows.length) return null;
   return (
-    <text x={x} y={y} textAnchor={anchor} fill={ink} fontSize={size} fontWeight={weight}>
+    <text
+      data-science-keyword=""
+      x={x}
+      y={safeY}
+      textAnchor={anchor}
+      fill={ink}
+      fontSize={fontSize}
+      fontWeight={weight}
+    >
       {rows.map((line, i) => (
         <tspan
           x={x}
-          dy={i ? 1.18 * size : 0}
+          dy={i ? 1.18 * fontSize : 0}
           key={i}
           textLength={Math.min(maxWidth, measure(line))}
           lengthAdjust="spacingAndGlyphs"

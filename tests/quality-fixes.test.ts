@@ -6,8 +6,11 @@ import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ObjectScene } from '../composition/ObjectScene';
+import { ScientificPlate } from '../composition/ScientificPlate';
 import { dissolveAt } from '../composition/fade';
-import { captionGroupAt } from '../shared/captions';
+import { captionGroupAt, captionPages, srtFromCues } from '../shared/captions';
+import legacyFlight from './fixtures/legacy-flight.json';
+import { svgPlanSchema } from '../shared/svg';
 import { motionHeading, motionRefSchema, type MotionRef } from '../shared/object-motion';
 import { isCompleteTitle, uniqueSceneTitle } from '../shared/topics';
 import { parseIllustration } from '../server/layered-svg';
@@ -56,13 +59,13 @@ test('planner repairs a primitive-only drawing and a fragment title before publi
     store.db.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const requests: { onarım?: string }[] = [];
+  const requests: { onarım?: string; rule: string }[] = [];
   const models = new SceneModels(
     store,
     { groq: memoryVault(), openrouter: memoryVault() },
     async (_url, opts) => {
       const body = JSON.parse(String(opts?.body));
-      requests.push(JSON.parse(body.messages[1].content));
+      requests.push({ ...JSON.parse(body.messages[1].content), rule: body.messages[0].content });
       const i = requests.length;
       return completion({
         title: i === 2 ? 'Yerin Metrelerce' : 'Kışın Eşiğinde',
@@ -75,6 +78,17 @@ test('planner repairs a primitive-only drawing and a fragment title before publi
   p.scriptApproval = scriptSig(p);
   await new ObjectPlanner(store, models, async () => {}).plan(p, () => {});
   assert.equal(requests.length, 3);
+  for (const requirement of [
+    /uzun ondalıklar ve XML yorumları kullanma/,
+    /başlık şeridi YOK/,
+    /tünelinin\/odacığının içinde/,
+    /en fazla 240 piksel/,
+    /altı bacak, antenler ve gözler/,
+    /kontrastlı kontur/,
+    /toprak kenarları, gölge ve katmanlarla/,
+    /data-keyword="true"/,
+  ])
+    assert.match(requests[0].rule, requirement);
   assert.equal(requests[0].onarım, undefined);
   assert.match(requests[1].onarım!, /en az 3.*<path>/);
   assert.match(requests[2].onarım!, /Başlık Hatası/);
@@ -145,17 +159,141 @@ test('caption selection and motion transition respect scene-local cue boundaries
   assert.equal(dissolveAt(90, 30, 91, 3), 0);
 });
 
-test('safe-frame clip wraps the fitted SVG, so alternate viewBoxes and animations stay inside output bounds', () => {
+test('long captions paginate for display without changing saved alignment or subtitle cues', () => {
+  const line = 'Karıncalar toprağın altında yavaşça güvenli odalara ilerleyerek bekler.',
+    original = [{ text: line, start: 0.2, end: 4.8 }],
+    before = structuredClone(original),
+    pages = captionPages(original);
+  assert.ok(pages.length > 1);
+  assert.ok(pages.every((p) => Array.from(p.map((w) => w.text).join(' ')).length <= 24));
+  assert.equal(
+    pages
+      .flat()
+      .map((w) => w.text)
+      .join(' '),
+    line,
+  );
+  assert.equal(pages[0][0].start, original[0].start);
+  assert.equal(pages.at(-1)!.at(-1)!.end, original[0].end);
+  assert.deepEqual(original, before);
+  assert.equal(srtFromCues(original), srtFromCues(before));
+  assert.equal(captionGroupAt(original, 0.1, true), undefined);
+  for (const page of pages) {
+    const selected = captionGroupAt(original, page[0].start + 0.001, true);
+    assert.deepEqual(selected, page);
+  }
+  assert.equal(captionGroupAt(original, 4.8, true), undefined);
+
+  const longWord = [{ text: 'W'.repeat(95), start: 0, end: 3 }],
+    pieces = captionPages(longWord);
+  assert.equal(
+    pieces
+      .flat()
+      .map((w) => w.text)
+      .join(''),
+    longWord[0].text,
+  );
+  assert.ok(pieces.every((p) => Array.from(p.map((w) => w.text).join(' ')).length <= 24));
+  assert.equal(pieces.at(-1)!.at(-1)!.end, 3);
+});
+
+test('all archived atlas templates keep at most two small keywords, not headings or hardcoded labels', () => {
+  for (const old of legacyFlight) {
+    const plan = svgPlanSchema.parse({
+      ...old,
+      title: 'Kışın Eşiğinde',
+      labels: ['Isı akışı', 'Yalıtım', 'Üçüncü terim', 'Başka terim'],
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ScientificPlate, { plan, frame: 15, frames: 30 }),
+    );
+    const labels = [...markup.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)];
+    assert.doesNotMatch(markup, /NaN|undefined/);
+    assert.ok(labels.length <= 2, `${plan.template} rendered extra text`);
+    for (const [, attrs, body] of labels) {
+      assert.match(attrs, /data-science-keyword=""/);
+      assert.ok(Number(/font-size="([^"]+)"/.exec(attrs)?.[1]) <= 20);
+      assert.ok(Number(/\sy="([^"]+)"/.exec(attrs)?.[1]) <= 570);
+      assert.doesNotMatch(body, /Kışın Eşiğinde|Üçüncü|Başka|DALGA|KATMAN|EVRE/);
+    }
+  }
+});
+
+test('background is outside the foreground clip; alternate viewBoxes map the bottom safety boundary', () => {
   const stage = parseStage(svg(`<g transform="translate(0 -800)">${paths}</g>`)).root;
   stage.attrs.viewBox = '0 0 540 960';
   const ref = { title: 'Kışın Eşiğinde', digest: 'quality' } as MotionRef;
   const markup = renderToStaticMarkup(
     createElement(ObjectScene, { scene: { stage, ref }, frame: 30 }),
   );
-  const id = /<clipPath id="([^"]*safe-frame)">/.exec(markup)?.[1];
+  const id = /<clipPath id="([^"]*safe-frame)"/.exec(markup)?.[1];
   assert.ok(id);
-  assert.match(markup, /<rect x="0" y="220" width="1080" height="1240"/);
-  assert.ok(markup.includes(`<g clip-path="url(#${id})"><svg data-fixed-camera=""`));
-  assert.ok(markup.includes('viewBox="0 0 540 960"'));
+  assert.match(markup, /<rect x="0" y="0" width="540" height="730"/);
+  assert.match(markup, /<svg data-fixed-camera=""[^>]*viewBox="0 0 540 960"/);
+  assert.match(markup, /<g id="[^"]*layer-bg"><rect/);
+  assert.ok(markup.includes(`<g clip-path="url(#${id})">`));
   assert.ok(markup.includes('data-anim="fall"'));
+  assert.doesNotMatch(markup, /data-shot-title|<text/);
+});
+
+test('new movement is bounded in output pixels after scale and rotation, without rejecting signed archives', () => {
+  const motion = (dx: number, scale: number) =>
+    svg(
+      `${paths}<g transform="rotate(20) scale(${scale})"><circle cx="100" cy="400" r="20" data-anim="move" data-dx="${dx}"/></g>`,
+    );
+  assert.doesNotThrow(() => validateNewStage(parseStage(motion(90, 2)).root));
+  const extreme = parseStage(motion(130, 2));
+  assert.throws(() => validateNewStage(extreme.root), /en fazla 240 piksel/);
+  assert.doesNotThrow(() => parseStage(extreme.canonical)); // Older files still play.
+  const nested = svg(
+    `${paths}<g data-anim="move" data-dx="120"><circle cx="100" cy="400" r="20" data-anim="move" data-dx="130"/></g>`,
+  );
+  assert.throws(() => validateNewStage(parseStage(nested).root), /en fazla 240 piksel/);
+});
+
+test('only explicitly marked, small, safe scientific keywords survive; headings, sentences and tricks are dropped', () => {
+  const text = (value: string, attrs = 'x="50" y="500" font-size="28"') =>
+    `<text data-keyword="true" ${attrs}>${value}</text>`;
+  const extras = [
+    text('Yalıtım'),
+    text('Isı akışı', 'x="400" y="800" font-size="32"'),
+    text('Üçüncü'), // maximum two
+    text('Yerin altındaki sıcak toprak'),
+    text('Kışın Eşiğinde'),
+    '<text x="30" y="50" font-size="24">Kış</text>',
+  ].join('');
+  const raw = svg(paths).replace('</g></svg>', `${extras}</g></svg>`),
+    parsed = parseStage(raw, undefined, {
+      title: 'Kışın Eşiğinde',
+      narration: 'Kışın toprak ısınır.',
+    });
+  assert.match(parsed.canonical, />Yalıtım<\/text>/);
+  assert.match(parsed.canonical, />Isı akışı<\/text>/);
+  assert.equal((parsed.canonical.match(/<text /g) ?? []).length, 2);
+  assert.equal(parseStage(parsed.canonical).canonical, parsed.canonical);
+  const bad = [
+    text('Kışın Eşiğinde'),
+    text('Bir uzun bilimsel açıklama'),
+    text('Toprak', 'x="50" y="1500" font-size="28"'),
+    text('Toprak', 'x="50" y="500" font-size="100"'),
+    text('Toprak', 'x="50" y="500" font-size="28" transform="translate(0 500)"'),
+    text('Toprak', 'x="50" y="500" font-size="28" dx="900"'),
+  ];
+  for (const entry of bad.slice(0, -1)) {
+    const result = parseStage(svg(paths).replace('</g></svg>', `${entry}</g></svg>`), undefined, {
+      title: 'Kışın Eşiğinde',
+      narration: 'Kışın toprak ısınır.',
+    });
+    assert.doesNotMatch(result.canonical, /<text/);
+  }
+  // Relative offsets and dangerous attributes are stripped, not executed.
+  const clean = parseStage(svg(paths).replace('</g></svg>', `${bad.at(-1)}</g></svg>`));
+  assert.match(clean.canonical, />Toprak<\/text>/);
+  assert.doesNotMatch(clean.canonical, /\sdx=/);
+  const ref = { title: 'Kışın Eşiğinde', digest: 'keyword' } as MotionRef;
+  const markup = renderToStaticMarkup(
+    createElement(ObjectScene, { scene: { stage: parsed.root, ref }, frame: 0 }),
+  );
+  assert.match(markup, /data-science-keyword=""[^>]*>Yalıtım<\/text>/);
+  assert.doesNotMatch(markup, /data-shot-title/);
 });

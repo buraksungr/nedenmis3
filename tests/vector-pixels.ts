@@ -1,4 +1,4 @@
-/** Verify signed archive drawing, title and each visible static layer in the decoded film. */
+/** Verify signed archive drawing, absence of fixed headings, and each layer in the decoded film. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,27 +44,14 @@ export async function verifyScenePixels(
         '<style>*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}</style>' +
           renderToStaticMarkup(createElement(VectorScene, { scene: v, frame: f })),
       );
-      const root = page.locator('[data-vector-scene]'),
-        title = root.locator(':scope > text');
-      assert.equal(await title.count(), 1);
-      assert.equal(await title.textContent(), v.ref.title);
-      const bounds = await title.boundingBox();
-      assert.ok(
-        bounds &&
-          bounds.x >= 8 &&
-          bounds.x + bounds.width <= 1072 &&
-          bounds.y > 0 &&
-          bounds.y + bounds.height < 186,
-        'Title cropped or outside safe area: ' + v.ref.title,
-      );
+      const root = page.locator('[data-vector-scene]');
+      assert.equal(await root.locator(':scope > text').count(), 0);
+      assert.equal(await page.locator('[data-shot-title]').count(), 0);
       const expected = await capture();
       let total = 0;
       for (let i = 0; i < film.length; i++) total += Math.abs(film[i] - expected[i]);
       const fullMAE = total / film.length;
       assert.ok(fullMAE < 5, 'Decoded shot differs from its reference: ' + fullMAE);
-      await title.evaluate((e) => e.setAttribute('visibility', 'hidden'));
-      const lettering = evidence(film, expected, await capture(), v.ref.title + ' lettering');
-      await title.evaluate((e) => e.removeAttribute('visibility'));
       const motion = [];
       for (const l of layers) {
         const g = root.locator(`[data-vector-layer="${l}"]`);
@@ -82,7 +69,7 @@ export async function verifyScenePixels(
         frameInFilm: abs,
         frameInScene: f,
         fullMAE,
-        lettering,
+        noFixedHeading: true,
         motion,
       });
     }

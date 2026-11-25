@@ -27,6 +27,9 @@ export function svgAttrs(n: Geometry, scope: string) {
   return a;
 }
 function shape(n: Geometry, scope: string, key: number): React.ReactElement {
+  // Older signed text had no bounded size or position. Keep the archive readable
+  // without allowing an old title/label to cover the new caption area.
+  if (n.tag === 'text') return <g key={key} />;
   const a = svgAttrs(n, scope);
   return React.createElement(
     n.tag,
@@ -43,54 +46,33 @@ export function VectorScene({ scene }: { scene: VectorFrame; frame: number }) {
       viewBox="0 0 1080 1920"
       width="100%"
       height="100%"
-      style={{ display: 'block', background: '#101827', fontFamily: 'Arial, sans-serif' }}
+      style={{ display: 'block', background: '#18231f', fontFamily: 'Arial, sans-serif' }}
       role="img"
       aria-label={ref.title}
       data-vector-scene={ref.digest}
     >
-      <rect width="1080" height="1920" fill="#101827" />
-      <svg x="0" y="0" width="1080" height="1350" viewBox="0 0 1080 1350" overflow="hidden">
-        <defs>
-          {drawing.defs.map((n, i) => shape(n, scope, i))}
-          <linearGradient id={scope + '-scrim'} x2="0" y2="1" gradientUnits="objectBoundingBox">
-            <stop stopColor="#101827" stopOpacity=".76" />
-            <stop offset="1" stopColor="#101827" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id={scope + '-edge'} x2="0" y2="1">
-            <stop stopColor="#101827" stopOpacity="0" />
-            <stop offset="1" stopColor="#101827" />
-          </linearGradient>
-        </defs>
-        {layers.map((l, i) => (
-          <g key={l} data-vector-layer={l}>
-            {drawing.viewBox ? (
-              <svg
-                width="1080"
-                height="1350"
-                viewBox={drawing.viewBox}
-                preserveAspectRatio="xMidYMid slice"
-              >
-                {shape(drawing.layers[l], scope, i)}
-              </svg>
-            ) : (
-              shape(drawing.layers[l], scope, i)
-            )}
-          </g>
-        ))}
-        <rect width="1080" height="225" fill={`url(#${scope}-scrim)`} />
-        <rect y="1250" width="1080" height="101" fill={`url(#${scope}-edge)`} />
-      </svg>
-      <text
-        x="540"
-        y="131"
-        fill="#fff7e8"
-        textAnchor="middle"
-        fontSize={Math.min(80, Math.floor(1760 / ref.title.length))}
-        fontWeight="700"
-        letterSpacing="-.9"
-      >
-        {ref.title}
-      </text>
+      <defs>
+        {drawing.defs.map((n, i) => shape(n, scope, i))}
+        <clipPath id={scope + 'safe-frame'}>
+          <rect x="0" y="0" width="1080" height="1460" />
+        </clipPath>
+      </defs>
+      {layers.map((l, i) => (
+        <g
+          key={l}
+          data-vector-layer={l}
+          clipPath={l === 'layer-bg' ? undefined : `url(#${scope}safe-frame)`}
+        >
+          <svg
+            width="1080"
+            height="1920"
+            viewBox={drawing.viewBox ?? '0 0 1080 1350'}
+            preserveAspectRatio="xMidYMid slice"
+          >
+            {shape(drawing.layers[l], scope, i)}
+          </svg>
+        </g>
+      ))}
     </svg>
   );
 }

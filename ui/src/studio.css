@@ -2663,3 +2663,22 @@ audio {
 .cinema-tools details summary {
   cursor: pointer;
 }
+
+.draft-export .panel-title {
+  flex-wrap: wrap;
+}
+.draft-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.draft-result video {
+  display: block;
+  width: min(150px, 40vw);
+  aspect-ratio: 9 / 16;
+  background: #101514;
+  border-radius: 7px;
+}

@@ -52,8 +52,7 @@ export async function captionPlateControl(out: string) {
       }
       return result;
     });
-  function band(raw: Buffer) {
-    const background = raw.subarray((width * 350 + 2) * 3, (width * 350 + 2) * 3 + 3);
+  function band(raw: Buffer, background: Buffer) {
     let marks = 0,
       yellow = 0,
       xSum = 0,
@@ -64,23 +63,33 @@ export async function captionPlateControl(out: string) {
           r = raw[i],
           g = raw[i + 1],
           b = raw[i + 2];
-        if (r !== background[0] || g !== background[1] || b !== background[2]) marks++;
-        if (r >= 234 && g >= 177 && g <= 219 && b <= 49) {
+        const changed =
+          Math.max(
+            Math.abs(r - background[i]),
+            Math.abs(g - background[i + 1]),
+            Math.abs(b - background[i + 2]),
+          ) > 10;
+        if (changed) marks++;
+        if (changed && r >= 234 && g >= 177 && g <= 219 && b <= 49) {
           yellow++;
           xSum += x;
         }
-        if (r >= 244 && g >= 244 && b >= 244) white++;
+        if (changed && r >= 244 && g >= 244 && b >= 244) white++;
       }
     return { marks, yellow, white, center: xSum / (yellow || 1) };
   }
   try {
-    const [quiet, left, right] = (await frames(props, [0, 12, 34])).map(band);
-    const [off] = (await frames({ ...props, highlight: false }, [12])).map(band);
-    assert.equal(
-      quiet.marks,
-      0,
-      'Legacy subtitle or footer still occupies the caption area before speech',
-    );
+    const [quietRaw, leftRaw, rightRaw] = await frames(props, [0, 12, 34]);
+    const [noCaption] = await frames({ ...props, words: [] }, [0]);
+    assert.deepEqual(quietRaw, noCaption, 'A caption appears before speech');
+    const [withTitleMetadata] = await frames({ ...props, title: 'Kışın Eşiğinde' }, [0]);
+    assert.deepEqual(quietRaw, withTitleMetadata, 'Scene title metadata must not draw a heading');
+    const quiet = band(quietRaw, noCaption),
+      left = band(leftRaw, quietRaw),
+      right = band(rightRaw, quietRaw);
+    const [offRaw] = await frames({ ...props, highlight: false }, [12]);
+    const off = band(offRaw, quietRaw);
+    assert.equal(quiet.marks, 0);
     assert.ok(left.yellow > 15 && right.yellow > 15 && left.white > 15 && right.white > 15);
     assert.ok(
       right.center > left.center + 12,

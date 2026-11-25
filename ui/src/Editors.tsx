@@ -229,9 +229,9 @@ export function ScriptEditor({ p }: { p: Project }) {
             <div className="note-panel">
               <strong>Sabit kamera · Hareketli SVG</strong>
               <p>
-                Senaryoyu onayladığında seçtiğin metin modeli önce ortak özneyi çizer. Sonra her
-                sahneye ayrı nesne hareketleri ve kısa bir Türkçe başlık ekler. Fotoğraf servisi
-                kullanılmaz.
+                Senaryoyu onayladığında seçtiğin metin modeli her sahneyi ayrı çizer ve nesneleri
+                hareketlendirir. Sahne başlıkları yalnız proje bilgisidir; videoya yazılmaz.
+                Fotoğraf servisi kullanılmaz.
               </p>
             </div>
           )}
@@ -322,11 +322,75 @@ export function ScriptEditor({ p }: { p: Project }) {
           <div className="note-panel">
             <ShieldCheck size={18} />
             <h3>Onay senin elinde</h3>
-            <p>Senaryo ve storyboard onaylanmadan görsel, ses veya video üretilmez.</p>
+            <p>
+              Normal üretim storyboard onayı ister; hazır çizimler ayrıca sessiz taslak olarak dışa
+              aktarılabilir.
+            </p>
           </div>
         </aside>
       </div>
     </>
+  );
+}
+function DraftExportPanel({
+  p,
+  locked,
+  start,
+}: {
+  p: Project;
+  locked: boolean;
+  start: () => void;
+}) {
+  const [status, setStatus] = useState<{ ready: number; total: number }>();
+  useEffect(() => {
+    let live = true;
+    if (!jobActive(p.job))
+      void api<{ ready: number; total: number }>(`/projects/${p.id}/draft-status`)
+        .then((value) => {
+          if (live) setStatus(value);
+        })
+        .catch(() => {
+          if (live) setStatus(undefined);
+        });
+    return () => {
+      live = false;
+    };
+  }, [p.id, p.rev, p.job.state]);
+  return (
+    <section className="panel padded spaced draft-export" aria-label="Sessiz taslak">
+      <div className="panel-title">
+        <Film size={17} />
+        <h2>Sessiz taslak</h2>
+        <Badge tone="purple">
+          {status ? `${status.ready}/${status.total}` : `—/${p.scenes.length}`} hazır sahne • Sessiz
+          taslak
+        </Badge>
+      </div>
+      <p className="help">
+        Storyboard onayı beklemeden yalnız hazır çizimler sırayla işlenir; eksik veya doğrulanamayan
+        sahneler atlanır. Süreler sahne ayarlarından tahmin edilir. TTS, Whisper, kayıtlı ses, müzik
+        ve efekt kullanılmaz; MP4 ses kanalı içermez. Normal üretim ve kayıtları değişmez.
+      </p>
+      <div className="actions">
+        <Button variant="primary" disabled={locked || !status?.ready} onClick={start}>
+          <Film size={15} /> Sessiz taslağı oluştur
+        </Button>
+        {p.draft && (
+          <a className="btn secondary" href={media(p, p.draft.asset.file) + '?download=1'} download>
+            <Download size={15} /> Sessiz taslağı indir
+          </a>
+        )}
+      </div>
+      {p.draft && (
+        <div className="draft-result">
+          <video controls playsInline preload="metadata" src={media(p, p.draft.asset.file)} />
+          <p>
+            {p.draft.scenes.length}/{p.draft.total} hazır sahne • Sessiz taslak · H.264 ·{' '}
+            {fmt(p.draft.asset.duration ?? 0)}
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 // Old signed plans stay unchanged on disk until the user explicitly edits/approves the board.
@@ -457,6 +521,11 @@ export function BoardEditor({ p }: { p: Project }) {
               klasörüne kaydedilir.
             </small>
           </div>
+          <DraftExportPanel
+            p={p}
+            locked={locked || d.status !== 'Kaydedildi'}
+            start={() => void run(() => gen('draft'))}
+          />
           {confirmMotion && (
             <Modal
               title="Sahneler hareketli SVG’ye dönüştürülsün mü?"
@@ -609,7 +678,8 @@ export function BoardEditor({ p }: { p: Project }) {
                   )}
                   {isSvgScene(s) && s.svgVoiceMode === 'existing-only' && (
                     <small className="help">
-                      Kayıt yoksa yalnız ekran metni ve ambiyans kullanılır; TTS istenmez.
+                      Kayıt yoksa sahne süresi ve ekran metni kullanılır; TTS istenmez. Hiç ses,
+                      müzik veya efekt yoksa MP4 sessizdir.
                     </small>
                   )}
                   <div className="form-grid">
@@ -989,10 +1059,16 @@ export function ProductionView({ p }: { p: Project }) {
             <p className="help">
               Kareler kaydedilmiş SVG nesnelerinden çizilir; görsel servisi gerekmez. Videoyu üret:
               eksik anlatımı seslendirir, sesle hizalar ve MP4’e aktarır. Hazır sesler ve zamanlar
-              yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe aktarabilirsin. Müzik
-              eklemezsen stüdyonun özgün ambiyans müziği kullanılır.
+              yeniden kullanılır. Kendi görsel ve ses dosyalarını da içe aktarabilirsin. Sesli
+              üretimde müzik eklemezsen stüdyonun özgün ambiyansı kullanılır; hiç ses yoksa MP4
+              sessizdir.
             </p>
           </div>
+          <DraftExportPanel
+            p={p}
+            locked={locked}
+            start={() => void run(() => mutate('generate', { kind: 'draft' }))}
+          />
           <div className="section-head spaced">
             <div className="section-name">
               <h2>Sahne istasyonları</h2>
@@ -1264,7 +1340,7 @@ export function Preview({ p }: { p: Project }) {
               {estimatedCount > 0 && (
                 <Badge tone="amber">{estimatedCount} sahnede tahmini altyazı</Badge>
               )}
-              <span>H.264 / AAC · 30 FPS</span>
+              <span>{p.final.hasAudio === false ? 'H.264 · Sessiz' : 'H.264 / AAC'} · 30 FPS</span>
             </div>
           </div>
           <div className="form-stack">

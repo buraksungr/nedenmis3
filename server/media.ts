@@ -159,6 +159,12 @@ export async function verifyVideo(file: string, frames: number, audio: boolean) 
       422,
     );
     await ff(['-i', file, '-f', 'null', '-'], 600000);
+  } else {
+    requireThat(
+      !p.streams.some((s: any) => s.codec_type === 'audio'),
+      'Sessiz videoda ses kanalı bulunmamalı.',
+      422,
+    );
   }
   return Number(v.duration);
 }

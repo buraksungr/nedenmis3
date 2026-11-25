@@ -26,12 +26,52 @@ export function groups(words: Word[], max = 5) {
   if (g.length) out.push(g);
   return out;
 }
+// Long captions are displayed in small pages rather than growing upward into the
+// artwork. Original alignment and SRT entries are unchanged; estimated sub-timings
+// are used for display only. Even a single unusually long token can wrap safely.
+export function captionPages(group: Word[]): Word[][] {
+  const limit = 24,
+    joined = group.map((w) => w.text).join(' ');
+  if (Array.from(joined).length <= limit) return [group];
+  const parts: Word[] = [];
+  for (const cue of group) {
+    // An edited word can itself contain whitespace; treat it like an estimated
+    // sentence for display without changing its original saved timing.
+    const tokens = cue.text.trim().split(/\s+/u).filter(Boolean),
+      length = tokens.reduce((sum, token) => sum + Array.from(token).length, 0);
+    let used = 0;
+    for (const token of tokens) {
+      const chars = Array.from(token);
+      for (let i = 0; i < chars.length; i += limit) {
+        const segment = chars.slice(i, i + limit).join(''),
+          start = cue.start + ((cue.end - cue.start) * used) / length;
+        used += Array.from(segment).length;
+        parts.push({
+          text: segment,
+          start,
+          end: cue.start + ((cue.end - cue.start) * used) / length,
+        });
+      }
+    }
+  }
+  const pages: Word[][] = [];
+  for (const part of parts) {
+    const last = pages.at(-1),
+      count = last ? Array.from(last.map((x) => x.text).join(' ')).length : 0;
+    if (last && count + 1 + Array.from(part.text).length <= limit) last.push(part);
+    else pages.push([part]);
+  }
+  return pages;
+}
 // Use the same scene-local cue selection in the rendered film and its preview.
 // A cue is never borrowed from the previous or next scene.
 export function captionGroupAt(words: Word[], time: number, sentenceCaptions = false) {
-  return (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
+  const group = (sentenceCaptions ? words.map((w) => [w]) : groups(words)).find(
     (g) => time >= g[0].start && time < g[g.length - 1].end + (sentenceCaptions ? 0 : 0.04),
   );
+  if (!group) return undefined;
+  const pages = captionPages(group);
+  return pages.find((_, i) => i === pages.length - 1 || time < pages[i + 1][0].start);
 }
 const stamp = (v: number) =>
   new Date(Math.round(v * 1000)).toISOString().slice(11, 23).replace('.', ',');

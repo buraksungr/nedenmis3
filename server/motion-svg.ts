@@ -119,6 +119,29 @@ export function validateNewStage(root: Geometry) {
     fail(
       'layer-main içinde en az 3 görünür, anlamlı <path> gerekli; yalnız ilkel şekiller veya boş yollar yeterli değil.',
     );
+  // Limit new movement in OUTPUT pixels, after ancestor scale/rotation and viewBox
+  // fitting. This catches large excursions without reinterpreting signed archives.
+  // Geometry alone cannot prove that a path stays inside a semantic tunnel: the
+  // planner must still place both endpoints inside its particular chamber.
+  const [, , width, height] = root.attrs.viewBox.split(' ').map(Number),
+    fit = Math.max(1080 / width, 1920 / height);
+  const checkMovement = (n: Geometry, parent: Matrix, ancestorDistance = 0) => {
+    if (n.tag === 'defs') return;
+    const m = mul(parent, matrix(n.attrs.transform));
+    let total = ancestorDistance;
+    if (n.attrs['data-anim'] === 'move') {
+      const dx = Number(n.attrs['data-dx'] ?? 0),
+        dy = Number(n.attrs['data-dy'] ?? 0);
+      // Nested animations can add together even when each local dx/dy is small.
+      total += Math.hypot(m[0] * dx + m[2] * dy, m[1] * dx + m[3] * dy) * fit;
+      if (total > 240.001)
+        fail(
+          'move yer değiştirmesi çıktı karesinde en fazla 240 piksel olmalı; özneyi tünelin içinde tut.',
+        );
+    }
+    n.children.forEach((child) => checkMovement(child, m, total));
+  };
+  checkMovement(root, I);
 }
 
 const loops = new Set(['fall', 'rise', 'pulse', 'swing', 'wiggle']);
@@ -134,8 +157,12 @@ const animAttrs = [
   'data-pivot-y',
   'data-angle',
 ];
-export function parseStage(xml: string, _rig?: Geometry) {
-  const { root, cleanup: baseCleanup } = parseGeometry(xml, 'objects'),
+export function parseStage(
+  xml: string,
+  _rig?: Geometry,
+  editorial?: { title: string; narration: string },
+) {
+  const { root, cleanup: baseCleanup } = parseGeometry(xml, 'objects', editorial),
     [, , bw, bh] = root.attrs.viewBox.split(' ').map(Number);
   const motions = new Set<Geometry>();
   let continuous = false,

@@ -11,6 +11,7 @@ import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createStudio } from '../server/app';
 import { Operation, operation } from '../server/operation';
+import { verifyVideo } from '../server/media';
 import { makeProject, scriptSig, approveBoard } from '../server/store';
 import { STOPPED, jobActive, type Project } from '../shared/schema';
 import { rigReply, stageReply } from './ant-motion-art';
@@ -165,8 +166,64 @@ async function main() {
       fs.readdirSync(cache).filter((n) => n !== 'vector'),
       [],
     );
+
+    // Cancelling a partial-export job must leave the completed voiced film and
+    // all normal production files intact, release its children, and be resumable.
+    const finalBeforeDraft = structuredClone(p.final),
+      subtitlesBeforeDraft = structuredClone(p.subtitleFiles),
+      assetsBeforeDraft = structuredClone(p.assets);
+    const draftRun: Project = await post(route + '/generate', { kind: 'draft' }, p.rev);
+    const draftTimeout = Date.now() + 90000;
+    let draftProgress = 0;
+    while (Date.now() < draftTimeout) {
+      p = ctx.store.get(p.id);
+      assert.ok(jobActive(p.job), p.job.label);
+      if (p.job.kind === 'draft' && p.job.progress && p.job.progress < 100) {
+        draftProgress = p.job.progress;
+        break;
+      }
+      await delay(25);
+    }
+    assert.ok(draftProgress, 'expected actual progress during a silent draft');
+    await post(`/operations/${draftRun.job.runId}/stop`, {});
+    p = await settled();
+    assert.equal(p.job.state, 'cancelled');
+    assert.equal(p.job.label, STOPPED);
+    assert.deepEqual(p.final, finalBeforeDraft);
+    assert.deepEqual(p.subtitleFiles, subtitlesBeforeDraft);
+    assert.deepEqual(p.assets, assetsBeforeDraft);
+    assert.equal(p.draft, undefined);
+    assert.deepEqual(
+      [...observed.entries()].filter(([, op]) => op.id === draftRun.job.runId),
+      [],
+      'draft child still open after cancellation',
+    );
+    assert.deepEqual(
+      fs.readdirSync(cache).filter((n) => n !== 'vector'),
+      [],
+    );
+    await post(route + '/generate', { kind: 'draft' }, p.rev);
+    p = await settled();
+    assert.equal(p.job.state, 'done', p.job.label);
+    assert.ok(p.draft && p.draft.asset.hasAudio === false);
+    await verifyVideo(
+      ctx.prod.file(p, p.draft.asset.file),
+      p.draft.scenes.reduce((n, s) => n + s.frames, 0),
+      false,
+    );
+    assert.deepEqual(p.final, finalBeforeDraft);
+    assert.deepEqual(p.subtitleFiles, subtitlesBeforeDraft);
+    assert.deepEqual(p.assets, assetsBeforeDraft);
+    assert.deepEqual(
+      fs.readdirSync(cache).filter((n) => n !== 'vector'),
+      [],
+    );
+
     const report = {
       stoppedAtPercent: frameProgress,
+      stoppedDraftAtPercent: draftProgress,
+      resumedSilentDraft: true,
+      normalExportPreserved: true,
       interruptedChildren: children,
       previousClipReused: true,
       voiceAndTimingUnchanged: true,

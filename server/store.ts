@@ -103,6 +103,7 @@ export function changeScript(p: Project, text: string) {
     delete p.motionWork;
     p.scriptApproval = null;
     p.boardApproval = null;
+    delete p.draft;
     clearFinal(p);
   }
   p.script = text;
@@ -203,6 +204,9 @@ export class Store {
       if (!ent.isDirectory()) continue;
       try {
         const p = this.get(ent.name);
+        const missingDraft =
+          !!p.draft && !fs.existsSync(path.join(this.dir(p.id), p.draft.asset.file));
+        if (missingDraft) delete p.draft;
         if (p.final && !fs.existsSync(path.join(this.dir(p.id), p.final.file))) {
           delete p.final;
           delete p.subtitleFiles;
@@ -224,7 +228,8 @@ export class Store {
             at: now(),
           };
           this.save(p);
-        } else this.index(p);
+        } else if (missingDraft) this.save(p);
+        else this.index(p);
       } catch {
         this.db.prepare('DELETE FROM projects WHERE id=?').run(ent.name);
       }

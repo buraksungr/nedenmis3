@@ -1,4 +1,3 @@
-import { ShotTitle } from './ShotTitle';
 import { ObjectScene } from './ObjectScene';
 import type { ObjectFrame } from '../shared/object-motion';
 import React from 'react';
@@ -15,7 +14,7 @@ import type { Word } from '../shared/schema';
 import { dissolveAt } from './fade';
 import type { SvgPlan } from '../shared/svg';
 import { AnimatedPlate } from './ScientificPlate';
-
+import { CaptionOverlay } from './CaptionOverlay';
 import { AnimatedVector } from './VectorScene';
 import type { VectorFrame } from '../shared/vector';
 export type FilmProps = {
@@ -48,8 +47,6 @@ const still: React.CSSProperties = {
 export function Film({
   objects,
   nextObjects,
-  title,
-  nextTitle,
   svg,
   nextSvg,
   vector,
@@ -67,8 +64,8 @@ export function Film({
     { durationInFrames, fps } = useVideoConfig(),
     t = f / fps;
   const cap = captionGroupAt(words, t, sentenceCaptions);
-  // Do not show the next motion scene or its title under the outgoing scene's
-  // subtitles. Preserve the normal crossfade for legacy photo/atlas sequences.
+  // Do not show the next motion scene under the outgoing scene's subtitles.
+  // Preserve the normal crossfade for legacy photo/atlas sequences.
   const motionTransition = !!(objects || nextObjects),
     afterCaption = words.length
       ? Math.max(...words.map((w) => w.end)) + (sentenceCaptions ? 0 : 0.04)
@@ -105,55 +102,14 @@ export function Film({
         ) : (
           next && <Img src={next} style={{ ...still, opacity: alpha }} />
         ))}
-      {/* One still, safe-area heading. Fade through zero rather than stacking two titles. */}
-      {alpha < 0.5 && title ? (
-        <ShotTitle title={title} opacity={1 - 2 * alpha} />
-      ) : alpha >= 0.5 && nextTitle ? (
-        <ShotTitle title={nextTitle} opacity={2 * alpha - 1} />
-      ) : null}
       {cap && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '9%',
-            right: '9%',
-            bottom: '14%',
-            textAlign: 'center',
-            fontFamily: 'Arial, sans-serif',
-            fontSize: subtitleSize,
-            fontWeight: 650,
-            lineHeight: 1.38,
-            color: '#fff',
-            opacity: Math.min(1, (t - cap[0].start) * 18 + 0.42),
-            textShadow: '0 2px 6px #000',
-          }}
-        >
-          <span
-            style={{
-              background: 'rgba(10,15,14,.82)',
-              padding: '8px 15px',
-              boxDecorationBreak: 'clone',
-              WebkitBoxDecorationBreak: 'clone',
-              borderRadius: 5,
-            }}
-          >
-            {cap.map((w, i) => (
-              <React.Fragment key={i}>
-                {i ? ' ' : ''}
-                <span
-                  style={{
-                    color:
-                      highlight && !sentenceCaptions && t >= w.start && t < w.end
-                        ? '#FACC15'
-                        : 'inherit',
-                  }}
-                >
-                  {w.text}
-                </span>
-              </React.Fragment>
-            ))}
-          </span>
-        </div>
+        <CaptionOverlay
+          words={cap}
+          time={t}
+          size={subtitleSize}
+          highlight={highlight}
+          estimated={sentenceCaptions}
+        />
       )}
     </AbsoluteFill>
   );

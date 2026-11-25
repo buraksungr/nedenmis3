@@ -45,10 +45,16 @@ export type Asset = {
   file: string;
   key: string;
   duration?: number;
+  hasAudio?: boolean; // Explicit on new MP4 exports; older assets did not record this.
   source?: 'gemini' | 'pollinations' | 'import' | 'local';
   model?: string;
   created?: string;
   illustration?: { brief: string; seed: number };
+};
+export type DraftExport = {
+  asset: Asset;
+  scenes: { id: string; frames: number }[];
+  total: number;
 };
 export type Media = {
   image?: Asset;
@@ -116,6 +122,8 @@ export type Project = {
   music?: Asset;
   assets: Record<string, Media>;
   final?: Asset;
+  // A silent, possibly partial preview is separate from the approved final and its caches.
+  draft?: DraftExport;
   subtitleFiles?: { srt: string; json: string };
   job: Task;
   history: number;

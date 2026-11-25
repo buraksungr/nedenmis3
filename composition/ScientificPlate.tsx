@@ -5,9 +5,7 @@ import {
   rule,
   ease,
   seq,
-  num,
   TextBlock,
-  Mark,
   Specimen,
   ArtLayer,
   PlateGlyph,
@@ -24,7 +22,7 @@ import {
 } from './AtlasDiagrams';
 import React from 'react';
 import { interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { templateNames, templates, type SvgPlan, type Template } from '../shared/svg';
+import { type SvgPlan, type Template } from '../shared/svg';
 
 // All geometry is authored here. Diagrams use a 540 × 960 viewBox (2× at export).
 // Frame and plan are the only inputs: no CSS clocks, random seeds, network, or injected SVG.
@@ -216,20 +214,8 @@ export function ThermometerGaugeScene({ plan, progress }: DiagramProps) {
         />
       ))}
       <TextBlock x={220} y={397} text={plan.labels[0]} size={18} maxWidth={265} />
-      <text
-        x="217"
-        y="473"
-        fill={plan.accentColor}
-        fontSize={Math.abs(v) > 999 ? 43 : 60}
-        fontWeight="650"
-      >
-        {num(v)}°C
-      </text>
       <line x1="220" x2="465" y1="498" y2="498" stroke={rule} />
       <TextBlock x={220} y={526} text={plan.labels[1]} size={16} maxWidth={265} />
-      <text x="220" y="602" fontSize="25" fill={ink}>
-        {num(from)}° → {num(to)}°
-      </text>
     </g>
   );
 }
@@ -308,9 +294,6 @@ export function ComparisonScene({ plan, progress }: DiagramProps) {
         return (
           <g key={i}>
             <TextBlock x={59} y={y - 13} text={labels[i]} maxWidth={317} size={21} />
-            <text x="479" y={y - 13} fill={plan.accentColor} textAnchor="end" fontSize="23">
-              {num(v * k)}
-            </text>
             <rect x="59" y={y} width="420" height="34" rx="4" fill="#293F39" />
             <rect
               x={Math.min(end, zero)}
@@ -324,9 +307,6 @@ export function ComparisonScene({ plan, progress }: DiagramProps) {
         );
       })}
       <line x1={zero} x2={zero} y1="397" y2="606" stroke={ink} opacity="0.65" />
-      <Mark x={54} y={636}>
-        ORTAK ÖLÇEK · {num(min)} / {num(max)}
-      </Mark>
     </g>
   );
 }
@@ -352,16 +332,6 @@ export function ProcessFlowScene({ plan, progress }: DiagramProps) {
             <g opacity={0.15 + 0.85 * k}>
               <rect x="57" y={y} width="426" height="76" rx="7" fill="#1D3831" stroke={rule} />
               <circle cx="100" cy={y + 37} r="22" fill={plan.accentColor} />
-              <text
-                x="100"
-                y={y + 44}
-                textAnchor="middle"
-                fill={dark}
-                fontSize="18"
-                fontFamily="monospace"
-              >
-                0{i + 1}
-              </text>
               <TextBlock x={145} y={y + 35} text={l} maxWidth={320} size={20} />
             </g>
           </g>
@@ -395,8 +365,27 @@ export function ScientificPlate({
   frame: number;
   frames: number;
 }) {
-  const Drawing = drawings[plan.template],
-    id = templates.indexOf(plan.template) + 1;
+  const Drawing = drawings[plan.template];
+  // Archived plans can contain headings and sentences. Keep at most two short
+  // labels, retaining empty slots so the old diagrams' geometry is unchanged.
+  // The scene title remains accessible metadata, never a heading in the film.
+  let labelCount = 0;
+  const artworkPlan = {
+    ...plan,
+    labels: Array.from({ length: Math.max(2, plan.labels.length) }, (_, i) => {
+      const text = plan.labels[i]?.trim() ?? '';
+      if (
+        labelCount < 2 &&
+        text.length <= 28 &&
+        /^\p{L}[\p{L}\p{M}\p{N}’'-]*(?: \p{L}[\p{L}\p{M}\p{N}’'-]*)?$/u.test(text) &&
+        text.toLocaleLowerCase('tr') !== plan.title.trim().toLocaleLowerCase('tr')
+      ) {
+        labelCount++;
+        return text;
+      }
+      return '';
+    }),
+  };
   const progress = interpolate(frame, [0, Math.max(1, frames - 1)], [0, 1], {
     extrapolateRight: 'clamp',
     extrapolateLeft: 'clamp',
@@ -413,21 +402,6 @@ export function ScientificPlate({
         style={{ display: 'block', background: dark, fontFamily: 'Arial, sans-serif' }}
       >
         <rect width="540" height="960" fill={dark} />
-        <path d="M36 65H504" stroke={rule} />
-        <rect x="36" y="33" width="9" height="9" fill={plan.accentColor} />
-        <Mark x={55} y={42}>
-          NEDENMİŞ / BİLİM ATLASI
-        </Mark>
-        <Specimen plan={plan} x={385} y={38} size={35} />
-        <Mark x={416} y={42}>
-          LEVHA {String(id).padStart(2, '0')}
-        </Mark>
-        <Mark x={36} y={110} color={plan.accentColor}>
-          {templateNames[plan.template].toLocaleUpperCase('tr')}
-        </Mark>
-        {plan.template !== 'TitleHookScene' && (
-          <TextBlock x={34} y={163} text={plan.title} maxWidth={470} size={34} weight={650} />
-        )}
         {artHref &&
           ![
             'FocusCalloutScene',
@@ -436,7 +410,7 @@ export function ScientificPlate({
             'CycleLoopScene',
             'CrossSectionScene',
           ].includes(plan.template) && <Specimen plan={plan} x={440} y={252} size={76} />}
-        <Drawing plan={plan} frame={frame} progress={progress} />
+        <Drawing plan={artworkPlan} frame={frame} progress={progress} />
         {/* The lower safe area belongs exclusively to Film's timed caption track. */}
       </svg>
     </ArtLayer.Provider>

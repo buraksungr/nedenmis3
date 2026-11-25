@@ -9,6 +9,7 @@ import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
 import { rigReply, stageReply } from '../tests/ant-motion-art.ts';
 import { safeFrameBrowserControl } from '../tests/safe-frame-browser.ts';
+import { probe } from '../server/media.ts';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
@@ -256,6 +257,34 @@ try {
   ); // no second POST
   await page.reload();
   await card.locator('[data-motion-stage]').waitFor();
+  // Export a genuinely silent partial film directly from the unapproved board.
+  const draftPanel = page.getByRole('region', { name: 'Sessiz taslak' });
+  await draftPanel.getByText('1/2 hazır sahne • Sessiz taslak', { exact: true }).waitFor();
+  assert.equal(await card.locator('[data-shot-title]').count(), 0);
+  await draftPanel.getByRole('button', { name: 'Sessiz taslağı oluştur' }).click();
+  await draftPanel.locator('video').waitFor({ timeout: 180000 });
+  await page.waitForFunction(
+    () => !document.querySelector('.job-note.working, .job-note.stopping'),
+    null,
+    { timeout: 180000 },
+  );
+  const partial = ctx.store.get(id);
+  assert.equal(partial.boardApproval, null);
+  assert.equal(partial.final, undefined);
+  assert.deepEqual(partial.assets, {});
+  assert.equal(partial.draft.scenes.length, 1);
+  assert.equal(partial.draft.total, 2);
+  assert.equal(partial.draft.scenes[0].id, partial.scenes[0].id);
+  assert.equal(partial.draft.asset.hasAudio, false);
+  const partialStreams = (await probe(path.join(ctx.store.dir(id), partial.draft.asset.file)))
+    .streams;
+  assert.ok(!partialStreams.some((s) => s.codec_type === 'audio'));
+  assert.deepEqual(voiceCalls, []);
+  const draftHref = await draftPanel
+    .getByRole('link', { name: 'Sessiz taslağı indir' })
+    .getAttribute('href');
+  const download = await page.request.get(new URL(draftHref, origin).href);
+  assert.equal(download.status(), 200);
   await page.getByRole('button', { name: 'Hareketli sahneleri planla' }).click();
   await stopWhile(/HTTP 429 - Kota\/Hız Sınırı.*10 sn.*1\/3/);
   assert.deepEqual(
@@ -266,6 +295,11 @@ try {
   quotaOnSecond = false;
   await second.getByRole('button', { name: 'Bu sahneyi tamamla' }).click();
   await second.locator('[data-motion-stage]').waitFor();
+  assert.equal(
+    ctx.store.get(id).draft,
+    undefined,
+    'new drawing must invalidate the old partial draft',
+  );
   assert.deepEqual(
     plannerCalls.map((q) => q.sahne ?? 0),
     [1, 2, 2],
@@ -278,7 +312,7 @@ try {
   assert.notEqual(await f.getAttribute('transform'), prev);
   assert.equal(await cam.getAttribute('viewBox'), box);
   assert.equal(await cam.getAttribute('transform'), null);
-  assert.equal(await second.locator('svg use').count(), 10);
+  assert.equal(await second.locator('svg use').count(), 5); // No duplicated scene content in <defs>.
   const old = ctx.store.get(id).scenes[1].choreography.digest;
   await second
     .getByLabel('Çizim yönlendirmesi (isteğe bağlı)')
@@ -371,7 +405,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(browserProviderRequests, []);
   console.log(
-    'PASS: actual default object SVG board, two approvals, stop in the 5s cooldown (no scene POST), reopen, stop in the 429 backoff (no retry POST), resume only the missing drawing, fixed camera while an ant moves, directed redraw, speaker selection, consent, one-click spoken MP4 and subtitle editing, local playback and mobile navigation.',
+    'PASS: actual object SVG board, partial 1/2 silent MP4 without approval or TTS, two approvals, cancellation and retry, fixed camera, directed redraw, speaker selection, one-click spoken MP4, subtitle editing, local playback and mobile navigation.',
   );
 } finally {
   await browser.close();

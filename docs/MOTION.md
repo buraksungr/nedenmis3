@@ -1,33 +1,46 @@
-# Sabit kameralı SVG sahnesi · 1.6.2
+# Sabit kameralı SVG sahnesi · 1.7.1
 
-`board` / `ObjectPlanner` iki tür metin yanıtı kullanır. Önce onaylı senaryonun tamamı için `{subject, svg}`: SVG’deki `<defs><g id="subject-main">…</g></defs>` **tek** şablondur. Karıncada baş, göğüs, karın, altı bacak ve iki hareketli anten; balinada gövde, kuyruk ve yüzgeç istenir. Sonra her sahne için `{title, svg}`: aynı kanonik şablon bağlam olarak verilir. Sahne onu yeniden çizmez; bağımsız yerleştirilmiş `<use href="#subject-main">` örnekleriyle kullanır. Başlık çizime gömülmez. Metin modeli anlatıma özgü, doğal ve tamamlanmış 2–3 Türkçe sözcük üretir; sözcük sayısı, bilinen eksik bitişler ve tekrarlar denetlenir. Anlamı ve bilimsel doğruluğu storyboard onayında inceleyin.
+`board` / `ObjectPlanner`, onaylı senaryoyu sahnelere ayırır ve her sahne için bağımsız `{title, svg}` ister; yeni üretimde ortak özne şablonu isteği yoktur. Başlık tamamlanmış, doğal 2–4 sözcüklük Türkçe proje bilgisidir; videoya çizilmez. Anlam ve bilimsel doğruluk storyboard’da gözden geçirilmelidir.
 
-## İstek ve devam kuralları · 1.6.1
+## Üretim ve devam
 
-- Şablon, sahne ve içerik onarımı isteklerinde çıkış bütçesi Gemini’de `maxOutputTokens: 8192`, OpenRouter’da `max_tokens: 8192` olur. İstem, **3500 karakterin altında** tam SVG, tam sayı koordinat, kısa geometri, yorumsuz XML ve kapalı son etiket ister. Bu bir model talimatıdır; kayıtlı büyük çizimleri kesmez veya eski dosyaların güvenlik sınırını değiştirmez.
-- İlk eksik sahne hemen başlar. Bir sonrakinden önce önceki sonuç diske yazılır ve **Sonraki sahne için bekleniyor...** gösterilerek 5 saniye beklenir. Kaydedilmiş şablon ve hazır sahne atlanır; kuyruğun sonunda beklenmez.
-- Alınmış HTTP 429/503 yanıtında aynı yetkili uç nokta ve gövdeyle sırasıyla 10/20/35 sn sonra yeniden denenir. Çizim başına toplam üç HTTP tekrarı vardır. Bunlar modelin JSON/XML veya `MAX_TOKENS` çıktısına yönelik en fazla iki **içerik onarımından** ayrıdır. Bağlantı kopması HTTP 503 değildir; otomatik olarak aynı POST’u yollamayız. Senaryo/TTS politikası ayrı kalır.
-- Kalıcı kotada iş durur; bozuk çizim veya üç tekrardan sonra süren HTTP 503 sadece o sahneyi eksik bırakabilir. Neden sahne numarasıyla iş günlüğüne ve bekleyen sahnenin kartına yazılır. **Durdur** hem zamanlayıcıyı hem etkin isteği keser. Uygulamayı tekrar açıp **Eksik sahneleri tamamla** dediğinizde `project.json` ve imzalı SVG’ler okunur; tamamlanan sahneler yeniden istenmez.
+- İstem 3500 karakterin altında, tam sayı koordinatlı ve XML yorumsuz SVG ister. Yeni çizim `layer-bg`, `layer-main` ve `layer-fx` gruplarını ve ana katmanda en az üç görünür `<path>` içermelidir. Kayıtlı eski çizimler bu yeni görsel kalite denetimine yeniden sokulmaz.
+- İlk eksik sahne hemen başlar; sonraki eksik sahneden önce tamamlanan dosya kaydedilir ve 5 saniye beklenir. OpenRouter HTTP 429/503 yanıtında aynı istek 10/20/35 saniye aralıklarıyla en fazla üç kez tekrarlanır. İçerik onarımları ayrı olup en fazla ikidir. Gemini model yedekleri beklemeden denenir. Belirsiz bağlantı hatasında ulaşmış olabilecek POST otomatik tekrarlanmaz.
+- **Durdur** zamanlayıcıyı, isteği veya render’ı iptal eder ve temizliği bekler. Hazır sahneler saklanır; **Eksik sahneleri tamamla** yalnız eksikleri işler.
 
-## Çizim protokolü
+## Çizim ve güvenli alan
 
-Portre sahne `viewBox="0 0 1080 1920"` veya eşdeğer bir koordinat alanı kullanır. Sahne kökü ve dekor kare numarasından etkilenmez. Düz renk, gradyan ve statik şekil grupları serbesttir. İç içe görüntü koordinatları ve sabit yerleşim `transform`ları kamera hareketi değildir. Örnek: sahnede `<g transform="translate(160 820) scale(.8)"><use href="#subject-main" data-anim="move" data-dx="190" data-dy="45" data-delay=".2" data-duration="3.5"/></g>`.
+Portre sahne `viewBox="0 0 1080 1920"` veya eşdeğer koordinatlar kullanır. `layer-bg` ve statik ortam tüm kareyi doldurur; üstte başlık bandı yoktur. Özne ve hareketli katmanlar çıkış koordinatlarında y=0–1460 bölgesine kırpılır. Statik eski `set` grupları arka plan olarak tam kare kalır.
+
+İsteğe bağlı en fazla iki küçük bilimsel etiket, `layer-fx` grubunun doğrudan çocuğu olarak eklenebilir:
+
+```xml
+<text data-keyword="true" x="120" y="600" font-size="28" fill="#fff">Yalıtım</text>
+```
+
+Her etiket 1–2 sözcük ve en fazla 28 karakterdir; çıkışta 14–40 piksel boyunda ve y=1200 üzerinde kalır. Konum ve ölçek dönüşümleri, uzun cümleler, sahne başlığı ve işaretlenmemiş metin temizlenir. Önizleme ve MP4 aynı görüntüleme listesini kullanır. Eski katmanlı çizimlerde sınırsız konum/boyut taşıyan metinler yeniden render’da gösterilmez; eski diyagramların da yalnız iki küçük etiketi korunur. Uzun altyazılar görüntüde küçük sayfalara bölünerek altta tutulur; kayıtlı hizalama ve SRT değiştirilmez.
+
+## Hareket protokolü
 
 | `data-anim` | Nesne pozu |
 |---|---|
 | `move` | Gecikmeden sonra yerel `dx`, `dy` kadar ilerler, sonunda durur. |
-| `fall`, `rise` | Fazı kaydırılabilen sürekli iniş/çıkış; başlangıç ve bitişte parçacık solar. |
-| `draw` | Görünür stroke’lu çizgiyi `pathLength=1`, dash ve `stroke-dashoffset` ile açar. |
-| `pulse` | Yerel merkezde genişleyip sönümlenen halkalar. |
-| `swing`, `wiggle` | Parçanın eklem noktasında, belirtilen açıyla periyodik dönüş. |
-| `pop` | `spring()` ile gecikmeli, taşma ve yerleşme içeren giriş. |
+| `fall`, `rise` | Fazı kaydırılabilen sürekli iniş/çıkış. |
+| `draw` | Görünür stroke’lu çizgiyi `pathLength=1` ve dash ile açar. |
+| `pulse` | Yerel merkezde genişleyip sönümlenen halka. |
+| `swing`, `wiggle` | Eklem noktasında periyodik dönüş. |
+| `pop` | `spring()` ile gecikmeli giriş. |
 
-Parametre öneki `data-`dır: `dx/dy` SVG birimi, `delay/duration` saniye, `phase` döngünün 0–1 aralığı, `angle` derece, `pivot-x/y` yerel merkezdir. Zaman kaynağı Remotion karesi/FPS’dir; SMIL, rastgele tohum, CSS animasyonu veya tarayıcı saati render’ı yönetmez. Önizleme aynı bileşene bir kare numarası verir. Çıkış geçişi yalnız opaklık kullanır. Plan en az beş ayrı hareketli nesne, birden fazla görünür özne örneği ve ilk karede başlayan bir döngü gerektirir; şablonun iç parçaları nesne sayısını şişirmez.
+`dx/dy` yerel SVG birimi; `delay/duration` saniye; `phase` 0–1; `angle` derece; `pivot-x/y` yerel merkezdir. Poz yalnız Remotion karesine ve FPS’ye bağlıdır. En az üç ayrı hareket ve ilk kareden süren bir döngü gerekir. Yeni çizimlerde `move` mesafesi dönüşümler ve viewBox uyarlaması sonrası en fazla 240 çıkış pikselidir. İstem, daha kısa hareketleri, iki uç noktanın da tünel/odacık içinde kalmasını, kontrastı, tutarlı anatomiyi ve doğal gölgeli toprak kenarlarını ayrıca ister; bu anlamsal koşullar otomatik geometri denetiminin garantisi değildir.
 
-## Güven ve saklama
+## Sessiz taslak ve normal üretim
 
-`layered-svg.ts` ve `motion-svg.ts` XML’i **reddetmek yerine temizleyerek** sınırlı, etkin olmayan bir geometri listesine ayrıştırır (96 KiB, sınırlı derinlik/düğüm, geçerli path komutları, sayısal parametreler). İzinli çizim etiketleri `svg`, `g`, `defs`, `symbol`, `use`, `path`, `circle`, `ellipse`, `rect`, `line`, `polyline`, `polygon`, `linearGradient`, `radialGradient`, `stop`, `clipPath`, `mask`, `pattern`, `filter`, `feGaussianBlur`, `feDropShadow`, `feOffset`, `feBlend`, `feMerge`, `feMergeNode` ve (yalnız eski katmanlı illüstrasyonda) `text`tir. `use` yalnız sahnede ve **yalnız** sabit `#subject-main` hedefine izinlidir; şablonda `use` bulunamaz. Yerel `url(#id)` boya, filtre, maske ve kırpma başvuruları çözülür; tanımsız olanlar öğeden çıkarılır.
+Storyboard’daki **Sessiz taslağı oluştur**, onaylı senaryodan en az bir doğrulanmış çizim varsa hazır sahneleri sırayla render eder; eksik, değiştirilmiş veya doğrulanamayan çizimler atlanır. Süre sahnenin tahmini saniyesinden (yoksa 5 sn) alınır ve altyazılar tahminidir. TTS, Whisper, ses, müzik ve efekt çağrılmadan ses kanalı içermeyen H.264 MP4 doğrulanır. Taslak ve geçici klipler normal `final`, sahne klibi, ses ve altyazı önbelleklerinden ayrıdır. İlgili görsel veya süre değiştiğinde taslak bağlantısı geçersizleşir; eski dosya proje geçmişi için korunur.
 
-Zararsız veya desteklenmeyen etiketler (`title`, `desc`, `style`, `metadata`, `animate`, `animateTransform`, `animateMotion`, `set`, `a`, `tspan`, `text` ve sahne dışı bilinmeyen sarmalayıcılar), `class`, `style`, SMIL zaman öznitelikleri ve bilinmeyen dekor öznitelikleri **sahne reddedilmeden** çıkarılır. Yalnız etkin içerik güvenlik gerekçesiyle silinir: `script`, `iframe`, `foreignObject`, `image`, `object`, `embed`, `video/audio`, JS `on*` olayları ve dış `http(s)` bağlantıları. Yapısal XML hatası, geçersiz hareket değeri veya bozuk geometri kalırsa mesaj **sorunlu etiketi adlandırır** (`Desteklenmeyen SVG öğesi: <foo> (<g> içinde).`, `<circle> için geçersiz data-dx…`). Temizlik notu kökte `x-nedenmis-clean` olarak, yalnız etiket/öznitelik adlarıyla saklanır; ham yanıt, istem veya anahtar yazılmaz ve aynı dosya yeniden doğrulanınca bit-bit aynı kalır. React yalnız doğrulanmış öğeleri üretir; sahnenin ve şablonun kimlikleri, geçişte yan yana olduklarında da çakışmaz. Asıl şablon ile sahne dosyaları ayrı saklanır; render sırasında tek yerel SVG ağacında birleştirilir.
+Normal üretim hâlâ tam storyboard onayı ister. Tüm sahneler açıkça anlatımsızsa ve kullanıcı sesi, müzik veya efekt eklememişse normal MP4 de sessizdir. Sesli projelerin TTS, hizalama ve miksaj akışı korunur.
 
-`project.json` içindeki `subjectRig` onaylı metni; sahne `choreography` referansı anlatımı, şablon özetini, başlığı ve SVG’yi bağlar. Başarısız veya durdurulmuş işler `motionWork` kuyruğunda kalır. Bir sahne başarılı olduğunda doğrulanmış dosya/metadata atomik yayımlanır. Fotoğraf servisi veya son çare yerel ikon şablonu yoktur. Eski dosyalar ve ölçülmüş sesler görsel revizyonda silinmez.
+## Güvenlik ve saklama
+
+`layered-svg.ts` / `motion-svg.ts` SVG’yi sınırlı bir geometri listesine ayrıştırır (96 KiB, sınırlı düğüm ve derinlik, sonlu sayılar). `script`, `iframe`, `foreignObject`, `image`, JS olay öznitelikleri ve dış bağlantılar çıkarılır; CSS, SMIL ve desteklenmeyen dekor sahneyi reddetmeden temizlenir. Yerel tanımsız başvurular kaldırılır. React, ham XML veya `innerHTML` yerine doğrulanmış öğeleri üretir.
+
+Sahne `choreography` referansı anlatımı, başlığı ve kanonik SVG’yi içerik özetiyle bağlar. Başarısız işler `motionWork` kuyruğunda kalır. Kayıtlı eski çizimler ve ölçülmüş sesler görsel revizyonda silinmez.

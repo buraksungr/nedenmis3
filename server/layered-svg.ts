@@ -13,7 +13,10 @@ export function healXml(xml: string): { xml: string; repairs: string[] } {
 
   // 1. Kod blok işaretlerini temizle (```svg, ```xml, ```)
   const before = s;
-  s = s.replace(/```svg\s*/gi, '').replace(/```xml\s*/gi, '').replace(/```\s*/g, '');
+  s = s
+    .replace(/```svg\s*/gi, '')
+    .replace(/```xml\s*/gi, '')
+    .replace(/```\s*/g, '');
   if (s !== before) repairs.push('kod blok işaretleri temizlendi');
 
   // 2. Önceki/sonraki fazlalık metni temizle — ilk <svg ve son </svg> arasında kal
@@ -67,7 +70,17 @@ export function healXml(xml: string): { xml: string; repairs: string[] } {
 
   // 6. Kapatılmamış şekil etiketlerini otomatik kapat (self-closing)
   const before5 = s;
-  const selfCloseTags = ['path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'stop', 'use'];
+  const selfCloseTags = [
+    'path',
+    'circle',
+    'ellipse',
+    'rect',
+    'line',
+    'polyline',
+    'polygon',
+    'stop',
+    'use',
+  ];
   for (const tag of selfCloseTags) {
     // /' > ile biten (zaten self-closing) etiketleri atla: [^>/] '/' karakterini de hariç tutar
     s = s.replace(new RegExp('<' + tag + '(\\s[^>/]*?)>(?!.*</' + tag + '>)', 'g'), '<$1/>');
@@ -76,7 +89,6 @@ export function healXml(xml: string): { xml: string; repairs: string[] } {
 
   return { xml: s, repairs };
 }
-
 
 const ns = 'http://www.w3.org/2000/svg',
   stage = '0 0 1080 1350';
@@ -320,7 +332,7 @@ export function parseGeometry(
   // Otomatik XML ön-onarıcı: LLM yazım hatalarını sıfır onarım ile düzelt
   const healed = healXml(xml);
   if (healed.repairs.length > 0) {
-    note(`XML ön-onarım: ${healed.repairs.join("; ")}`);
+    note(`XML ön-onarım: ${healed.repairs.join('; ')}`);
   }
   xml = healed.xml;
   // Onarımdan sonra boyutu tekrar kontrol et (onarım çok az büyültür)
@@ -359,9 +371,22 @@ export function parseGeometry(
       skipRoot ||= !stack.length;
       return;
     }
-    // A <text> node is only a legacy editorial label in layered illustrations. In the
-    // object dialect it is model decoration: strip it instead of failing the scene.
-    if (noiseTags.has(lower) || lower === 'style' || (lower === 'text' && mode !== 'layers')) {
+    // Ordinary model text is still decoration, not a heading. Motion scenes may opt in
+    // to a tightly bounded scientific keyword directly in layer-fx. Keeping this explicit
+    // also preserves the behaviour of old signed scenes and unsupported-text fixtures.
+    const keyword =
+      mode === 'objects' &&
+      lower === 'text' &&
+      stack.length === 2 &&
+      stack.at(-1)?.attrs.id === 'layer-fx' &&
+      Object.values(t.attributes).some(
+        (a) => !a.prefix && a.local === 'data-keyword' && a.value === 'true',
+      );
+    if (
+      noiseTags.has(lower) ||
+      lower === 'style' ||
+      (lower === 'text' && mode !== 'layers' && !keyword)
+    ) {
       skip = 1;
       return;
     }
@@ -395,7 +420,7 @@ export function parseGeometry(
                         (parent.tag === 'pattern' && (defsTags.has(tag) || filterTags.has(tag)))
                       : parent.tag === 'g'
                         ? object
-                          ? shapes.has(tag) || tag === 'g' || use || tag === 'defs'
+                          ? shapes.has(tag) || tag === 'g' || use || tag === 'defs' || keyword
                           : tag === 'defs' || tag === 'g' || shapes.has(tag) || tag === 'text'
                         : false;
     if (!allowed) {
@@ -502,6 +527,10 @@ export function parseGeometry(
           continue;
         }
         note(`Kök özniteliği temizlendi: ${token(k)}`);
+        continue;
+      }
+      if (keyword && k === 'data-keyword') {
+        a[k] = 'true';
         continue;
       }
       if (object && (shapes.has(tag) || tag === 'g' || use) && n.startsWith('data-')) {
@@ -712,14 +741,14 @@ export function parseGeometry(
         at('svg', 'SVG', 'geçersiz tuval boyutu.');
       root = node;
     } else parent.children.push(node);
-    if (mode === 'layers' && parent?.tag === 'svg' && tag === 'g') {
-      if (!layers.includes(a.id as Layer))
+    if (mode !== 'rig' && parent?.tag === 'svg' && tag === 'g') {
+      if (mode === 'layers' && !layers.includes(a.id as Layer))
         at(
           'g',
           'SVG',
           `kökte layer-bg, layer-main ve layer-fx grupları gerekli (${token(a.id ?? 'id yok')}).`,
         );
-      layer = a.id as Layer;
+      if (layers.includes(a.id as Layer)) layer = a.id as Layer;
     }
     if (layer && shapes.has(tag)) counts[layer]++;
     stack.push(node);
@@ -738,10 +767,41 @@ export function parseGeometry(
     const n = stack.pop()!;
     if (n.tag === 'text') {
       const text = n.text?.trim() ?? '';
+      const parent = stack.at(-1)!;
+      // Coordinates, font size, and the resulting output bounds are restricted before
+      // a keyword reaches React. Ancestor transforms, positioning tricks and oversized
+      // lettering cannot recreate a title band or enter the lower subtitle area.
+      let unsafeKeyword = false;
+      if (mode === 'objects') {
+        const [bx, by, bw, bh] = root!.attrs.viewBox.split(' ').map(Number),
+          scale = Math.max(1080 / bw, 1920 / bh),
+          numberOnly = (v?: string) => (v && numRE.test(v) ? Number(v) : NaN),
+          x = numberOnly(n.attrs.x),
+          y = numberOnly(n.attrs.y),
+          size = numberOnly(n.attrs['font-size']) * scale,
+          outX = (x - bx - (bw - 1080 / scale) / 2) * scale,
+          outY = (y - by - (bh - 1920 / scale) / 2) * scale,
+          width = Array.from(text).length * size * 0.9,
+          anchor = n.attrs['text-anchor'] ?? 'start',
+          left = outX - (anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0);
+        unsafeKeyword =
+          parent.attrs.id !== 'layer-fx' ||
+          !!parent.attrs.transform ||
+          !!parent.attrs['data-anim'] ||
+          !!n.attrs.transform ||
+          ![outX, outY, size].every(Number.isFinite) ||
+          size < 14 ||
+          size > 40 ||
+          outY - size < 24 ||
+          outY > 1200 ||
+          left < 24 ||
+          left + width > 1056;
+      }
       // Optional editorial text never rejects an otherwise valid scene. Keep only short
       // scientific labels; drop a sentence or the title instead of cropping it.
       if (
         layer !== 'layer-fx' ||
+        unsafeKeyword ||
         labels >= 2 ||
         text.length > 28 ||
         !/^\p{L}[\p{L}\p{M}\p{N}’'-]*(?: \p{L}[\p{L}\p{M}\p{N}’'-]*)?$/u.test(text) ||
@@ -755,6 +815,26 @@ export function parseGeometry(
       }
       labels++;
       n.text = text;
+      if (mode === 'objects') {
+        // No animation, relative offsets, filter or mask on a keyword. A local colour
+        // and a small system font are all it needs.
+        n.attrs = Object.fromEntries(
+          Object.entries(n.attrs).filter(([k]) =>
+            [
+              'data-keyword',
+              'x',
+              'y',
+              'font-size',
+              'font-family',
+              'font-weight',
+              'text-anchor',
+              'fill',
+            ].includes(k),
+          ),
+        );
+        n.attrs.fill ??= '#ffffff';
+        n.attrs['font-family'] ??= 'Arial';
+      }
     }
     if (stack.length === 1 && n.tag === 'g') layer = undefined;
   });

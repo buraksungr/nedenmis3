@@ -4,7 +4,6 @@ import {
   dark,
   ease,
   ink,
-  Mark,
   muted,
   rule,
   seq,
@@ -13,9 +12,8 @@ import {
   type DiagramProps,
 } from './plate-kit';
 const tau = 2 * Math.PI;
-const fmt = (n: number) => n.toLocaleString('tr-TR', { maximumFractionDigits: 6 });
 
-export function TitleHookScene({ plan, frame, progress }: DiagramProps) {
+export function TitleHookScene({ plan, frame }: DiagramProps) {
   const a = plan.accentColor;
   return (
     <g>
@@ -31,9 +29,6 @@ export function TitleHookScene({ plan, frame, progress }: DiagramProps) {
         />
       ))}
       <path d="M54 235h34m-34 0v17m398 376h34v-17" stroke={a} fill="none" strokeWidth="2" />
-      <g transform={`translate(0 ${6 * (1 - ease(progress, 0, 0.3))})`}>
-        <TextBlock x={55} y={298} text={plan.title} maxWidth={426} size={45} weight={700} />
-      </g>
       <g fill="none" stroke={a}>
         <ellipse cx="318" cy="503" rx="135" ry="48" transform="rotate(-19 318 503)" opacity=".4" />
         <circle
@@ -114,16 +109,6 @@ export function CycleLoopScene({ plan, frame, progress }: DiagramProps) {
               strokeWidth="2"
               fill={active === i ? a : dark}
             />
-            <text
-              x={x}
-              y={y + 5}
-              textAnchor="middle"
-              fontSize="15"
-              fontFamily="monospace"
-              fill={active === i ? dark : ink}
-            >
-              0{i + 1}
-            </text>
             <TextBlock
               x={x}
               y={y + 37}
@@ -186,18 +171,6 @@ export function RatioGaugeScene({ plan, progress }: DiagramProps) {
           />
         ))
       )}
-      <TextBlock
-        text={`${percent ? '%' : ''}${fmt(v)}${percent ? '' : '×'}`}
-        x={270}
-        y={472}
-        anchor="middle"
-        size={46}
-        weight={650}
-        maxWidth={163}
-      />
-      <Mark x={percent ? 239 : 233} y={612}>
-        {percent ? 'YÜZDE' : 'ÇARPAN'}
-      </Mark>
       <TextBlock x={270} y={648} text={plan.labels[0]} anchor="middle" maxWidth={443} size={24} />
     </g>
   );
@@ -225,9 +198,6 @@ export function LayerStackScene({ plan, progress }: DiagramProps) {
             </g>
             <path d={`M267 ${y - 8 + dy}l16 ${-dy}h15`} fill="none" stroke={a} />
             <circle cx="299" cy={y - 8} r="2.5" fill={a} />
-            <Mark x={310} y={y - 16} color={a}>
-              KATMAN 0{i + 1}
-            </Mark>
             <TextBlock x={310} y={y + 9} text={label} size={17} maxWidth={187} />
           </g>
         );
@@ -260,9 +230,6 @@ export function WavePulseScene({ plan, frame }: DiagramProps) {
           <circle cx={x} cy={y} r="4" fill={a} />
         </g>
       ))}
-      <Mark x={55} y={341} color={a}>
-        DALGA YAYILIMI
-      </Mark>
       <path d="M393 337h72l-9-5m9 5-9 5" stroke={a} fill="none" />
       <TextBlock x={55} y={579} size={17} text={plan.labels[0]} maxWidth={200} />
       <TextBlock x={485} y={579} anchor="end" size={17} text={plan.labels[1]} maxWidth={200} />
@@ -289,9 +256,6 @@ export function SplitCauseEffectScene({ plan, frame, progress }: DiagramProps) {
               stroke={rule}
             />
             <path d={`M${x + 16} 357h23`} stroke={i ? a : muted} strokeWidth="3" />
-            <Mark x={x + 48} y={361} color={i ? a : muted}>
-              {i ? 'ETKİ' : 'NEDEN'}
-            </Mark>
             {i ? (
               <g fill="none" stroke={a}>
                 {seq(4).map((j) => (
@@ -320,8 +284,7 @@ export function SplitCauseEffectScene({ plan, frame, progress }: DiagramProps) {
   );
 }
 export function TimelineScaleScene({ plan, progress }: DiagramProps) {
-  const { unit, fromValue, toValue, midValue, accentColor: a } = plan,
-    ordered = unit === 'sıra';
+  const { unit, fromValue, toValue, midValue, accentColor: a } = plan;
   const stops = [fromValue ?? 0, midValue ?? 1, toValue ?? 2],
     up = ['m', 'km', 'cm'].includes(unit ?? '') && stops[2] > stops[0];
   const pos = (t: number) => (up ? 594 - 246 * t : 348 + 246 * t);
@@ -339,7 +302,7 @@ export function TimelineScaleScene({ plan, progress }: DiagramProps) {
       ))}
       <path d={`M${x} ${pos(0)}V${pos(1)}`} stroke={rule} strokeWidth="5" />
       <path d={`M${x} ${pos(0)}V${pos(k)}`} stroke={a} strokeWidth="5" />
-      {plan.labels.map((label, i) => {
+      {plan.labels.slice(0, stops.length).map((label, i) => {
         const fraction = (stops[i] - stops[0]) / (stops[2] - stops[0] || 1),
           y = pos(fraction),
           row = pos(i / 2);
@@ -347,9 +310,6 @@ export function TimelineScaleScene({ plan, progress }: DiagramProps) {
           <g key={i}>
             <circle cx={x} cy={y} r="7" fill={dark} stroke={a} strokeWidth="2" />
             <path d={`M${x + 9} ${y}h21L177 ${row}h18`} fill="none" stroke={rule} />
-            <Mark x={207} y={row - 5} color={a}>
-              {ordered ? `EVRE 0${i + 1}` : `${fmt(stops[i])} ${unit}`}
-            </Mark>
             <TextBlock x={207} y={row + 23} size={19} maxWidth={279} text={label} />
           </g>
         );

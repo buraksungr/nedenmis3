@@ -46,7 +46,7 @@ import {
 import { legacyPlate } from '../shared/legacy-atlas';
 import { verifiedFrame } from './vector-files';
 import { withDocumentaryScene } from './render-browser';
-import { Issue, Store, approved, atomic, hash, now, requireThat } from './store';
+import { Issue, Store, approved, atomic, hash, now, requireThat, scriptSig } from './store';
 export type Step = 'all' | 'voice' | 'align' | 'clip';
 export const imageKey = (p: Project, s: Scene) =>
   s.visualMode === 'illustration'
@@ -55,6 +55,23 @@ export const imageKey = (p: Project, s: Scene) =>
 export const voiceKey = (p: Project, s: Scene) =>
   hash('voice-v1', s.narration, p.voice, p.voiceStyle, p.pace);
 export const framesForVoice = (seconds: number) => Math.max(1, Math.ceil(seconds * 30 - 1e-7));
+/** Inputs of the separate, deliberately silent draft. Audio and alignment never affect it. */
+export const draftInputs = (p: Project) =>
+  hash(
+    'silent-draft-inputs-v1',
+    p.styleGuide,
+    p.subtitleSize,
+    p.scenes.map((s) => [
+      s.id,
+      s.visualMode,
+      s.narration,
+      s.seconds,
+      s.choreography,
+      s.vector,
+      s.svgPlan,
+      p.assets[s.id]?.image,
+    ]),
+  );
 export class Production {
   constructor(
     private store: Store,
@@ -156,6 +173,7 @@ export class Production {
           422,
         );
         const m = (p.assets[s!.id] ??= {});
+        delete p.draft;
         m.image = {
           ...this.publish(p, out, 'images', 'jpg', imageKey(p, s!)),
           ...origin,
@@ -343,10 +361,21 @@ export class Production {
     }
   }
   async clip(p: Project, s: Scene, next: Scene | undefined, frames: number, force = false) {
+    await this.makeClip(p, s, next, frames, { force });
+  }
+  private async makeClip(
+    p: Project,
+    s: Scene,
+    next: Scene | undefined,
+    frames: number,
+    options: { force?: boolean; draftOutput?: string },
+  ) {
     checkpoint();
-    approved(p);
-    const m = (p.assets[s.id] ??= {}),
-      silent = unvoicedSvg(s, m);
+    const draft = options.draftOutput !== undefined;
+    if (!draft) approved(p);
+    // A draft must not create or overwrite normal production assets.
+    const m = p.assets[s.id] ?? (draft ? {} : (p.assets[s.id] = {})),
+      silent = draft || unvoicedSvg(s, m);
     const diagram = (scene?: Scene) => {
       if (scene?.visualMode !== 'svg' || scene.vector) return undefined;
       requireThat(scene.svgPlan, 'SVG şablonu eksik.');
@@ -375,7 +404,11 @@ export class Production {
       await this.align(p, s);
       frames = framesForVoice(m.voice!.duration!);
     }
-    const words = sceneCaptions(s, m),
+    const words = draft
+        ? s.narration.trim()
+          ? sentenceEstimates(s.narration, frames / 30)
+          : []
+        : sceneCaptions(s, m),
       sentenceCaptions = silent || m.align?.method === 'estimated';
     // Incoming diagrams always start at frame zero. Separate the diagram and active-word revisions from the static photo and timing inputs.
     const adjacent =
@@ -392,8 +425,8 @@ export class Production {
         nextObjects?.ref.title ??
         (next?.visualMode === 'illustration' ? next.cinema?.title : undefined);
     const key = hash(
-      'film-5-static-crossfade',
-      ...(objects || nextObjects ? ['object-safe-frame-and-caption-sync-v1'] : []),
+      'film-6-full-bleed-no-heading',
+      ...(objects || nextObjects ? ['object-safe-frame-and-caption-sync-v2'] : []),
       ...(title || nextTitle ? ['fixed-object-stage-v1', title, nextTitle] : []),
       objects
         ? objects.ref
@@ -415,11 +448,17 @@ export class Production {
       p.highlight,
       ...(sentenceCaptions ? ['sentence-cues-v1'] : p.highlight ? ['active-word-amber-v1'] : []),
     );
-    if (!force && this.usable(p, m.clip, key)) {
+    if (!draft && !options.force && this.usable(p, m.clip, key)) {
       await verifyVideo(this.file(p, m.clip!.file), frames, false);
       return;
     }
-    this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, 0);
+    this.tick(
+      p,
+      draft ? 'Sessiz taslak: sahne kareleri işleniyor' : 'Sahne kareleri işleniyor',
+      draft ? 'draft' : 'clip',
+      s.id,
+      0,
+    );
     const url = (a: Asset) =>
       'data:image/jpeg;base64,' + fs.readFileSync(this.file(p, a.file)).toString('base64');
     const props: FilmProps = {
@@ -439,7 +478,7 @@ export class Production {
       highlight: p.highlight && !sentenceCaptions,
       sentenceCaptions,
     };
-    const output = this.temp(p, 'mp4');
+    const output = options.draftOutput ?? this.temp(p, 'mp4');
     let last = 0;
     const lease = operation();
     let renderOpen = true;
@@ -457,17 +496,123 @@ export class Production {
           onProgress: ({ progress }) => {
             if (renderOpen && !lease?.signal.aborted && Date.now() - last > 1000) {
               last = Date.now();
-              this.tick(p, 'Sahne kareleri işleniyor', 'clip', s.id, Math.round(progress * 100));
+              this.tick(
+                p,
+                draft ? 'Sessiz taslak: sahne kareleri işleniyor' : 'Sahne kareleri işleniyor',
+                draft ? 'draft' : 'clip',
+                s.id,
+                Math.round(progress * 100),
+              );
             }
           },
         }),
       );
       await verifyVideo(output, frames, false);
-      m.clip = this.publish(p, output, 'scenes', 'mp4', key, frames / 30);
-      this.store.save(p);
+      if (!draft) {
+        m.clip = this.publish(p, output, 'scenes', 'mp4', key, frames / 30);
+        this.store.save(p);
+      }
     } finally {
       renderOpen = false;
-      fs.rmSync(output, { force: true, maxRetries: 5, retryDelay: 80 });
+      if (!draft) fs.rmSync(output, { force: true, maxRetries: 5, retryDelay: 80 });
+    }
+  }
+  /** Revalidate the actual signed drawings; a missing/stale file is not a ready scene. */
+  draftReadyScenes(p: Project): Scene[] {
+    return p.scenes.filter((s) => {
+      try {
+        if (s.visualMode === 'motion-svg') {
+          motionFrame(this.store.dir(p.id), s.choreography, s.narration);
+          return true;
+        }
+        if (s.visualMode === 'svg') {
+          if (s.vector) verifiedFrame(this.store.dir(p.id), s.vector, s.narration);
+          else if (s.svgPlan) legacyPlate(s.svgPlan);
+          else return false;
+          return true;
+        }
+        return this.usable(p, p.assets[s.id]?.image, imageKey(p, s));
+      } catch {
+        return false;
+      }
+    });
+  }
+  /** Render only ready shots, with estimated scene time and NO audio track or cloud calls.
+   * The temporary clips, published draft and cache key are isolated from approved production. */
+  async exportDraft(p: Project): Promise<Task> {
+    checkpoint();
+    requireThat(p.scriptApproval === scriptSig(p), 'Önce güncel senaryoyu onaylayın.');
+    const ready = this.draftReadyScenes(p);
+    requireThat(ready.length, 'Sessiz taslak için en az bir sahne çizimi gerekli.');
+    const scenes = ready.map((s) => ({
+        id: s.id,
+        frames: framesForVoice(
+          Number.isFinite(s.seconds) && s.seconds > 0 ? Math.min(120, s.seconds) : 5,
+        ),
+      })),
+      frames = scenes.reduce((sum, s) => sum + s.frames, 0),
+      key = hash('silent-draft-render-v1', draftInputs(p), scenes),
+      label = `${ready.length}/${p.scenes.length} hazır sahne • Sessiz taslak`;
+    if (this.usable(p, p.draft?.asset, key) && p.draft?.total === p.scenes.length) {
+      await verifyVideo(this.file(p, p.draft.asset.file), frames, false);
+      return { state: 'done', kind: 'draft', label, at: now() };
+    }
+    this.tick(p, `${label} · Yerel araçlar doğrulanıyor`, 'draft');
+    const report = await checks(this.paths, { whisper: false, render: true }),
+      missing = report.filter((x) => !x.ok);
+    if (missing.length)
+      throw new Issue(
+        412,
+        'Sessiz taslak için yerel servisleri yapılandırın: ' +
+          missing.map((x) => `${x.name}: ${x.detail}`).join('; ') +
+          '. TTS veya Whisper kullanılmadı.',
+        'config',
+      );
+    const working = fs.mkdtempSync(path.join(this.store.dir(p.id), 'cache', 'draft-')),
+      work = (name: string) => path.join(working, name);
+    try {
+      const list: string[] = [];
+      for (const [i, s] of ready.entries()) {
+        checkpoint();
+        const name = `clip-${i}.mp4`;
+        await this.makeClip(p, s, ready[i + 1], scenes[i].frames, { draftOutput: work(name) });
+        list.push(`file '${name}'`);
+      }
+      atomic(work('video.txt'), list.join('\n'));
+      this.tick(p, `${label} · MP4 doğrulanıyor`, 'draft');
+      const out = work('draft.mp4');
+      await ff(
+        [
+          '-f',
+          'concat',
+          '-safe',
+          '1',
+          '-i',
+          'video.txt',
+          '-map',
+          '0:v:0',
+          '-an',
+          '-c:v',
+          'copy',
+          '-movflags',
+          '+faststart',
+          out,
+        ],
+        900000,
+        working,
+      );
+      await verifyVideo(out, frames, false);
+      await ff(['-i', out, '-f', 'null', '-'], 600000);
+      checkpoint();
+      const asset = {
+        ...this.publish(p, out, 'renders', 'mp4', key, frames / 30),
+        hasAudio: false,
+      };
+      p.draft = { asset, scenes, total: p.scenes.length };
+      this.store.save(p);
+      return { state: 'done', kind: 'draft', label, at: now() };
+    } finally {
+      fs.rmSync(working, { recursive: true, force: true, maxRetries: 5, retryDelay: 80 });
     }
   }
   // A placeholder is a UI state, never an image asset or a renderable frame.
@@ -557,8 +702,13 @@ export class Production {
   async finish(p: Project) {
     checkpoint();
     approved(p);
+    // If no narration or user-supplied audio exists, do not manufacture a music or
+    // Foley bed. A completely unvoiced project is an actually silent MP4.
+    const silentMix =
+      !p.music && p.scenes.every((s) => unvoicedSvg(s, p.assets[s.id]) && !p.assets[s.id]?.sfx);
     const mixKey = hash(
-      'mix-v3',
+      'mix-v4-silent-if-no-audio',
+      silentMix,
       p.scenes.map((s) => [
         p.assets[s.id].clip?.file,
         p.assets[s.id].voice?.file,
@@ -578,11 +728,11 @@ export class Production {
       await verifyVideo(
         this.file(p, p.final!.file),
         p.scenes.reduce((n, s) => n + framesForVoice(sceneSeconds(s, p.assets[s.id])), 0),
-        true,
+        !silentMix,
       );
       return;
     }
-    this.tick(p, 'Ses miksajı ve MP4 doğrulaması', 'export');
+    this.tick(p, silentMix ? 'Sessiz MP4 doğrulaması' : 'Ses miksajı ve MP4 doğrulaması', 'export');
     const dir = this.store.dir(p.id),
       working = fs.mkdtempSync(path.join(dir, 'cache', 'mix-'));
     const work = (n: string) => path.join(working, n);
@@ -626,83 +776,108 @@ export class Production {
           await fs.promises.copyFile(original, work(clipName));
         }
         list.push(`file '${clipName}'`);
-        const foley = work(`bed-${i}.wav`);
-        atomic(foley, await soundBed(duration, s));
-        const aout = work(`mix-${i}.wav`);
-        const inputs = [
-          ...(scripted
-            ? ['-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=r=48000:cl=mono']
-            : ['-i', this.file(p, m.voice!.file)]),
-          '-i',
-          foley,
-          ...(m.sfx ? ['-i', this.file(p, m.sfx.file)] : []),
-        ];
-        await ff([
-          ...inputs,
-          '-filter_complex',
-          `[0:a]aresample=48000,apad,atrim=duration=${duration}[v];[1:a]volume=0.32[b];${m.sfx ? '[2:a]volume=0.2[fx];' : ''}[v][b]${m.sfx ? '[fx]' : ''}amix=inputs=${m.sfx ? 3 : 2}:duration=first:dropout_transition=0,volume=${m.sfx ? 3 : 2}[m]`,
-          '-map',
-          '[m]',
-          '-ar',
-          '48000',
-          '-ac',
-          '1',
-          '-c:a',
-          'pcm_s16le',
-          aout,
-        ]);
-        alist.push(`file 'mix-${i}.wav'`);
+        if (!silentMix) {
+          const foley = work(`bed-${i}.wav`);
+          atomic(foley, await soundBed(duration, s));
+          const aout = work(`mix-${i}.wav`);
+          const inputs = [
+            ...(scripted
+              ? ['-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=r=48000:cl=mono']
+              : ['-i', this.file(p, m.voice!.file)]),
+            '-i',
+            foley,
+            ...(m.sfx ? ['-i', this.file(p, m.sfx.file)] : []),
+          ];
+          await ff([
+            ...inputs,
+            '-filter_complex',
+            `[0:a]aresample=48000,apad,atrim=duration=${duration}[v];[1:a]volume=0.32[b];${m.sfx ? '[2:a]volume=0.2[fx];' : ''}[v][b]${m.sfx ? '[fx]' : ''}amix=inputs=${m.sfx ? 3 : 2}:duration=first:dropout_transition=0,volume=${m.sfx ? 3 : 2}[m]`,
+            '-map',
+            '[m]',
+            '-ar',
+            '48000',
+            '-ac',
+            '1',
+            '-c:a',
+            'pcm_s16le',
+            aout,
+          ]);
+          alist.push(`file 'mix-${i}.wav'`);
+        }
       }
       atomic(work('video.txt'), list.join('\n'));
-      atomic(work('audio.txt'), alist.join('\n'));
-      const duration = frames / 30;
-      const music = p.music ? this.file(p, p.music.file) : work('score.wav');
-      if (!p.music) atomic(music, await soundBed(duration));
-      const out = work('documentary.mp4');
-      await ff(
-        [
-          '-f',
-          'concat',
-          '-safe',
-          '1',
-          '-i',
-          'video.txt',
-          '-f',
-          'concat',
-          '-safe',
-          '1',
-          '-i',
-          'audio.txt',
-          '-stream_loop',
-          '-1',
-          '-i',
-          music,
-          '-filter_complex',
-          `[1:a]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][copy];[copy]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[det];[2:a]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo,atrim=duration=${duration},volume=${p.musicVolume},afade=t=in:d=0.5,afade=t=out:st=${Math.max(0, duration - 0.75)}:d=0.75,aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[bed];[bed][det]sidechaincompress=threshold=0.025:ratio=6:attack=20:release=300,aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[duck];[voice][duck]amix=inputs=2:duration=first:dropout_transition=0,volume=2,loudnorm=I=-16:TP=-1.5:LRA=9[a]`,
-          '-map',
-          '0:v:0',
-          '-map',
-          '[a]',
-          '-c:v',
-          'copy',
-          '-c:a',
-          'aac',
-          '-b:a',
-          '160k',
-          '-ar',
-          '48000',
-          '-ac',
-          '2',
-          '-t',
-          String(duration),
-          '-movflags',
-          '+faststart',
-          out,
-        ],
-        900000,
-        working,
-      );
-      await verifyVideo(out, frames, true);
+      const duration = frames / 30,
+        out = work('documentary.mp4');
+      if (silentMix) {
+        await ff(
+          [
+            '-f',
+            'concat',
+            '-safe',
+            '1',
+            '-i',
+            'video.txt',
+            '-map',
+            '0:v:0',
+            '-an',
+            '-c:v',
+            'copy',
+            '-movflags',
+            '+faststart',
+            out,
+          ],
+          900000,
+          working,
+        );
+      } else {
+        atomic(work('audio.txt'), alist.join('\n'));
+        const music = p.music ? this.file(p, p.music.file) : work('score.wav');
+        if (!p.music) atomic(music, await soundBed(duration));
+        await ff(
+          [
+            '-f',
+            'concat',
+            '-safe',
+            '1',
+            '-i',
+            'video.txt',
+            '-f',
+            'concat',
+            '-safe',
+            '1',
+            '-i',
+            'audio.txt',
+            '-stream_loop',
+            '-1',
+            '-i',
+            music,
+            '-filter_complex',
+            `[1:a]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][copy];[copy]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[det];[2:a]aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo,atrim=duration=${duration},volume=${p.musicVolume},afade=t=in:d=0.5,afade=t=out:st=${Math.max(0, duration - 0.75)}:d=0.75,aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[bed];[bed][det]sidechaincompress=threshold=0.025:ratio=6:attack=20:release=300,aformat=sample_fmts=dbl:sample_rates=48000:channel_layouts=stereo[duck];[voice][duck]amix=inputs=2:duration=first:dropout_transition=0,volume=2,loudnorm=I=-16:TP=-1.5:LRA=9[a]`,
+            '-map',
+            '0:v:0',
+            '-map',
+            '[a]',
+            '-c:v',
+            'copy',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '160k',
+            '-ar',
+            '48000',
+            '-ac',
+            '2',
+            '-t',
+            String(duration),
+            '-movflags',
+            '+faststart',
+            out,
+          ],
+          900000,
+          working,
+        );
+      }
+      await verifyVideo(out, frames, !silentMix);
       checkpoint();
       const id = randomUUID(),
         json = `subtitles/${id}.json`,
@@ -721,7 +896,10 @@ export class Production {
         ),
       );
       atomic(this.file(p, sub), srtFromCues(display));
-      p.final = this.publish(p, out, 'renders', 'mp4', mixKey, duration);
+      p.final = {
+        ...this.publish(p, out, 'renders', 'mp4', mixKey, duration),
+        hasAudio: !silentMix,
+      };
       p.subtitleFiles = { json, srt: sub };
       this.store.save(p);
     } finally {

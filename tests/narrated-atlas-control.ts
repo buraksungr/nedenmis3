@@ -217,7 +217,7 @@ async function main() {
     );
     if (strict && process.env.GITHUB_ACTIONS)
       console.log(
-        `::notice title=Verified ${story} film::${scenes.length} scenes; ${frames} frames at 30 FPS; ${subtitles.words.length} Whisper word times; ${calls.length} fixture TTS calls; ${imageCalls} image calls; cached second export. ${art ? `${art.source}. Each title and all ${scenes.length * 3} static archive layers distinguished in decoded film. Titles: ${p.scenes.map((s) => s.vector!.title).join(' / ')}` : 'Legacy board playback.'}`,
+        `::notice title=Verified ${story} film::${scenes.length} scenes; ${frames} frames at 30 FPS; ${subtitles.words.length} Whisper word times; ${calls.length} fixture TTS calls; ${imageCalls} image calls; cached second export. ${art ? `${art.source}. No fixed headings; all ${scenes.length * 3} static archive layers distinguished in decoded film. Metadata titles: ${p.scenes.map((s) => s.vector!.title).join(' / ')}` : 'Legacy board playback.'}`,
       );
     console.log(
       `Validated ${scenes.length} narrated ${story} scenes, ${frames} frames at 30 FPS (${(frames / 30).toFixed(2)}s). TTS fixture calls: ${calls.length}, image calls: ${imageCalls}. Alignment: ${scenes.map((s) => s.method).join(', ')}. MP4: ${path.join(out, filename + '.mp4')}`,

@@ -23,11 +23,12 @@ Windows x64 kurucusu. Yayıncı sertifikası yoktur. FFmpeg, FFprobe ve Remotion
 - Ölçülen storyboard sahne aralığı: **${clock.observedMs.join(' / ')} ms** (Gemini model yedekleri bekleme olmadan denenir).
 - Temiz Windows’a kuruldu, kurulu uygulama Edge ile kompozisyonu açtı. Rapor: \`install-report.json\` (iş artefaktında).
 
-- Yeni hareketli çizimler üç katman ve ana katmanda en az üç görünür yol ister; eski çizimler açılmaya devam eder.
-- Tam başlık denetimi ve başlık/altyazı bantları için 220–1460 güvenli kadrajı eklenmiştir.
-- Hareketli sahne geçişlerinde, sonraki görsel ve başlık önceki sahnenin altyazısı bitene kadar gösterilmez.
+- Sabit üst başlık kaldırıldı; arka plan 1080 × 1920 kareyi doldurur. Sahne başlığı yalnız proje bilgisidir; isteğe bağlı küçük, 1–2 sözcüklük bilimsel etiketler güvenli alanda kalır.
+- Yeni çizim istemi daha tutarlı anatomi, kontrast ve doğal toprak kenarlı tüneller ister; yeni \`move\` hareketlerinin dönüşümler sonrası toplam mesafesi sınırlanır. Eski imzalı çizimler okunmaya devam eder.
+- Storyboard’da **Sessiz taslağı oluştur**: en az bir hazır sahne varsa eksikler atlanır, süreler sahne ayarlarından tahmin edilir ve ses kanalı olmayan MP4 üretilir. TTS, Whisper, müzik ve efekt kullanılmaz; normal üretim kayıtları korunur.
+- Tümü anlatımsız ve kullanıcı sesi/müziği/efekti olmayan onaylı SVG projeleri de gerçekten sessiz MP4 üretir. Sesli tam üretim, altyazı, **Durdur** ve tek tıkla MP4 akışı korunur.
 
-Sabit kamera ve nesne bazlı \`data-anim\` hareketi, tek katmanlı sarı altyazı, **Durdur** ve tek tıkla MP4 akışı korunur. "Hareketli sahneleri planla" zararsız veya desteklenmeyen SVG etiketlerini (\`title\`, \`desc\`, \`style\`, SMIL, \`text\`, \`metadata\`…) temizler. \`script\`, \`iframe\`, \`foreignObject\`, \`image\`, JS olay öznitelikleri ve dış bağlantılar güvenlik gerekçesiyle çıkarılır.
+\`title\`, \`desc\`, \`style\`, SMIL, işaretlenmemiş \`text\` ve \`metadata\` gibi dekorlar temizlenir. Yalnız sınırlandırılmış \`data-keyword="true"\` metni kabul edilir. \`script\`, \`iframe\`, \`foreignObject\`, \`image\`, JS olay öznitelikleri ve dış bağlantılar güvenlik gerekçesiyle çıkarılır.
 `;
 fs.writeFileSync('out/render-control/release-notes.md', notes);
 console.log(`release notes: ${name} ${sha256}`);

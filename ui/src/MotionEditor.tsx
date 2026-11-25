@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Play, Pause, RefreshCw } from 'lucide-react';
 import { ObjectScene } from '../../composition/ObjectScene';
-import { ShotTitle } from '../../composition/ShotTitle';
 import type { ObjectFrame } from '../../shared/object-motion';
 import type { Project, Scene } from '../../shared/schema';
 import { api, Button } from './lib';
@@ -22,10 +21,7 @@ export function MotionPreview({ project, s, frame }: { project: string; s: Scene
     return () => c.abort();
   }, [project, s.id, s.choreography?.digest]);
   return data && data.ref.digest === s.choreography?.digest ? (
-    <>
-      <ObjectScene scene={data} frame={frame} />
-      <ShotTitle title={data.ref.title} />
-    </>
+    <ObjectScene scene={data} frame={frame} />
   ) : (
     <span className="help">{error || 'SVG yükleniyor…'}</span>
   );
