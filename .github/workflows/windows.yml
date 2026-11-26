@@ -104,6 +104,8 @@ jobs:
             out/render-control/svg-atlas-report.json
             out/render-control/caption-plate-report.json
             out/render-control/draft-control-report.json
+            out/render-control/eye-transition-control.mp4
+            out/render-control/eye-transition-report.json
             out/render-control/static-fade-report.json
             out/render-control/install-report.json
             out/render-control/planner-clock.json
@@ -235,6 +237,6 @@ jobs:
           export EXPECTED_SHA256="$(sha256sum "$exe" | cut -d ' ' -f 1)"
           node scripts/release-notes.mjs
           cmp "$RUNNER_TEMP/verified-release-notes.md" out/render-control/release-notes.md
-          gh release create "$tag" "$exe" --verify-tag --title "Nedenmiş Studio $version · tam kadraj · sessiz taslak" --notes-file out/render-control/release-notes.md --latest
+          gh release create "$tag" "$exe" --verify-tag --title "Nedenmiş Studio $version · güvenli kayıt · görünür bilimsel çizimler" --notes-file out/render-control/release-notes.md --latest
           url="$(gh release view "$tag" --json url --jq .url)"
           printf '## Windows kurucusu yayınlandı\n\n%s\n' "$url" >> "$GITHUB_STEP_SUMMARY"

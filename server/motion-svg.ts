@@ -1,6 +1,8 @@
 import { SVGPathData } from 'svg-pathdata';
 import { layers, type Geometry } from '../shared/vector';
 import { parseGeometry, serialize, InvalidDrawing, MAX_XML, healXml } from './layered-svg';
+import { I, matrix, mul, type Matrix } from './svg-transform';
+import { validateVisualQuality } from './svg-quality';
 const fail = (s: string): never => {
   throw new InvalidDrawing(s);
 };
@@ -28,46 +30,14 @@ export function parseSubjectRig(xml: string) {
     fail('İllüstrasyonun tamamı hareket etmemeli; hareket yalnız sahne öğelerine ait olmalı.');
   return { root, canonical: canonical(root, cleanup) };
 }
-// Track placement without a browser; catch co-located clones / invisible transforms without
-// a pixel-count or background-complexity gate. The SVG renderer remains the source of pixels.
-type Matrix = [number, number, number, number, number, number];
-const I: Matrix = [1, 0, 0, 1, 0, 0];
-function mul([a, b, c, d, e, f]: Matrix, [g, h, i, j, k, l]: Matrix): Matrix {
-  return [
-    a * g + c * h,
-    b * g + d * h,
-    a * i + c * j,
-    b * i + d * j,
-    a * k + c * l + e,
-    b * k + d * l + f,
-  ];
-}
-function matrix(s = '') {
-  let m = I;
-  for (const [, name, args] of s.matchAll(/(\w+)\(([^()]*)\)/g)) {
-    const n = args
-        .trim()
-        .split(/[ ,\s]+/)
-        .map(Number),
-      [a, b = 0, c = 0] = n,
-      angle = (a * Math.PI) / 180,
-      cos = Math.cos(angle),
-      sin = Math.sin(angle);
-    let t: Matrix;
-    if (name === 'matrix') t = n as Matrix;
-    else if (name === 'translate') t = [1, 0, 0, 1, a, b];
-    else if (name === 'scale') t = [a, 0, 0, n[1] ?? a, 0, 0];
-    else if (name === 'rotate')
-      t = [cos, sin, -sin, cos, b - b * cos + c * sin, c - b * sin - c * cos];
-    else t = name === 'skewX' ? [1, 0, Math.tan(angle), 1, 0, 0] : [1, Math.tan(angle), 0, 1, 0, 0];
-    m = mul(m, t);
-  }
-  return m;
-}
+// Track placement without a browser; the SVG renderer remains the source of pixels.
 // New model responses must contain a real, multi-part illustration. This is
 // deliberately separate from parseStage: previously signed scenes must remain
 // readable even when they predate the current art-direction contract.
-export function validateNewStage(root: Geometry) {
+export function validateNewStage(
+  root: Geometry,
+  context: { topic?: string; narration?: string } = {},
+) {
   const groups = layers.map((id) => root.children.find((n) => n.tag === 'g' && n.attrs.id === id));
   if (groups.some((n) => !n))
     fail('Yeni çizimde kökte layer-bg, layer-main ve layer-fx grupları gerekli.');
@@ -119,6 +89,7 @@ export function validateNewStage(root: Geometry) {
     fail(
       'layer-main içinde en az 3 görünür, anlamlı <path> gerekli; yalnız ilkel şekiller veya boş yollar yeterli değil.',
     );
+  validateVisualQuality(root, context);
   // Limit new movement in OUTPUT pixels, after ancestor scale/rotation and viewBox
   // fitting. This catches large excursions without reinterpreting signed archives.
   // Geometry alone cannot prove that a path stays inside a semantic tunnel: the

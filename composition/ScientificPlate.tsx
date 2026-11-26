@@ -6,6 +6,7 @@ import {
   ease,
   seq,
   TextBlock,
+  KeywordVisibility,
   Specimen,
   ArtLayer,
   PlateGlyph,
@@ -359,11 +360,13 @@ export function ScientificPlate({
   frame,
   frames,
   artHref,
+  showKeywords = true,
 }: {
   artHref?: string;
   plan: SvgPlan;
   frame: number;
   frames: number;
+  showKeywords?: boolean;
 }) {
   const Drawing = drawings[plan.template];
   // Archived plans can contain headings and sentences. Keep at most two short
@@ -391,29 +394,31 @@ export function ScientificPlate({
     extrapolateLeft: 'clamp',
   });
   return (
-    <ArtLayer.Provider value={{ href: artHref, frame }}>
-      <svg
-        viewBox="0 0 540 960"
-        width="100%"
-        height="100%"
-        preserveAspectRatio="xMidYMid meet"
-        role="img"
-        aria-label={plan.title}
-        style={{ display: 'block', background: dark, fontFamily: 'Arial, sans-serif' }}
-      >
-        <rect width="540" height="960" fill={dark} />
-        {artHref &&
-          ![
-            'FocusCalloutScene',
-            'TitleHookScene',
-            'SplitCauseEffectScene',
-            'CycleLoopScene',
-            'CrossSectionScene',
-          ].includes(plan.template) && <Specimen plan={plan} x={440} y={252} size={76} />}
-        <Drawing plan={artworkPlan} frame={frame} progress={progress} />
-        {/* The lower safe area belongs exclusively to Film's timed caption track. */}
-      </svg>
-    </ArtLayer.Provider>
+    <KeywordVisibility.Provider value={showKeywords}>
+      <ArtLayer.Provider value={{ href: artHref, frame }}>
+        <svg
+          viewBox="0 0 540 960"
+          width="100%"
+          height="100%"
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label={plan.title}
+          style={{ display: 'block', background: dark, fontFamily: 'Arial, sans-serif' }}
+        >
+          <rect width="540" height="960" fill={dark} />
+          {artHref &&
+            ![
+              'FocusCalloutScene',
+              'TitleHookScene',
+              'SplitCauseEffectScene',
+              'CycleLoopScene',
+              'CrossSectionScene',
+            ].includes(plan.template) && <Specimen plan={plan} x={440} y={252} size={76} />}
+          <Drawing plan={artworkPlan} frame={frame} progress={progress} />
+          {/* The lower safe area belongs exclusively to Film's timed caption track. */}
+        </svg>
+      </ArtLayer.Provider>
+    </KeywordVisibility.Provider>
   );
 }
 // An incoming diagram dissolves to its opening frame, exactly matching its own clip's first frame.

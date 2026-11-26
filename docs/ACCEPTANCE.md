@@ -1,4 +1,4 @@
-# Windows kabul kontrolü · 1.7.1
+# Windows kabul kontrolü · 1.7.2
 
 Bu bir elle kontrol listesidir, test sonucu değil. Çalıştırma kimlikleri ve ölçümler için [VALIDATION](VALIDATION.md).
 
@@ -9,5 +9,7 @@ Bu bir elle kontrol listesidir, test sonucu değil. Çalıştırma kimlikleri ve
 5. En az bir sahne hazır, bir diğeri eksikken storyboard’u onaylamadan **Sessiz taslağı oluştur** seçin. X/Y sayısını ve sahnelerin sırasını kontrol edin. İndirilen MP4’te yalnız hazır sahneler ve tahmini süreler olmalı; FFprobe ile ses kanalı bulunmadığını doğrulayın. TTS/Whisper isteği yapılmamalı. Taslağı durdurup tekrar üretin; mevcut ses, altyazı ve normal üretim dosyaları korunmalı.
 6. Tüm çizimleri tamamlayın. **Onayla ve üret** ile Türkçe ses → Whisper → 1080 × 1920 H.264/AAC MP4 üretin ve oynatın. Ses süresi, tam sözcük sırası, tek altyazı ve söylenen sözcükte `#FACC15` vurgusu kontrol edilmeli. Tahmini cümleler akustik kabul sayılmaz.
 7. Yalnız bir sahneyi yeni yönle çizin. Yanlış yanıt mevcut çizim/MP4’ün yerine geçmemeli; başarılı değişiklikte komşu geçiş dışında diğer klipler, WAV ve sözcük zamanları korunmalı. Geri al, durdurulmuş render’dan devam, oynatma ve ZIP yedeğini sınayın.
+8. **Göz bebeği / karanlıkta görme** konusunda yeni bir storyboard üretin. Sklera, göz kapağı, iris lifleri ve göz bebeği veya kornea/mercek/retina ve ışınlar sahneye uygun biçimde seçilmeli; koyu zemin üzerinde silik koyu ana şekiller, anlamsız siyah kutular ve boş halkalar kabul edilmemeli. Gerçek sağlayıcı yanıtının bilimsel doğruluğu ve her karede kontrastı gözle değerlendirilmelidir.
+9. Etiketli iki sahnenin geçişini kare kare izleyin: giden etiket yeni görselin altında silik kalmamalı, gelen etiket kendi sahnesinde görünmeli. Windows’ta dosya kilidi simülasyonunda `EPERM`/`EBUSY` tekrarları ve kopyalama, gerçek render ilerleme hatasında uygulamanın çalışmayı sürdürmesi doğrulanmalı.
 
 `test:ant` yayımlanan MP4’ün çözümlenmiş kareleri üzerinde, her sahnede iki uzak dekor ayrıntısının kontrast kenarlarını geçiş dışında **her karede** izler. Ayrı deneyde altı nesneyi birer birer ilk pozuna döndürür ve yalnız değişen pikselleri doğru Remotion karesiyle karşılaştırır. Bu test kayıtlı çizim yanıtları ve atıflı QA sesini kullanır; canlı sağlayıcı kalitesi/ücretlendirmesi için listeyi ayrıca çalıştırın. İsteğe bağlı `require_live` ek işi gerçek metin servisiyle yeni SVG planını sınar ve eksik yetkide hata verir.

@@ -43,6 +43,7 @@ import {
   now,
   requireThat,
   scriptSig,
+  summary,
 } from './store';
 const short = z.string().trim().min(2).max(240),
   txt = z.string().trim().max(10000),
@@ -98,6 +99,27 @@ export function createStudio(
   let busy: Operation | null = null,
     activeProject: Project | null = null,
     setup = { working: false, message: '' };
+  // If even the final status cannot be written, retain the live project in memory,
+  // report the disk problem instead of a stale "working" state, and retry on reads.
+  // Editing is blocked until that exact in-memory revision has been saved.
+  const pendingSaves = new Map<string, { project: Project; attemptedAt: number }>();
+  const diskProblem =
+    'Projenin son durumu diske kaydedilemedi. Disk erişimini kontrol edin; uygulamayı kapatmadan yeniden deneyin.';
+  function readProject(id: string, force = false): Project {
+    const pending = pendingSaves.get(id);
+    if (!pending) return store.get(id);
+    if (force || Date.now() - pending.attemptedAt >= 350) {
+      pending.attemptedAt = Date.now();
+      if (prod.persistJob(pending.project)) {
+        pendingSaves.delete(id);
+        return pending.project;
+      }
+    }
+    return {
+      ...pending.project,
+      job: { ...pending.project.job, state: 'failed', runId: undefined, label: diskProblem },
+    };
+  }
   app.disable('x-powered-by');
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -133,7 +155,8 @@ export function createStudio(
   const idle = () =>
     requireThat(!busy && !setup.working, 'Başka bir işlem sürüyor; tamamlanmasını bekleyin.');
   function writable(req: express.Request) {
-    const p = store.get(String(req.params.id));
+    const p = readProject(String(req.params.id), true);
+    requireThat(!pendingSaves.has(p.id), diskProblem, 503);
     requireThat(busy?.owner !== p.id, 'Proje işleniyor.');
     const rev = req.get('If-Match');
     requireThat(
@@ -160,7 +183,7 @@ export function createStudio(
             label: STOPPING,
             at: now(),
           };
-          store.save(activeProject);
+          prod.persistJob(activeProject, true);
         }
         if (setup.working) setup.message = STOPPING;
       } finally {
@@ -197,8 +220,13 @@ export function createStudio(
     const op = new Operation(p.id, 'İşlem başlatıldı');
     store.checkpoint(p);
     p.job = { state: 'working', runId: op.id, label: op.label, kind, at: now() };
-    store.save(p);
-    store.log(p);
+    if (!prod.persistJob(p, true)) {
+      // save() may have replaced project.json but failed to update the index. Do
+      // not leave a fictitious running job on disk when no operation was started.
+      p.job = { state: 'failed', kind, label: diskProblem, at: now() };
+      pendingSaves.set(p.id, { project: p, attemptedAt: Date.now() });
+      throw new Issue(503, diskProblem);
+    }
     busy = op;
     activeProject = p;
     setImmediate(async () => {
@@ -222,8 +250,8 @@ export function createStudio(
             };
       } finally {
         try {
-          store.save(p);
-          store.log(p);
+          if (!prod.persistJob(p, true))
+            pendingSaves.set(p.id, { project: p, attemptedAt: Date.now() });
         } finally {
           activeProject = null;
           busy = null;
@@ -254,7 +282,16 @@ export function createStudio(
     r.json({ suggestion });
   });
 
-  app.get('/api/projects', (_q, r) => r.json(store.list()));
+  app.get('/api/projects', (_q, r) => {
+    const items = store.list();
+    for (const id of pendingSaves.keys()) {
+      const item = summary(readProject(id));
+      const index = items.findIndex((x) => x.id === id);
+      if (index < 0) items.push(item);
+      else items[index] = item;
+    }
+    r.json(items.sort((a, b) => b.updated.localeCompare(a.updated)));
+  });
   app.post('/api/projects', (q, r) => {
     const b = z
       .object({
@@ -271,7 +308,7 @@ export function createStudio(
     }
     r.status(201).json(p);
   });
-  app.get('/api/projects/:id', (q, r) => r.json(store.get(q.params.id)));
+  app.get('/api/projects/:id', (q, r) => r.json(readProject(q.params.id)));
   app.post('/api/projects/:id/script', (q, r) => {
     const p = writable(q);
     const b = z.object({ text: txt, approve: z.boolean().optional() }).parse(q.body);
@@ -297,13 +334,13 @@ export function createStudio(
     r.json({ ref, drawing });
   });
   app.get('/api/projects/:id/motion/:scene', (q, r) => {
-    const p = store.get(q.params.id),
+    const p = readProject(q.params.id),
       s = find(p, q.params.scene);
     requireThat(s.visualMode === 'motion-svg', 'Bu sahnede hareket planı yok.', 404);
     r.json(motionFrame(store.dir(p.id), s.choreography, s.narration));
   });
   app.get('/api/projects/:id/draft-status', (q, r) => {
-    const p = store.get(q.params.id);
+    const p = readProject(q.params.id);
     r.json({ ready: prod.draftReadyScenes(p).length, total: p.scenes.length });
   });
   app.post('/api/projects/:id/board', (q, r) => {
@@ -552,7 +589,8 @@ export function createStudio(
     r.sendFile(target);
   });
   app.get('/api/projects/:id/backup', (q, r) => {
-    const p = store.get(q.params.id);
+    const p = readProject(q.params.id, true);
+    requireThat(!pendingSaves.has(p.id), diskProblem, 503);
     requireThat(busy?.owner !== p.id, 'Yedekleme için işlemin bitmesini bekleyin.');
     r.attachment(`Nedenmis-${p.id.slice(0, 8)}.zip`);
     const a = archiver('zip', { zlib: { level: 1 } });

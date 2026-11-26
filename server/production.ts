@@ -73,12 +73,33 @@ export const draftInputs = (p: Project) =>
     ]),
   );
 export class Production {
+  // Per in-memory project: a render may report hundreds of frames per second.
+  // Remember attempts, not only successes, so a locked disk is not hammered.
+  private readonly progressWrites = new WeakMap<Project, number>();
   constructor(
     private store: Store,
     private g: Gemini,
     private paths: Paths,
     private readonly runWhisper = readWhisper,
   ) {}
+  /** Progress/status writes must never escape a Remotion callback or async job finalizer. */
+  persistJob(p: Project, log = false): boolean {
+    let saved = false;
+    try {
+      this.store.save(p);
+      saved = true;
+    } catch (e) {
+      console.error(`[Üretim] Proje durumu kaydedilemedi (${p.id}): ${errorDetail(e)}`);
+    }
+    if (log) {
+      try {
+        this.store.log(p);
+      } catch (e) {
+        console.error(`[Üretim] İlerleme günlüğü yazılamadı (${p.id}): ${errorDetail(e)}`);
+      }
+    }
+    return saved;
+  }
   file(p: Project, rel: string) {
     const base = this.store.dir(p.id),
       file = path.resolve(base, rel);
@@ -97,9 +118,19 @@ export class Production {
     const op = operation();
     if (op?.signal.aborted) return;
     if (op) op.label = label;
-    p.job = { runId: p.job.runId, state: 'working', label, kind, scene, progress, at: now() };
-    this.store.save(p);
-    if (progress === undefined) this.store.log(p);
+    const previous = p.job,
+      changed =
+        previous.state !== 'working' ||
+        previous.label !== label ||
+        previous.kind !== kind ||
+        previous.scene !== scene,
+      finished = progress !== undefined && progress >= 100 && (previous.progress ?? -1) < 100,
+      time = Date.now(),
+      last = this.progressWrites.get(p);
+    p.job = { runId: previous.runId, state: 'working', label, kind, scene, progress, at: now() };
+    if (!changed && !finished && last !== undefined && time >= last && time - last < 350) return;
+    this.progressWrites.set(p, time);
+    this.persistJob(p, progress === undefined);
   }
   private temp(p: Project, ext: string) {
     return this.file(p, `cache/${randomUUID()}.${ext}`);
@@ -425,7 +456,7 @@ export class Production {
         nextObjects?.ref.title ??
         (next?.visualMode === 'illustration' ? next.cinema?.title : undefined);
     const key = hash(
-      'film-6-full-bleed-no-heading',
+      'film-7-clean-keyword-transitions',
       ...(objects || nextObjects ? ['object-safe-frame-and-caption-sync-v2'] : []),
       ...(title || nextTitle ? ['fixed-object-stage-v1', title, nextTitle] : []),
       objects
@@ -479,7 +510,6 @@ export class Production {
       sentenceCaptions,
     };
     const output = options.draftOutput ?? this.temp(p, 'mp4');
-    let last = 0;
     const lease = operation();
     let renderOpen = true;
     const { renderMedia } = await import('@remotion/renderer');
@@ -494,8 +524,7 @@ export class Production {
           x264Preset: 'veryfast',
           outputLocation: output,
           onProgress: ({ progress }) => {
-            if (renderOpen && !lease?.signal.aborted && Date.now() - last > 1000) {
-              last = Date.now();
+            if (renderOpen && !lease?.signal.aborted)
               this.tick(
                 p,
                 draft ? 'Sessiz taslak: sahne kareleri işleniyor' : 'Sahne kareleri işleniyor',
@@ -503,7 +532,6 @@ export class Production {
                 s.id,
                 Math.round(progress * 100),
               );
-            }
           },
         }),
       );
@@ -551,7 +579,7 @@ export class Production {
         ),
       })),
       frames = scenes.reduce((sum, s) => sum + s.frames, 0),
-      key = hash('silent-draft-render-v1', draftInputs(p), scenes),
+      key = hash('silent-draft-render-v2-clean-keywords', draftInputs(p), scenes),
       label = `${ready.length}/${p.scenes.length} hazır sahne • Sessiz taslak`;
     if (this.usable(p, p.draft?.asset, key) && p.draft?.total === p.scenes.length) {
       await verifyVideo(this.file(p, p.draft.asset.file), frames, false);

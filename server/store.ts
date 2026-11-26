@@ -37,11 +37,38 @@ export class ProviderHttpIssue extends Issue {}
 export function requireThat(v: unknown, msg: string, status = 409): asserts v {
   if (!v) throw new Issue(status, msg);
 }
+// Windows virus scanners, indexers and readers can briefly hold the destination open.
+// Synchronous waiting is intentional: Store.save is synchronous and its callers must not
+// observe a successful save before the replacement has actually completed.
+const renameDelays = [15, 30, 50, 75, 100];
+const transientRename = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const sleepCell = new Int32Array(new SharedArrayBuffer(4));
 export function atomic(file: string, data: string | Buffer) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + '.' + randomUUID() + '.tmp';
-  fs.writeFileSync(tmp, data, { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, data, { mode: 0o600 });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.renameSync(tmp, file);
+        return;
+      } catch (e) {
+        if (!transientRename.has((e as NodeJS.ErrnoException)?.code ?? '')) throw e;
+        if (attempt === renameDelays.length) break;
+        Atomics.wait(sleepCell, 0, 0, renameDelays[attempt]);
+      }
+    }
+    // A last resort for Windows sharing violations. Unlike rename this is not
+    // atomic, but never delete the old file first; propagate any copy failure.
+    fs.copyFileSync(tmp, file);
+    console.warn('[Kayıt] Geçici dosya yeniden adlandırılamadı; kopyalayarak kaydedildi.');
+  } finally {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      // Rename may already have moved it, or another process may still hold it.
+    }
+  }
 }
 export const scriptSig = (p: Project) => hash(normalize(p.script));
 export const shotContext = (subject: string, narration: string) =>

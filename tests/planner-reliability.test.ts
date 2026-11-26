@@ -25,7 +25,7 @@ const success = (provider: Provider, value: unknown) =>
 
 // Compact, valid controlled replies. The richer archived motion fixtures remain unchanged.
 function compactStage(scene: number) {
-  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#194057"/></g><g id="layer-main"><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/><path d="M180 850Q260 780 340 850L330 900H190Z" fill="#c87d55"/><path d="M400 960Q510 870 620 960L610 1010H410Z" fill="#ab6f50"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></g><g id="layer-fx"/></svg>`;
+  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#194057"/></g><g id="layer-main"><g id="set"><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/></g><path d="M180 850Q260 780 340 850L330 900H190Z" fill="#c87d55"/><path d="M400 960Q510 870 620 960L610 1010H410Z" fill="#c98f65"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></g><g id="layer-fx"/></svg>`;
   assert.ok(svg.length < 3500);
   return { title: titles[scene - 1], svg };
 }

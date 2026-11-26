@@ -1,5 +1,16 @@
 # Doğrulama kaydı
 
+## 1.7.2 — kayıt kilitleri, görünür çizimler ve temiz etiket geçişi
+
+- **Yerel kontroller:** TypeScript, tarayıcı betiğinin sözdizimi, 111 birim testi ve üretim derlemesi geçti. `EPERM`/`EBUSY` yeniden denemeleri, `EACCES` sonrası kopyalama, temizleme, ilerlemenin 350 ms aralıklı yazılması ve kalıcı kayıt hatasından kurtarma ayrı test edildi.
+- **Gerçek MP4, çevrimdışı çizim:** Elle hazırlanmış iki göz illüstrasyonu 36’şar karelik H.264 klipler olarak işlendi. İlk etiketin ölçülen beyaz pikselleri geçiş öncesi 450, örtüşmedeki dört örneğin her birinde 0; gelen etiketin ilk karede 1082 idi. Gerçek render ilerlemesine benzetilmiş bir `EPERM` enjekte edildi ve işlem tamamlandı. Hiç sağlayıcı çağrısı yapılmadı; bu bir canlı model veya bilimsel doğruluk kabulü değildir.
+- **Diğer regresyonlar:** Gerçek 1080 × 1920 sesli MP4, statik fotoğraf/SVG geçişleri ve altyazılar; 2/4 sahnelik sessiz taslak, eski taslak önbelleğinin yenilenmesi ve tam sessiz çıktı doğrulandı. Gerçek render ve sessiz taslak durdurulup devam ettirildi; önceki klip, ses ve zamanlar korundu. Yerel Chromium’da storyboard, 1/2 sessiz taslak, tek tık sesli çıktı, oynatma ve dar ekran akışı geçti. Bu yerel testlerin ses hizalamasında tahmini zamanlar kullanıldı.
+- **Sınır ve Windows:** Yeni çizimlerdeki kontrast/şekil denetimi yaklaşık bir ön kontroldür; her karedeki yerel kontrastı, anatomik doğruluğu veya canlı modelin kalitesini garanti etmez. Windows iş akışı ayrıca birim/MP4/Edge/kurulum ve ayrı gerçek CPU Whisper kontrolleri başarılıysa etiketle eşleşen kurucuyu yayımlar. Sonuçlar [Actions](https://github.com/buraksungr/nedenmis3/actions) ve ilgili [yayın](https://github.com/buraksungr/nedenmis3/releases/tag/v1.7.2) üzerinden incelenmelidir.
+
+## 1.7.1 — tam kadraj ve sessiz taslak
+
+[Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/45700518609) · [Kurucu](https://github.com/buraksungr/nedenmis3/releases/tag/v1.7.1) · kaynak `e222a68052628b21720a079d1dffcf91ae8ec256`. 97 birim testi, Windows kurulum ve CPU Whisper işi geçti; karınca testinde 52 gerçek Whisper sözcüğü, sıfır tahmini sahne ölçüldü. Kurucu SHA-256: `f0160257e8472adcc0a945ff8fdaca1dd167a3fb72f1d6ce103f04ff353d106f`. Test çizimleri ve sesleri canlı sağlayıcı kabulü değildir.
+
 ## 1.6.3 — `<use>` kabulü ve sessiz SVG temizleme
 
 **[Windows kurucu · v1.6.3](https://github.com/buraksungr/nedenmis3/releases/tag/v1.6.3)** · [Windows CI](https://github.com/buraksungr/nedenmis3/actions/runs/44843143507) · Kaynak: [`907880b25ba2`](https://github.com/buraksungr/nedenmis3/commit/907880b25ba2b85361063f1103a17bf913d42908).

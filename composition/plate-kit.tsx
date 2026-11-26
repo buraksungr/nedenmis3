@@ -14,6 +14,7 @@ export const ease = (x: number, l = 0, r = 1) =>
     extrapolateRight: 'clamp',
   });
 export const seq = (n: number) => Array.from({ length: n }, (_, i) => i);
+export const KeywordVisibility = createContext(true);
 export const num = (v: number) =>
   new Intl.NumberFormat('tr-TR', {
     maximumFractionDigits: 1,
@@ -38,8 +39,10 @@ export function TextBlock({
   weight?: number;
   anchor?: 'start' | 'middle' | 'end';
 }) {
+  const showKeywords = useContext(KeywordVisibility);
   // Legacy plans are displayed at 2×. Bound even their old long labels to the
   // same small, upper artwork region as new keywords (captions own the bottom).
+  if (!showKeywords) return null;
   const fontSize = Math.min(size, 20),
     safeY = Math.min(y, 570);
   const measure = (line: string) =>

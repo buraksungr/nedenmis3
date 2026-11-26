@@ -13,9 +13,9 @@ import { captionGroupAt } from '../shared/captions';
 import type { Word } from '../shared/schema';
 import { dissolveAt } from './fade';
 import type { SvgPlan } from '../shared/svg';
-import { AnimatedPlate } from './ScientificPlate';
+import { ScientificPlate } from './ScientificPlate';
 import { CaptionOverlay } from './CaptionOverlay';
-import { AnimatedVector } from './VectorScene';
+import { VectorScene } from './VectorScene';
 import type { VectorFrame } from '../shared/vector';
 export type FilmProps = {
   objects?: ObjectFrame;
@@ -44,7 +44,9 @@ const still: React.CSSProperties = {
   height: '100%',
   objectFit: 'cover',
 };
-export function Film({
+// Pure frame component also lets browser and encoded-film tests inspect the exact
+// transition without mocking Remotion's timeline hooks.
+export function FilmFrame({
   objects,
   nextObjects,
   svg,
@@ -59,10 +61,11 @@ export function Film({
   subtitleSize,
   highlight,
   sentenceCaptions = false,
-}: FilmProps) {
-  const f = useCurrentFrame(),
-    { durationInFrames, fps } = useVideoConfig(),
-    t = f / fps;
+  frame: f,
+  fps,
+  durationInFrames,
+}: FilmProps & { frame: number; fps: number; durationInFrames: number }) {
+  const t = f / fps;
   const cap = captionGroupAt(words, t, sentenceCaptions);
   // Do not show the next motion scene under the outgoing scene's subtitles.
   // Preserve the normal crossfade for legacy photo/atlas sequences.
@@ -77,27 +80,41 @@ export function Film({
   return (
     <AbsoluteFill style={{ backgroundColor: '#101514' }}>
       {objects ? (
-        <ObjectScene scene={objects} frame={f} fps={fps} />
+        <ObjectScene scene={objects} frame={f} fps={fps} showKeywords={alpha === 0} />
       ) : vector ? (
-        <AnimatedVector scene={vector} />
+        <VectorScene scene={vector} frame={f} />
       ) : svg ? (
-        <AnimatedPlate plan={svg} artHref={artHref} />
+        <ScientificPlate
+          plan={svg}
+          artHref={artHref}
+          frame={f}
+          frames={durationInFrames}
+          showKeywords={alpha === 0}
+        />
       ) : (
         image && <Img src={image} style={still} />
       )}
-      {/* Source-over on the opaque first photo gives (1-alpha)*old + alpha*new. */}
+      {/* Artwork alone dissolves. Neither outgoing nor incoming keywords are
+          composited during the overlap, so an old label cannot ghost through
+          the new scene. The new label appears on its own clip's first frame. */}
       {alpha > 0 &&
         (nextObjects ? (
           <AbsoluteFill style={{ opacity: alpha }}>
-            <ObjectScene scene={nextObjects} frame={0} fps={fps} />
+            <ObjectScene scene={nextObjects} frame={0} fps={fps} showKeywords={false} />
           </AbsoluteFill>
         ) : nextVector ? (
           <AbsoluteFill style={{ opacity: alpha }}>
-            <AnimatedVector scene={nextVector} opening />
+            <VectorScene scene={nextVector} frame={0} />
           </AbsoluteFill>
         ) : nextSvg ? (
           <AbsoluteFill style={{ opacity: alpha }}>
-            <AnimatedPlate plan={nextSvg} artHref={nextArtHref} opening />
+            <ScientificPlate
+              plan={nextSvg}
+              artHref={nextArtHref}
+              frame={0}
+              frames={durationInFrames}
+              showKeywords={false}
+            />
           </AbsoluteFill>
         ) : (
           next && <Img src={next} style={{ ...still, opacity: alpha }} />
@@ -113,6 +130,11 @@ export function Film({
       )}
     </AbsoluteFill>
   );
+}
+export function Film(props: FilmProps) {
+  const frame = useCurrentFrame(),
+    { fps, durationInFrames } = useVideoConfig();
+  return <FilmFrame {...props} frame={frame} fps={fps} durationInFrames={durationInFrames} />;
 }
 const defaults: FilmProps = {
   image: '',

@@ -141,10 +141,12 @@ export function ObjectScene({
   scene,
   frame,
   fps = 30,
+  showKeywords = true,
 }: {
   scene: ObjectFrame;
   frame: number;
   fps?: number;
+  showKeywords?: boolean;
 }) {
   const scope = 'm' + useId().replace(/[^\w-]/g, '') + '-',
     r = scope + 'rig-',
@@ -153,7 +155,9 @@ export function ObjectScene({
     box = viewBox.split(' ').map(Number),
     foreground = fittedSafeRect(viewBox, 1460),
     keyword = fittedSafeRect(viewBox, 1220),
-    ordered = stage.children.flatMap((n) => pieces(n, box, true));
+    ordered = stage.children
+      .flatMap((n) => pieces(n, box, true))
+      .filter((piece) => showKeywords || piece.zone !== 'keyword');
   return (
     <svg
       data-motion-stage={scene.ref.digest}

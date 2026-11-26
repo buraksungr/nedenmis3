@@ -7,7 +7,7 @@ import { Gemini } from '../server/gemini';
 import { invalidate } from '../server/invalidate';
 import { ff, probe, verifyVideo } from '../server/media';
 import { saveMotion } from '../server/motion-files';
-import { framesForVoice, Production } from '../server/production';
+import { draftInputs, framesForVoice, Production } from '../server/production';
 import { approveBoard, hash, makeProject, scriptSig, Store } from '../server/store';
 import { memoryVault } from '../server/vault';
 
@@ -141,6 +141,15 @@ export async function draftRenderControl(out: string) {
     const cached = p.draft.asset.file;
     await prod.exportDraft(p);
     assert.equal(p.draft.asset.file, cached);
+    // A v1.7.1 draft can contain ghosted keywords. Re-render it instead of
+    // returning the otherwise valid old MP4 when only the renderer changed.
+    p.draft.asset.key = hash('silent-draft-render-v1', draftInputs(p), p.draft.scenes);
+    await prod.exportDraft(p);
+    assert.notEqual(p.draft.asset.file, cached, 'legacy draft cache must be regenerated');
+    assert.deepEqual(
+      { final: p.final, subtitleFiles: p.subtitleFiles, assets: p.assets },
+      previous,
+    );
     const beforeFailure = structuredClone(p);
     p.subtitleSize += 1;
     const broken = new Production(store, g, { ...paths, composition: path.join(root, 'missing') });

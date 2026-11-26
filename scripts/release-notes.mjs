@@ -23,8 +23,10 @@ Windows x64 kurucusu. Yayıncı sertifikası yoktur. FFmpeg, FFprobe ve Remotion
 - Ölçülen storyboard sahne aralığı: **${clock.observedMs.join(' / ')} ms** (Gemini model yedekleri bekleme olmadan denenir).
 - Temiz Windows’a kuruldu, kurulu uygulama Edge ile kompozisyonu açtı. Rapor: \`install-report.json\` (iş artefaktında).
 
-- Sabit üst başlık kaldırıldı; arka plan 1080 × 1920 kareyi doldurur. Sahne başlığı yalnız proje bilgisidir; isteğe bağlı küçük, 1–2 sözcüklük bilimsel etiketler güvenli alanda kalır.
-- Yeni çizim istemi daha tutarlı anatomi, kontrast ve doğal toprak kenarlı tüneller ister; yeni \`move\` hareketlerinin dönüşümler sonrası toplam mesafesi sınırlanır. Eski imzalı çizimler okunmaya devam eder.
+- Windows’ta geçici \`EPERM\`, \`EBUSY\` ve \`EACCES\` yeniden adlandırma hataları kısa artan aralıklarla yeniden denenir; son çare kopyalama atomik değildir. İlerleme kayıtları seyreltilir; kalıcı disk hatası bildirilir ve proje güvenli biçimde yeniden denenir.
+- Yeni çizim istemi yüksek kontrast ve konuya uygun somut bilimsel anatomi ister. Göz sahnelerinde iris lifleri, sklera, kornea/mercek, retina ve ışınlar örneklenir. Yeni sahnelerde tespit edilebilir çok düşük kontrast ve boş göz halkaları/kutuları onarıma gönderilir; karmaşık çizimlerde görsel ve bilimsel doğruluk yine kullanıcı kontrolü gerektirir. Eski imzalı çizimler okunmaya devam eder.
+- Geçişte giden ve gelen anahtar kelimeler gizlenir; yeni etiket kendi sahnesinde görünür. Klip ve sessiz taslak önbelleği yeniden render için güncellendi. Çevrimdışı göz çizimiyle kodlanmış MP4’ün geçiş pikselleri ve gerçek render ilerlemesinde benzetilmiş \`EPERM\` sınanır; bu canlı sağlayıcı kalite testi değildir.
+- Sabit üst başlık kaldırıldı; arka plan 1080 × 1920 kareyi doldurur. Sahne başlığı yalnız proje bilgisidir; isteğe bağlı küçük, 1–2 sözcüklük bilimsel etiketler güvenli alanda kalır. Yeni \`move\` hareketlerinin dönüşümler sonrası toplam mesafesi sınırlanır.
 - Storyboard’da **Sessiz taslağı oluştur**: en az bir hazır sahne varsa eksikler atlanır, süreler sahne ayarlarından tahmin edilir ve ses kanalı olmayan MP4 üretilir. TTS, Whisper, müzik ve efekt kullanılmaz; normal üretim kayıtları korunur.
 - Tümü anlatımsız ve kullanıcı sesi/müziği/efekti olmayan onaylı SVG projeleri de gerçekten sessiz MP4 üretir. Sesli tam üretim, altyazı, **Durdur** ve tek tıkla MP4 akışı korunur.
 

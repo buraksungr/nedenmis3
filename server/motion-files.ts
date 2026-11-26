@@ -42,13 +42,14 @@ export function saveMotion(
   root: string,
   info: Omit<MotionRef, 'digest' | 'actors' | 'objects'>,
   svg: string,
-  options: { requireDetailedArt?: boolean; narration?: string } = {},
+  options: { requireDetailedArt?: boolean; narration?: string; topic?: string } = {},
 ) {
   const data = parseStage(svg, undefined, {
     title: info.title,
     narration: options.narration ?? '',
   });
-  if (options.requireDetailedArt) validateNewStage(data.root);
+  if (options.requireDetailedArt)
+    validateNewStage(data.root, { topic: options.topic, narration: options.narration });
   const meta = { ...info, actors: data.actors, objects: data.objects },
     ref = motionRefSchema.parse({ ...meta, digest: shotId(meta, data.canonical) });
   checkpoint();
