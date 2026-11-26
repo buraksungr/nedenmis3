@@ -316,7 +316,7 @@ test('persistent script HTTP 503 stops the background job after four real SDK re
   const model = 'gemini-test-script',
     secret = 'private-test-credential';
   let posts = 0;
-    const { req, g, settle, store } = await app(t, undefined, async (_url, init) => {
+  const { req, g, settle, store } = await app(t, undefined, async (_url, init) => {
     if (init?.method === 'GET')
       return Response.json({
         models: [{ name: `models/${model}`, supportedGenerationMethods: ['generateContent'] }],
@@ -368,7 +368,11 @@ test('no slide on provider failure; ready drawing, board approval and single dir
   const key = 'isolated-openrouter-fixture';
   const settings = await (await req('/settings/svg-planner/key/openrouter', { key })).text();
   assert.ok(!settings.includes(key));
-  assert.deepEqual(JSON.parse(settings).svgPlanner.keys, { groq: false, openrouter: true });
+  assert.deepEqual(JSON.parse(settings).svgPlanner.keys, {
+    groq: false,
+    openrouter: true,
+    anthropic: false,
+  });
   let p: Project = await (
     await req('/projects', {
       topic: 'Karaya vuran balinalar',

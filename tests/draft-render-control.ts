@@ -36,12 +36,17 @@ export async function draftRenderControl(out: string) {
     narration,
     seconds,
   });
-  const draw = (p: Project, s: Scene, color: string) => {
+  const draw = (
+    p: Project,
+    s: Scene,
+    color: string,
+    kind: 'objects-v1' | 'objects-v2' = 'objects-v2',
+  ) => {
     const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="${color}"/></g><g id="layer-main"><path d="M200 300L400 300L300 450Z" fill="#fff"/><path d="M450 450L600 450L525 550Z" fill="#fff"/><path d="M700 650L850 650L775 750Z" fill="#fff"/></g><g id="layer-fx"><circle cx="300" cy="800" r="8" data-anim="fall"/><circle cx="500" cy="800" r="8" data-anim="fall"/><circle cx="700" cy="800" r="8" data-anim="fall"/></g></svg>`;
     s.choreography = saveMotion(
       store.dir(p.id),
       {
-        kind: 'objects-v1',
+        kind,
         title: 'Bilimsel Görünüm',
         narrationHash: hash(s.narration),
         provider: 'openrouter',
@@ -141,15 +146,36 @@ export async function draftRenderControl(out: string) {
     const cached = p.draft.asset.file;
     await prod.exportDraft(p);
     assert.equal(p.draft.asset.file, cached);
-    // A v1.7.1 draft can contain ghosted keywords. Re-render it instead of
-    // returning the otherwise valid old MP4 when only the renderer changed.
-    p.draft.asset.key = hash('silent-draft-render-v1', draftInputs(p), p.draft.scenes);
+    // A v2 scene must not reuse a cache marked with the old renderer version,
+    // even if the supplied MP4 otherwise exists and is valid.
+    p.draft.asset.key = hash(
+      'silent-draft-render-v2-clean-keywords',
+      draftInputs(p),
+      p.draft.scenes,
+    );
     await prod.exportDraft(p);
     assert.notEqual(p.draft.asset.file, cached, 'legacy draft cache must be regenerated');
     assert.deepEqual(
       { final: p.final, subtitleFiles: p.subtitleFiles, assets: p.assets },
       previous,
     );
+    // A v1-only archive retains the exact 1.7.2 draft cache key and reuses its
+    // existing MP4 instead of silently re-rendering an unchanged project.
+    const archived = makeProject('Eski sessiz kontrol', 'Önceki sahne.');
+    archived.scenes = [scene('Önceki sahne.', 0.2)];
+    store.create(archived);
+    archived.scriptApproval = scriptSig(archived);
+    draw(archived, archived.scenes[0], '#e74721', 'objects-v1');
+    await prod.exportDraft(archived);
+    assert.ok(archived.draft);
+    assert.equal(
+      archived.draft.asset.key,
+      hash('silent-draft-render-v2-clean-keywords', draftInputs(archived), archived.draft.scenes),
+    );
+    const archivedFile = archived.draft.asset.file;
+    await prod.exportDraft(archived);
+    assert.equal(archived.draft.asset.file, archivedFile);
+
     const beforeFailure = structuredClone(p);
     p.subtitleSize += 1;
     const broken = new Production(store, g, { ...paths, composition: path.join(root, 'missing') });
@@ -200,6 +226,7 @@ export async function draftRenderControl(out: string) {
           network,
           whisper,
           normalCachesPreserved: true,
+          legacyDraftCachePreserved: true,
         },
         null,
         2,

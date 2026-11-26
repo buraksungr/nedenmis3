@@ -55,7 +55,11 @@ if (!app.requestSingleInstanceLock()) {
         };
       }
       const vault = vaultFor('gemini'),
-        plannerVaults = { groq: vaultFor('groq'), openrouter: vaultFor('openrouter') };
+        plannerVaults = {
+          groq: vaultFor('groq'),
+          openrouter: vaultFor('openrouter'),
+          anthropic: vaultFor('anthropic'),
+        };
       const token = randomBytes(32).toString('hex'),
         studio = createStudio(
           {
@@ -118,11 +122,13 @@ if (!app.requestSingleInstanceLock()) {
       await win.loadURL(origin);
       if (verify) {
         // Isolated native install test: never read a real user's projects or credentials.
-        const geminiProbe = randomBytes(26).toString('hex');
+        const geminiProbe = randomBytes(26).toString('hex'),
+          anthropicProbe = randomBytes(26).toString('hex');
         for (const [name, candidate, key] of [
           ['gemini', vault, geminiProbe],
           ['groq', plannerVaults.groq, randomBytes(26).toString('hex')],
           ['openrouter', plannerVaults.openrouter, randomBytes(26).toString('hex')],
+          ['anthropic', plannerVaults.anthropic, anthropicProbe],
         ]) {
           candidate.set(key);
           if (
@@ -132,9 +138,14 @@ if (!app.requestSingleInstanceLock()) {
             throw new Error('Credential encryption round trip failed: ' + name);
         }
         plannerVaults.openrouter.clear();
-        if (plannerVaults.openrouter.has() || vault.get() !== geminiProbe)
+        if (
+          plannerVaults.openrouter.has() ||
+          vault.get() !== geminiProbe ||
+          plannerVaults.anthropic.get() !== anthropicProbe
+        )
           throw new Error('Credential stores are not isolated');
         plannerVaults.groq.clear();
+        plannerVaults.anthropic.clear();
         vault.clear();
         const loaded = await win.webContents.executeJavaScript(
           `(async()=>{const r=await fetch('/api/projects');return r.ok&&(await r.json()).length===3&&!!document.querySelector('main')})()`,

@@ -9,29 +9,54 @@ import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
 import { rigReply, stageReply } from '../tests/ant-motion-art.ts';
 import { safeFrameBrowserControl } from '../tests/safe-frame-browser.ts';
+import { centeredMotionBrowserControl } from '../tests/centered-motion-browser.ts';
 import { probe } from '../server/media.ts';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
 const textModel = 'gemini-2.5-flash';
 const fixtureScript = 'Hava soğuduğunda birçok karınca türü yuvanın derinlerine çekilir.';
 const voiceCalls = [],
-  plannerCalls = [];
+  plannerCalls = [],
+  routerModels = [],
+  claudeModels = [];
 let quotaOnSecond = true;
 let enableTextFixture = false,
-  scriptAttempts = 0;
+  scriptAttempts = 0,
+  routerScripts = 0,
+  claudeScripts = 0;
 const ctx = studio.createStudio(
   { root: home, pythonDir: path.resolve('python'), composition: path.resolve('build/composition') },
   {
     transport: async (url, opts) => {
       const host = new URL(url).host;
       if (host === 'openrouter.ai') {
-        const q = JSON.parse(JSON.parse(opts.body).messages[1].content);
+        const body = JSON.parse(opts.body);
+        routerModels.push(body.model);
+        if (body.messages.length === 1) {
+          routerScripts++;
+          return Response.json({
+            model: body.model,
+            choices: [{ finish_reason: 'stop', message: { content: fixtureScript } }],
+          });
+        }
+        const q = JSON.parse(body.messages[1].content);
         plannerCalls.push(q);
         if (q.sahne === 2 && quotaOnSecond) return new Response(null, { status: 429 });
         const result = q.sahne ? stageReply(q.sahne - 1, !!q.yönlendirme) : rigReply();
         return Response.json({
           model: 'offline-object-QA',
           choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }],
+        });
+      }
+      if (host === 'api.anthropic.com') {
+        const body = JSON.parse(opts.body);
+        claudeModels.push(body.model);
+        assert.equal(new Headers(opts.headers).get('x-api-key'), 'isolated-anthropic-fixture');
+        claudeScripts++;
+        return Response.json({
+          model: body.model,
+          stop_reason: 'end_turn',
+          content: [{ type: 'text', text: fixtureScript }],
         });
       }
       assert.equal(host, 'generativelanguage.googleapis.com');
@@ -116,6 +141,7 @@ page.on('request', (r) => {
 page.on('pageerror', (e) => errors.push(e.message));
 try {
   await safeFrameBrowserControl(browser);
+  await centeredMotionBrowserControl(browser);
   await page.goto(origin);
   await page.getByRole('heading', { name: 'Son projeler' }).waitFor();
   await page.locator('.project-card').nth(2).waitFor(); // heading can mount before the project list arrives
@@ -201,9 +227,47 @@ try {
   await page.getByRole('button', { name: 'Servisleri kontrol et' }).click();
   await page.getByText('Kullanılabilir', { exact: true }).first().waitFor();
   assert.equal(await page.getByText('Kullanılabilir', { exact: true }).count(), 2);
-  // From own script to an actual all-SVG export with no image or TTS key.
+  // Select a direct Claude model/key, reload the UI, and generate an actual script.
+  await page.getByRole('button', { name: 'Sahne planlayıcı', exact: true }).click();
+  await page.getByLabel('Planlama kaynağı').selectOption('anthropic');
+  await page.getByLabel('Anthropic Claude model kimliği').fill('claude-test-20250101');
+  await page.getByLabel('Anthropic Claude API anahtarı').fill('isolated-anthropic-fixture');
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/svg-planner/key/anthropic') && r.ok()),
+    page.getByRole('button', { name: 'Anahtarı kaydet', exact: true }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/settings/svg-planner') && r.ok()),
+    page.getByRole('button', { name: 'Planlayıcıyı kaydet' }).click(),
+  ]);
+  await page.reload();
+  await page.getByRole('button', { name: 'Sahne planlayıcı', exact: true }).click();
+  assert.equal(await page.getByLabel('Planlama kaynağı').inputValue(), 'anthropic');
+  assert.equal(
+    await page.getByLabel('Anthropic Claude model kimliği').inputValue(),
+    'claude-test-20250101',
+  );
+  assert.equal(await page.getByLabel('Anthropic Claude API anahtarı').inputValue(), '');
+  async function autoScript(topic) {
+    await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
+    await page.getByLabel('Belgesel konusu').fill(topic);
+    await page.getByRole('button', { name: 'Proje oluştur', exact: true }).click();
+    await page.waitForURL(/#\/script\//, { timeout: 15000 });
+    await editor.waitFor({ timeout: 15000 });
+    const projectId = page.url().split('/').at(-1);
+    let tries = 0;
+    while (ctx.store.get(projectId)?.script !== fixtureScript && tries++ < 400)
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(ctx.store.get(projectId).script, fixtureScript);
+  }
+  await autoScript('Karıncalar kışın nasıl yaşar?');
+  assert.equal(claudeScripts, 1);
+  assert.deepEqual(claudeModels, ['claude-test-20250101']);
+  await page.locator('.sidebar').getByRole('button', { name: 'Ayarlar', exact: true }).click();
   await page.getByRole('button', { name: 'Sahne planlayıcı', exact: true }).click();
   await page.getByLabel('Planlama kaynağı').selectOption('openrouter');
+  const routerModel = 'meta-llama/llama-3.3-8b-instruct:free';
+  await page.getByLabel('OpenRouter model kimliği').fill(routerModel);
   const svgKey = page.getByLabel('OpenRouter API anahtarı');
   await svgKey.fill('isolated-openrouter-fixture');
   await Promise.all([
@@ -214,6 +278,15 @@ try {
     page.waitForResponse((r) => r.url().endsWith('/settings/svg-planner') && r.ok()),
     page.getByRole('button', { name: 'Planlayıcıyı kaydet' }).click(),
   ]);
+  await page.reload();
+  await page.getByRole('button', { name: 'Sahne planlayıcı', exact: true }).click();
+  assert.equal(await page.getByLabel('OpenRouter model kimliği').inputValue(), routerModel);
+  assert.equal(await page.getByLabel('OpenRouter API anahtarı').inputValue(), '');
+  assert.equal(ctx.store.setting('vector-model', {}).anthropicModel, 'claude-test-20250101');
+  await autoScript('Karıncalar soğukta nereye gider?');
+  assert.equal(routerScripts, 1);
+  assert.deepEqual(routerModels, [routerModel]);
+  // From own script to an actual all-SVG export with no image or TTS key.
   await page.locator('.sidebar').getByRole('button', { name: 'Yeni Video' }).click();
   await page.getByLabel('Belgesel konusu').fill('Karıncalar kışın nereye gider?');
   await page.getByLabel('Kendi senaryomu kullanacağım').check();
@@ -304,6 +377,7 @@ try {
     plannerCalls.map((q) => q.sahne ?? 0),
     [1, 2, 2],
   );
+  assert.ok(routerModels.every((model) => model === routerModel));
   const f = second.locator('[data-object="ant-lead"] > g').first(),
     prev = await f.getAttribute('transform'),
     cam = second.locator('[data-fixed-camera]').first(),

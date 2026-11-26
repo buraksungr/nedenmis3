@@ -38,11 +38,7 @@ const knownReasons = new Set<string>([
   ...Object.values(FinishReason),
 ]);
 // Ücretsiz katmanda olan Gemini metin modelleri; kota aşımında sırayla denenir.
-const FREE_TEXT_MODELS = [
-  'gemini-1.5-flash-8b',
-  'gemini-1.5-flash',
-  'gemini-2.0-flash-lite',
-];
+const FREE_TEXT_MODELS = ['gemini-1.5-flash-8b', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
 
 /** 429 kota hatası olduğu an çalıştırılan fallback zinciri.
  * Mevcut modelden sonra ücretsiz modelleri sırayla dener. */
@@ -355,7 +351,12 @@ export class Gemini {
       detail ?? 'Gemini doğrulanabilir bir çıktı döndürmedi. Modeli ve içeriği kontrol edin.',
     );
   }
-  async text(prompt: string, schema?: object, onRetry?: RetryNotice): Promise<string> {
+  async text(
+    prompt: string,
+    schema?: object,
+    onRetry?: RetryNotice,
+    onModel?: (model: string) => void,
+  ): Promise<string> {
     const primaryModel = this.allowed('text');
     const fallbackModels = geminiFallbackModels(primaryModel);
     const modelsToTry = [primaryModel, ...fallbackModels];
@@ -370,8 +371,7 @@ export class Gemini {
         apiVersion: schema ? mediaVersion : scriptVersion,
         httpOptions: {
           baseUrl: origin,
-          fetch: (url, init) =>
-            this.send(String(url), init ?? {}, 'text', { onRetry }),
+          fetch: (url, init) => this.send(String(url), init ?? {}, 'text', { onRetry }),
         },
       });
       let out: GenerateContentResponse;
@@ -443,8 +443,14 @@ export class Gemini {
         .join('')
         .trim();
       if (!text)
-        this.noOutput('text', schema ? 'Boş yanıt - Gemini çizim için metin döndürmedi.' : undefined);
+        this.noOutput(
+          'text',
+          schema ? 'Boş yanıt - Gemini çizim için metin döndürmedi.' : undefined,
+        );
       this.record('connected', 'Geçerli servis yanıtı alındı.', 'text');
+      // The fallback chain can complete on a different model from the user's
+      // primary selection; signed scene metadata must name the actual sender.
+      onModel?.(model);
       return text;
     }
 

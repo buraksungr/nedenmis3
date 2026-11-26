@@ -15,7 +15,17 @@ async function main() {
       models = new SceneModels(store, vaults, fetch, g);
     if (process.env.QA_OPENROUTER_KEY) {
       models.key('openrouter', process.env.QA_OPENROUTER_KEY);
-      models.configure({ provider: 'openrouter' });
+      models.configure({
+        provider: 'openrouter',
+        openrouterModel: process.env.QA_OPENROUTER_MODEL || 'openrouter/free',
+      });
+    } else if (process.env.QA_ANTHROPIC_KEY) {
+      assert.ok(
+        process.env.QA_ANTHROPIC_MODEL,
+        'Explicit Anthropic model required for a live paid call.',
+      );
+      models.key('anthropic', process.env.QA_ANTHROPIC_KEY);
+      models.configure({ provider: 'anthropic', anthropicModel: process.env.QA_ANTHROPIC_MODEL });
     } else {
       assert.ok(
         process.env.QA_GEMINI_KEY && process.env.QA_GEMINI_TEXT_MODEL,

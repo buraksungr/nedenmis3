@@ -2,12 +2,26 @@ import React, { useId } from 'react';
 import { spring } from 'remotion';
 import type { ObjectFrame, AnimKind } from '../shared/object-motion';
 import type { Geometry } from '../shared/vector';
+import { I, MAX_MOVE_PIXELS, matrix, mul, type Matrix } from '../shared/svg-transform';
 import { svgAttrs } from './VectorScene';
 import { fittedSafeRect } from './frame';
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
+type Pose = {
+  transform?: string;
+  opacity?: number;
+  reveal?: number;
+  flow?: number;
+  scale?: number;
+};
 /** Object-local timeline. All times in seconds; all distances and pivots in this node's SVG units.
  * Nothing depends on wall time, DOM measurement, the browser animation clock or a random seed. */
-export function objectPose(n: Geometry, frame: number, fps: number) {
+export function objectPose(
+  n: Geometry,
+  frame: number,
+  fps: number,
+  moveFactor = 1,
+  legacy = false,
+): Pose {
   const a = n.attrs,
     kind = a['data-anim'] as AnimKind,
     value = (k: string, d: number) => Number(a['data-' + k] ?? d),
@@ -28,7 +42,9 @@ export function objectPose(n: Geometry, frame: number, fps: number) {
     dy = value('dy', 0);
   switch (kind) {
     case 'move':
-      return { transform: `translate(${dx * progress} ${dy * progress})` };
+      return {
+        transform: `translate(${dx * moveFactor * progress} ${dy * moveFactor * progress})`,
+      };
     case 'fall':
     case 'rise': {
       const y = (kind === 'rise' ? -1 : 1) * Math.abs(dy || 180);
@@ -38,7 +54,17 @@ export function objectPose(n: Geometry, frame: number, fps: number) {
       };
     }
     case 'pulse':
-      return { transform: around(0.7 + 0.7 * cycle), opacity: Math.max(0.05, 1 - cycle) };
+      // Existing objects-v1 archives were signed with a growing, fading ring.
+      // Keep its exact frame-by-frame behavior rather than reinterpreting it.
+      if (legacy)
+        return { transform: around(0.7 + 0.7 * cycle), opacity: Math.max(0.05, 1 - cycle) };
+    // fall through: new pulse and dilate share centered, continuously visible scaling.
+    case 'dilate':
+      // The renderer applies this to a fill-box-centered wrapper. A path or group
+      // has no reliable cx/cy, so guessing its pivot from attributes causes drift.
+      return { scale: 1 + value('amplitude', kind === 'dilate' ? 0.22 : 0.12) * wave };
+    case 'flow':
+      return { flow: cycle };
     case 'wiggle':
     case 'swing':
       return {
@@ -62,6 +88,8 @@ export function objectPose(n: Geometry, frame: number, fps: number) {
       return {};
   }
 }
+type StrokeEffect = { kind: 'draw' | 'flow'; value: number };
+type MotionContext = { transform: Matrix; distance: number; fit: number; legacy: boolean };
 function object(
   n: Geometry,
   scope: string,
@@ -69,28 +97,70 @@ function object(
   key: number,
   frame: number,
   fps: number,
-  reveal?: number,
+  context: MotionContext,
+  inheritedEffect?: StrokeEffect,
 ): React.ReactElement {
   const a = svgAttrs(n, scope);
   for (const k of Object.keys(a)) if (k.startsWith('data-')) delete a[k];
   if (n.tag === 'text' && n.attrs['data-keyword'] === 'true') a['data-science-keyword'] = '';
   if (n.tag === 'use') a.href = '#' + rigScope + 'subject-main';
   const animated = !!n.attrs['data-anim'],
-    pose = animated ? objectPose(n, frame, fps) : {},
-    trace = pose.reveal ?? reveal,
-    staticTransform = a.transform;
+    local = mul(context.transform, matrix(n.attrs.transform)),
+    dx = Number(n.attrs['data-dx'] ?? 0),
+    dy = Number(n.attrs['data-dy'] ?? 0),
+    requested =
+      n.attrs['data-anim'] === 'move'
+        ? Math.hypot(local[0] * dx + local[2] * dy, local[1] * dx + local[3] * dy) * context.fit
+        : 0,
+    distance = Number.isFinite(requested) ? requested : Infinity,
+    remaining = Math.max(0, MAX_MOVE_PIXELS - context.distance),
+    // v2 reserves the ancestors' full displacement, so nested moves cannot add
+    // up to more than 240 output pixels after authored scale and rotation. v1
+    // deliberately retains its signed, unbounded movement for archive playback.
+    factor = context.legacy
+      ? 1
+      : distance === Infinity
+        ? 0
+        : distance
+          ? Math.min(1, remaining / distance)
+          : 1,
+    pose: Pose = animated ? objectPose(n, frame, fps, factor, context.legacy) : {},
+    effect: StrokeEffect | undefined =
+      pose.reveal !== undefined
+        ? { kind: 'draw', value: pose.reveal }
+        : pose.flow !== undefined
+          ? { kind: 'flow', value: pose.flow }
+          : inheritedEffect,
+    staticTransform = a.transform,
+    childTransform =
+      pose.scale !== undefined
+        ? mul(local, [pose.scale, 0, 0, pose.scale, 0, 0])
+        : pose.transform
+          ? mul(local, matrix(pose.transform))
+          : local,
+    childContext = {
+      transform: childTransform,
+      distance: context.distance + (distance === Infinity ? remaining : distance * factor),
+      fit: context.fit,
+      legacy: context.legacy,
+    };
   if (animated) delete a.transform;
-  if (trace !== undefined && n.tag !== 'g' && n.tag !== 'use') {
+  if (
+    effect &&
+    (context.legacy && effect.kind === 'draw'
+      ? n.tag !== 'g' && n.tag !== 'use'
+      : ['path', 'line', 'polyline', 'polygon', 'rect', 'circle', 'ellipse'].includes(n.tag))
+  ) {
     a.pathLength = '1';
-    a.strokeDasharray = '1 1';
-    a.strokeDashoffset = String(1 - trace);
+    a.strokeDasharray = effect.kind === 'draw' ? '1 1' : '0.22 0.12';
+    a.strokeDashoffset = String(effect.kind === 'draw' ? 1 - effect.value : -0.34 * effect.value);
   }
   const el = React.createElement(
     n.tag,
     { ...a, key },
     n.text ??
       (n.children.length
-        ? n.children.map((c, i) => object(c, scope, rigScope, i, frame, fps, trace))
+        ? n.children.map((c, i) => object(c, scope, rigScope, i, frame, fps, childContext, effect))
         : undefined),
   );
   if (!animated) return el;
@@ -101,7 +171,19 @@ function object(
       data-object={n.attrs.id ?? ''}
       data-anim={n.attrs['data-anim']}
     >
-      <g transform={pose.transform} opacity={pose.opacity}>
+      <g
+        transform={pose.transform}
+        opacity={pose.opacity}
+        style={
+          pose.scale === undefined
+            ? undefined
+            : {
+                transformBox: 'fill-box',
+                transformOrigin: 'center',
+                transform: `scale(${pose.scale})`,
+              }
+        }
+      >
         {el}
       </g>
     </g>
@@ -153,6 +235,12 @@ export function ObjectScene({
     { stage } = scene,
     viewBox = stage.attrs.viewBox,
     box = viewBox.split(' ').map(Number),
+    initial: MotionContext = {
+      transform: I,
+      distance: 0,
+      fit: Math.max(1080 / box[2], 1920 / box[3]),
+      legacy: scene.ref.kind !== 'objects-v2',
+    },
     foreground = fittedSafeRect(viewBox, 1460),
     keyword = fittedSafeRect(viewBox, 1220),
     ordered = stage.children
@@ -169,7 +257,7 @@ export function ObjectScene({
       style={{ display: 'block', background: '#18231f' }}
     >
       <defs>
-        {stage.children.flatMap(definitions).map((n, i) => object(n, r, r, i, frame, fps))}
+        {stage.children.flatMap(definitions).map((n, i) => object(n, r, r, i, frame, fps, initial))}
       </defs>
       {/* Backgrounds and legacy sets remain full bleed. Clips are mapped from output
           pixels into the fitted viewBox, outside all subject/keyword transforms. */}
@@ -189,7 +277,7 @@ export function ObjectScene({
           </clipPath>
         </defs>
         {ordered.map(({ node, zone }, i) => {
-          const art = object(node, scope + 'set-', r, i, frame, fps);
+          const art = object(node, scope + 'set-', r, i, frame, fps, initial);
           return zone === 'full' ? (
             art
           ) : (

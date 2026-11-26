@@ -457,7 +457,13 @@ export class Production {
         (next?.visualMode === 'illustration' ? next.cinema?.title : undefined);
     const key = hash(
       'film-7-clean-keyword-transitions',
-      ...(objects || nextObjects ? ['object-safe-frame-and-caption-sync-v2'] : []),
+      ...(objects || nextObjects
+        ? [
+            objects?.ref.kind === 'objects-v2' || nextObjects?.ref.kind === 'objects-v2'
+              ? 'object-safe-frame-and-caption-sync-v3-centered-motion'
+              : 'object-safe-frame-and-caption-sync-v2',
+          ]
+        : []),
       ...(title || nextTitle ? ['fixed-object-stage-v1', title, nextTitle] : []),
       objects
         ? objects.ref
@@ -579,7 +585,14 @@ export class Production {
         ),
       })),
       frames = scenes.reduce((sum, s) => sum + s.frames, 0),
-      key = hash('silent-draft-render-v2-clean-keywords', draftInputs(p), scenes),
+      // A v1-only project renders identically to 1.7.2; keep its existing draft.
+      key = hash(
+        ready.some((s) => s.choreography?.kind === 'objects-v2')
+          ? 'silent-draft-render-v3-centered-motion'
+          : 'silent-draft-render-v2-clean-keywords',
+        draftInputs(p),
+        scenes,
+      ),
       label = `${ready.length}/${p.scenes.length} hazır sahne • Sessiz taslak`;
     if (this.usable(p, p.draft?.asset, key) && p.draft?.total === p.scenes.length) {
       await verifyVideo(this.file(p, p.draft.asset.file), frames, false);

@@ -86,7 +86,11 @@ export function createStudio(
     prod = new Production(store, g, paths),
     planner = new SceneModels(
       store,
-      options.plannerVaults ?? { groq: memoryVault(), openrouter: memoryVault() },
+      options.plannerVaults ?? {
+        groq: memoryVault(),
+        openrouter: memoryVault(),
+        anthropic: memoryVault(),
+      },
       options.transport,
       g,
     ),
@@ -262,7 +266,7 @@ export function createStudio(
     return p;
   }
   async function generateScript(p: Project, action: string, index?: number) {
-    const text = await script(g, p, action, index, (label) =>
+    const text = await script(planner, p, action, index, (label) =>
       prod.tick(p, label, p.job.kind ?? 'script'),
     );
     checkpoint();
@@ -271,7 +275,7 @@ export function createStudio(
   app.get('/api/topics/suggest', async (_q, r) => {
     let suggestion: string;
     try {
-      const ai = await g.text(
+      const ai = await planner.text(
         'Rastgele bir Türkçe belgesel konusu öner. Sadece bir soru cümlesi yaz, açıklama ekleme. 6-12 kelime, doğa/bilim/uzay/tarih temalı.',
       );
       suggestion = ai.trim().replace(/^[\"']|[\"']$/g, '');
@@ -606,7 +610,7 @@ export function createStudio(
     planner.configure(q.body);
     r.json(settings());
   });
-  const cloudPlanner = z.enum(['groq', 'openrouter']);
+  const cloudPlanner = z.enum(['groq', 'openrouter', 'anthropic']);
   app.post('/api/settings/svg-planner/key/:provider', (q, r) => {
     idle();
     planner.key(

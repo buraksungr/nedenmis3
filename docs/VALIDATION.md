@@ -1,5 +1,13 @@
 # Doğrulama kaydı
 
+## 1.7.3 — sağlayıcı seçimi ve merkezli hareket
+
+- **Yerel kontroller:** TypeScript, 124 otomatik test ve üretim derlemesi geçti. Kontrollü HTTP yanıtlarıyla OpenRouter’da seçilen ücretsiz ve ücretli model kimlikleri, doğrudan Anthropic, ayrı anahtarlar, senaryo/SVG yönlendirmesi, 429 beklemeleri, iptal ve hata sonrası sağlayıcı değiştirmeme sınandı. Gemini yedeği başarılıysa imzalı sahneye yanıtı gerçekten veren model kaydedilir.
+- **Eski sahneler:** 1.7.2 kaynak koduyla üretilmiş imzalı `objects-v1` SVG ve beş karelik özgün render çıktısı yeniden açılıp birebir karşılaştırıldı; eski `pulse`, `move` ve `draw` davranışları korundu. Eski sürümün sessiz taslak önbellek anahtarı ve dosyasının yeniden kullanımı gerçek MP4 ile sınandı.
+- **Tarayıcı ve MP4:** Chromium’da dönüştürülmüş göz bebeği ve iris grubunun merkezi, hareketli çizgi pikselleri ve iç içe hareketin 240 çıkış pikseli sınırı kontrol edildi. Yerel göz fixture’ından kodlanmış H.264’te göz bebeğinin koyu alanı 0/7/22. karelerde **16.203 / 22.344 / 12.561 piksel**; merkezleri 200 × 200 kırpımın yaklaşık (101, 101) noktasında kaldı. Sahne geçişinde giden etiketin dört örneğinde sıfır beyaz piksel ölçüldü ve render sırasında benzetilmiş bir `EPERM` tolere edildi.
+- **Diğer kontroller:** Sesli ve sessiz MP4, 2/4 sahnelik taslak, eski render önbelleği, altyazılar, gerçek render/FFmpeg durdurma ve devam ile derlenmiş arayüzde model seçimi/yeniden açma sınandı. Yerel karınca fixture’ı 5 sahne, 765 kare / 25,50 saniyeydi: 1.370 dekor ölçümü sıfır kayma gösterdi ve 30 bağımsız nesne donmuş pozundan ayırt edildi. Bu kontrolde 5 sahne tahmini hizalama kullandı; gerçek Whisper sonucu değildir.
+- **Sınırlar:** Sağlayıcı yanıtları test verisidir; hiçbir canlı OpenRouter, Anthropic veya Gemini hesabı, kotası, fiyatı veya model kalitesi doğrulanmadı. Anatomi/kontrast kontrolleri yaklaşık olup storyboard’un gözle incelenmesi gerekir. Windows kurulum ve ayrı CPU Whisper kontrollerinin sonucu [Actions](https://github.com/buraksungr/nedenmis3/actions) ve ilgili yayında incelenmelidir; iş akışı iki Windows işi başarılı olmadan kurucuyu yayımlamaz.
+
 ## 1.7.2 — kayıt kilitleri, görünür çizimler ve temiz etiket geçişi
 
 - **Yerel kontroller:** TypeScript, tarayıcı betiğinin sözdizimi, 111 birim testi ve üretim derlemesi geçti. `EPERM`/`EBUSY` yeniden denemeleri, `EACCES` sonrası kopyalama, temizleme, ilerlemenin 350 ms aralıklı yazılması ve kalıcı kayıt hatasından kurtarma ayrı test edildi.

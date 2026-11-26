@@ -216,7 +216,7 @@ export function ScriptEditor({ p }: { p: Project }) {
             disabled={locked}
             onChange={(e) => draft.edit(e.target.value)}
             maxLength={10000}
-            placeholder="Anlatım metnini yaz ya da Gemini ile senaryo oluştur…"
+            placeholder="Anlatım metnini yaz ya da seçili metin modeliyle senaryo oluştur…"
           />
           <div className="editor-foot">
             <span>{draft.v.trim().split(/\s+/).filter(Boolean).length} kelime</span>

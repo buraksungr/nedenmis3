@@ -1,4 +1,4 @@
-# Sabit kameralı SVG sahnesi · 1.7.2
+# Sabit kameralı SVG sahnesi · 1.7.3
 
 `board` / `ObjectPlanner`, onaylı senaryoyu sahnelere ayırır ve her sahne için bağımsız `{title, svg}` ister; yeni üretimde ortak özne şablonu isteği yoktur. Başlık tamamlanmış, doğal 2–4 sözcüklük Türkçe proje bilgisidir; videoya çizilmez. Anlam ve bilimsel doğruluk storyboard’da gözden geçirilmelidir.
 
@@ -6,7 +6,8 @@
 
 - İstem 3500 karakterin altında, tam sayı koordinatlı ve XML yorumsuz SVG ister. Yeni çizim `layer-bg`, `layer-main` ve `layer-fx` gruplarını ve ana katmanda en az üç görünür `<path>` içermelidir. İstem karanlık zeminde açık/orta tonlar, belirgin konturlar, ışık ve konuya uygun somut anatomi ister; göz sahneleri için sklera, iris lifleri, kornea/mercek, retina ve ışınlar örneklenir.
 - Arka planın tam çerçeveli rengi hesaplanabiliyorsa yeni çizimde en az iki kalıcı ve görünür ana yol için 3:1 kontrast aranır; küçük parlak ayrıntıların çok büyük koyu özneyi gizleyememesi için yaklaşık alan kontrolü de uygulanır. Açıkça kutu veya boş eşmerkezli halkalardan ibaret göz sahnesi onarıma gönderilir. Yerel gradyan, saydamlık ve dönüşümler hesaba katılır. Desenler, karmaşık arka planlar ve maskeler için bu yaklaşık bir denetimdir; tüm karelerde yerel kontrastı veya bilimsel doğruluğu garanti etmez. Storyboard’u gözle kontrol edin. Kayıtlı eski çizimler bu yeni kalite denetimine yeniden sokulmaz.
-- İlk eksik sahne hemen başlar; sonraki eksik sahneden önce tamamlanan dosya kaydedilir ve 5 saniye beklenir. OpenRouter HTTP 429 yanıtında aynı istek 10/20/35 saniye aralıklarıyla en fazla üç kez tekrarlanır; 503 hatası doğrudan bildirilir. İçerik onarımları ayrı olup en fazla ikidir. Gemini 429/503 için model yedeklerini beklemeden dener. Belirsiz bağlantı hatasında ulaşmış olabilecek POST otomatik tekrarlanmaz.
+- Seçilen Gemini, OpenRouter veya doğrudan Anthropic sağlayıcısı hem senaryo hem SVG için kullanılır. OpenRouter model kimliği serbestçe seçilir; varsayılan `openrouter/free`dir. `:free` ve ücretli modellerin erişimi/fiyatı sağlayıcıda doğrulanmalıdır. Anthropic ayrı anahtar/model ister. Otomatik seçim eski davranışla kayıtlı OpenRouter anahtarına, yoksa Gemini’ye öncelik verir; hata halinde başka sağlayıcıya geçmez. Gemini TTS ayrı yapılandırılır.
+- İlk eksik sahne hemen başlar; sonraki eksik sahneden önce tamamlanan dosya kaydedilir ve 5 saniye beklenir. OpenRouter veya Anthropic HTTP 429 yanıtında aynı çizim isteği 10/20/35 saniye aralıklarıyla en fazla üç kez tekrarlanır; 503 hatası doğrudan bildirilir. İçerik onarımları ayrı olup en fazla ikidir. Gemini 429/503 için en fazla üç sabit yedek model kimliğini beklemeden dener; çizim zincirinin son yanıtı 429 ise zincir 10/20/35 saniye beklemeleriyle yeniden denenebilir. Yedeklerin erişimi ve fiyatı Google hesabına bağlıdır. Bu beklemeler senaryo isteklerine uygulanmaz. Belirsiz bağlantı hatasında ulaşmış olabilecek POST otomatik tekrarlanmaz.
 - **Durdur** zamanlayıcıyı, isteği veya render’ı iptal eder ve temizliği bekler. Hazır sahneler saklanır; **Eksik sahneleri tamamla** yalnız eksikleri işler.
 
 ## Çizim ve güvenli alan
@@ -28,11 +29,16 @@ Her etiket 1–2 sözcük ve en fazla 28 karakterdir; çıkışta 14–40 piksel
 | `move`            | Gecikmeden sonra yerel `dx`, `dy` kadar ilerler, sonunda durur. |
 | `fall`, `rise`    | Fazı kaydırılabilen sürekli iniş/çıkış.                         |
 | `draw`            | Görünür stroke’lu çizgiyi `pathLength=1` ve dash ile açar.      |
-| `pulse`           | Yerel merkezde genişleyip sönümlenen halka.                     |
+| `flow`            | Görünür stroke boyunca dash ofsetini döngüsel kaydırır.        |
+| `pulse`, `dilate` | Şeklin/grubun dolgu kutusu merkezinde periyodik ölçekleme.      |
 | `swing`, `wiggle` | Eklem noktasında periyodik dönüş.                               |
 | `pop`             | `spring()` ile gecikmeli giriş.                                 |
 
-`dx/dy` yerel SVG birimi; `delay/duration` saniye; `phase` 0–1; `angle` derece; `pivot-x/y` yerel merkezdir. Poz yalnız Remotion karesine ve FPS’ye bağlıdır. En az üç ayrı hareket ve ilk kareden süren bir döngü gerekir. Yeni çizimlerde `move` mesafesi dönüşümler ve viewBox uyarlaması sonrası en fazla 240 çıkış pikselidir. İstem, daha kısa hareketleri, iki uç noktanın da tünel/odacık içinde kalmasını, kontrastı, tutarlı anatomiyi ve doğal gölgeli toprak kenarlarını ayrıca ister; bu anlamsal koşullar otomatik geometri denetiminin garantisi değildir.
+`dx/dy` yerel SVG birimi; `delay/duration` saniye; `phase` 0–1; `angle` derece; `pivot-x/y` eklem merkezidir. `pulse`/`dilate` için isteğe bağlı `data-amplitude` 0–0,5 aralığındadır. Motor, gerçek şekil/grup dolgu kutusunda `transform-box: fill-box; transform-origin: center` uygular ve çizimin kendi statik dönüşümünü korur. Her iki ölçekleme de opaklığı sıfıra indirmez. `flow` görünür stroke gerektirir; grubun çizilebilir çocuklarına da uygulanır. Poz yalnız Remotion karesine ve FPS’ye bağlıdır.
+
+En az üç ayrı hareket ve ilk kareden süren bir döngü gerekir. Yeni `objects-v2` çizimlerinde `move` mesafesi ata dönüşümleri, iç içe hareketler ve viewBox uyarlaması sonrası en fazla 240 çıkış pikselidir; yeni `defs` içinde bağımsız `move` kabul edilmez. Motor, yeni sahne ağacındaki aşırı yer değiştirmeyi de bu sınıra kısar. Eski imzalı `objects-v1` çizimleri yeni üretim kuralıyla reddedilmez; özgün `pulse` büyüme/solma ve sınırlanmamış `move` davranışları yeniden oynatmada korunur. Önceden işlenmiş MP4 değiştirilmez; yalnız eski sahnelerden oluşan mevcut render önbelleği de korunur. Eski `defs` içindeki hareketlerin farklı `use` ölçekleri ayrıca görsel kontrol gerektirir.
+
+İstem göz bebeği, iris ve organlara bağımsız `move` vermemeyi, bunun yerine merkezli ölçekleme kullanmayı ister. Yeni göz/organ konularında `layer-main` içindeki `move` ve tanınan organ kimliklerindeki bağımsız `move` reddedilir; akış ve parçacıklar `layer-fx` içinde hareket edebilir. Anlamsal tespit yalnız konu/metin ve kimliklere dayalı yaklaşık korumadır: isimsiz veya yanlış sınıflandırılmış anatomiyi tüm bağlamlarda tanıyamaz. İstem ayrıca tünelde iki uç noktanın da içeride kalmasını, kontrastı ve tutarlı anatomiyi ister; bunlar otomatik geometri denetiminin garantisi değildir.
 
 ## Sessiz taslak ve normal üretim
 

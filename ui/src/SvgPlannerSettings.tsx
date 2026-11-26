@@ -3,7 +3,7 @@ import { KeyRound, Layers3, Save } from 'lucide-react';
 import type { Settings } from '../../shared/schema';
 import { providerNames, type PlannerConfig } from '../../shared/vector';
 import { api, Badge, Button, post, useRun, useStudio } from './lib';
-function KeyField({ provider, has }: { provider: 'openrouter'; has: boolean }) {
+function KeyField({ provider, has }: { provider: 'openrouter' | 'anthropic'; has: boolean }) {
   const { setSettings, notify } = useStudio(),
     { run, busy } = useRun(),
     [value, setValue] = useState('');
@@ -59,7 +59,9 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
   const saved = s.svgPlanner,
     { setSettings, notify } = useStudio(),
     { busy, run } = useRun();
-  const [provider, choose] = useState<PlannerConfig['provider']>(saved.provider);
+  const [provider, choose] = useState<PlannerConfig['provider']>(saved.provider),
+    [openrouterModel, setRouterModel] = useState(saved.openrouterModel),
+    [anthropicModel, setAnthropicModel] = useState(saved.anthropicModel);
   return (
     <section className="panel padded">
       <div className="panel-title">
@@ -69,9 +71,8 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
       </div>
       <div className="form-stack spaced">
         <p>
-          Metin modeli ortak SVG öznesini bir kez çizer. Her sahnenin yerleşimini, ayrı nesne
-          hareketlerini ve kısa Türkçe başlığını planlar. Kamera sabittir; çizilen sahneler
-          çevrimdışı işlenir.
+          Kaydedilen sağlayıcı ve model hem senaryoyu yazar hem de sahnelerin SVG çizimlerini ve
+          nesne hareketlerini planlar. Seslendirme ayrı Gemini ayarını kullanır.
         </p>
         <label>
           Planlama kaynağı
@@ -84,15 +85,69 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
           </select>
         </label>
         <p className="help">
-          Otomatik seçim kayıtlı OpenRouter anahtarına öncelik verir (openrouter/free); yoksa izin
-          verdiğin Gemini metin modelini kullanır. Hata olursa başka sağlayıcıya geçilmez. Geçersiz
-          bir çizim için en fazla iki içerik onarımı yapılır. Sahneler arasında 5 sn beklenir.
-          Yalnız HTTP 429/503 için 10, 20 ve 35 sn sonra aynı istek yeniden denenebilir. Durdur
-          beklemeyi de keser. Gemini’de seçtiğin kota ve ücret izni geçerlidir.
+          Otomatik seçim, kayıtlı OpenRouter anahtarı varsa aşağıdaki OpenRouter modelini, yoksa
+          izin verdiğin Gemini metin modelini kullanır. Doğrudan Anthropic yalnız açıkça seçilirse
+          kullanılır. Hata veya kota dolması başka bir sağlayıcıya geçirmez; Gemini’nin kendi yedek
+          model zinciri için de hesap fiyatlandırmanı kontrol et. Yeni çizim kapalı seçeneği eski
+          projelerdeki gibi senaryo için Gemini’yi kullanır.
         </p>
         {(provider === 'openrouter' || provider === 'auto') && (
-          <KeyField provider="openrouter" has={saved.keys.openrouter} />
+          <>
+            <label>
+              OpenRouter model kimliği
+              <input
+                value={openrouterModel}
+                onChange={(e) => setRouterModel(e.target.value)}
+                maxLength={120}
+                spellCheck={false}
+                list="openrouter-models"
+              />
+              <datalist id="openrouter-models">
+                <option value="openrouter/free" />
+                <option value="meta-llama/llama-3.3-8b-instruct:free" />
+                <option value="anthropic/claude-sonnet-4" />
+              </datalist>
+            </label>
+            <p className="help">
+              Bir model kimliği seçebilir veya yazabilirsin; varsayılan openrouter/free’dir. :free
+              modellerin erişimini ve kotasını OpenRouter’da kontrol et. Diğer modeller ücretli
+              olabilir; seçtiğin model hesabını faturalandırabilir.
+            </p>
+            <KeyField key="openrouter" provider="openrouter" has={saved.keys.openrouter} />
+          </>
         )}
+        {provider === 'anthropic' && (
+          <>
+            <label>
+              Anthropic Claude model kimliği
+              <input
+                value={anthropicModel}
+                onChange={(e) => setAnthropicModel(e.target.value)}
+                maxLength={120}
+                spellCheck={false}
+                list="anthropic-models"
+              />
+              <datalist id="anthropic-models">
+                <option value="claude-sonnet-4-20250514" />
+                <option value="claude-3-5-haiku-latest" />
+              </datalist>
+            </label>
+            <p className="help">
+              Doğrudan Anthropic API ayrı bir anahtar ve erişilebilir Claude model kimliği ister;
+              kullanım ücretli olabilir. Model erişimini ve güncel fiyatları Anthropic hesabında
+              kontrol et.
+            </p>
+            <KeyField key="anthropic" provider="anthropic" has={saved.keys.anthropic} />
+          </>
+        )}
+        <p className="help">
+          Çizimler arasında 5 sn beklenir ve geçersiz çizim için en fazla iki içerik onarımı
+          yapılır. OpenRouter veya Anthropic HTTP 429 yanıtında aynı çizim isteği 10, 20 ve 35 sn
+          sonra yeniden denenebilir; HTTP 503 doğrudan bildirilir. Gemini 429/503 için kendi sabit
+          model yedeklerini hemen dener; çizim zincirinin son yanıtı 429 ise aynı beklemelerle
+          yeniden denenebilir. Model erişimi ve fiyatı sağlayıcı hesabına bağlıdır. Senaryoda bu
+          çizim beklemeleri kullanılmaz. Durdur beklemeyi de keser.
+        </p>
         {saved.keys.groq && (
           <Button
             onClick={() =>
@@ -111,10 +166,20 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
         )}
         <Button
           variant="primary"
-          disabled={busy}
+          disabled={
+            busy ||
+            ((provider === 'openrouter' || provider === 'auto') && !openrouterModel.trim()) ||
+            (provider === 'anthropic' && !anthropicModel.trim())
+          }
           onClick={() =>
             void run(async () => {
-              setSettings(await post<Settings>('/settings/svg-planner', { provider }));
+              setSettings(
+                await post<Settings>('/settings/svg-planner', {
+                  provider,
+                  ...(openrouterModel.trim() ? { openrouterModel: openrouterModel.trim() } : {}),
+                  ...(anthropicModel.trim() ? { anthropicModel: anthropicModel.trim() } : {}),
+                }),
+              );
               notify('Sahne planlayıcı kaydedildi.');
             })
           }

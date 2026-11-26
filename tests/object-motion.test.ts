@@ -70,8 +70,8 @@ test('flat or gradient sets are preserved untouched; old layer wrappers, hidden 
     assert.equal(parseStage(v.canonical, rig).canonical, v.canonical);
   }
   for (const svg of [
-    scene(actors),                                   // 2 motions < 3
-    scene(actor(50)),                                // 1 motion < 3
+    scene(actors), // 2 motions < 3
+    scene(actor(50)), // 1 motion < 3
     scene('', '', flakes.replaceAll('fall', 'draw')), // draw without visible stroke
   ])
     assert.throws(() => parseStage(svg, rig));
@@ -97,10 +97,7 @@ test('only the fixed local rig can be instantiated, and the error names the exac
   );
   assert.ok(!/onclick\s*=/.test(cleanedEvent.canonical));
   assert.match(cleanedEvent.canonical, /x-nedenmis-clean=/);
-  const cleanedHref = parseStage(
-    scene(actor(42, 'move') + actor(500), '', flakes),
-    rig,
-  );
+  const cleanedHref = parseStage(scene(actor(42, 'move') + actor(500), '', flakes), rig);
   assert.ok(!cleanedHref.canonical.includes('example.test'));
   assert.ok(!cleanedHref.canonical.includes('href="http'));
   assert.match(cleanedHref.canonical, /x-nedenmis-clean=/);
@@ -201,7 +198,7 @@ test('data-anim sabit arka plansal ögelerden temizlenir; sahne onarım gerektir
   assert.equal(parseStage(s.canonical, rig).canonical, s.canonical);
 });
 
-test('eight deterministic frame-based primitives: travel in units, looping weather, normalized trace, pivot, spring overshoot', () => {
+test('ten deterministic frame-based primitives: travel, looping weather, trace, flow, centered scale, pivot and spring', () => {
   const at = (kind: string, f: number, extra = {}) =>
     objectPose(
       {
@@ -220,13 +217,15 @@ test('eight deterministic frame-based primitives: travel in units, looping weath
       f,
       30,
     );
-  assert.equal(animKinds.length, 8);
+  assert.equal(animKinds.length, 10);
   assert.equal(at('move', 30, { 'data-delay': '.5' }).transform, 'translate(60 30)');
   assert.equal(at('draw', 15).reveal, 0.5);
   assert.equal(at('fall', 15).transform, 'translate(60 30)');
   assert.deepEqual(at('fall', 15), at('fall', 45));
   assert.equal(at('rise', 15).transform, 'translate(60 -30)');
-  assert.ok(at('pulse', 18).opacity! < at('pulse', 3).opacity!);
+  assert.ok(at('pulse', 7).scale! > at('pulse', 22).scale!);
+  assert.ok(at('dilate', 7).scale! > at('pulse', 7).scale!);
+  assert.equal(at('flow', 15).flow, 0.5);
   for (const k of ['swing', 'wiggle']) assert.ok(at(k, 7).transform?.endsWith(' 10 20)'));
   assert.equal(at('pop', 2, { 'data-delay': '.2' }).opacity, 0);
   assert.ok(
@@ -454,11 +453,7 @@ test('the reported regression: title/style/animate/text no longer stop a storybo
   const saved = store.get(p.id);
   assert.equal(saved.motionWork, undefined);
   assert.ok(saved.scenes[0].choreography);
-  const frame = motionFrame(
-    store.dir(p.id),
-    saved.scenes[0].choreography,
-    lines[0],
-  );
+  const frame = motionFrame(store.dir(p.id), saved.scenes[0].choreography, lines[0]);
   assert.ok(frame.stage.children.length > 1);
   // The signed file records what was removed; the renderer only receives safe geometry.
   assert.match(saved.scenes[0].choreography!.digest, /^[0-9a-f]{64}$/);
@@ -508,7 +503,10 @@ test('shotRule güvenli bölge ve titreşim kurallarını içerir', () => {
   // shotRule içeriğini doğrudan değil, ObjectPlanner üzerinden test edilebilir;
   // burada sadece prompt metninin temel kurallarının var olduğunu doğruluyoruz.
   // (İmport etmeyiz çünkü shotRule modül içi bir sabit.)
-  assert.ok(true, 'shotRule şu kuralları içerir: SOMUT GÖREL EŞLEŞTİRME, KADRAJ VE ÖLÇEK ÇEŞİTLİLİĞİ, GÜVENLI BÖLGELER');
+  assert.ok(
+    true,
+    'shotRule şu kuralları içerir: SOMUT GÖREL EŞLEŞTİRME, KADRAJ VE ÖLÇEK ÇEŞİTLİLİĞİ, GÜVENLI BÖLGELER',
+  );
 });
 
 test('başlık tutarlılığı: 2–4 kelime, tam anlamlı, tek tek kelime kontrolü', () => {
@@ -516,13 +514,13 @@ test('başlık tutarlılığı: 2–4 kelime, tam anlamlı, tek tek kelime kontr
     ['Güvenli Derinlikler', true],
     ['Kış Uykusu Değil', true],
     ['Su Altı Yağmur', true],
-    ['Karıncalar', false],       // tek kelime
+    ['Karıncalar', false], // tek kelime
     ['Güvenli Otoyol Şeritli Asfalt Su Kumu', false], // 5 kelime
     ['Karıncalar Nerede', false], // soru kelimesi ile biten → yarı başlık
-    ['Derinlikler Ve', false],   // bağbağcılarla biten → yarı başlık
-    ['Karıncadan', false],       // ekli bitiş → yarı başlık
-    ['Yapan İşler', false],      // fiil ile başlayan → yarı başlık
-    ['Eder Zaman', false],       // fiil ile başlayan → yarı başlık
+    ['Derinlikler Ve', false], // bağbağcılarla biten → yarı başlık
+    ['Karıncadan', false], // ekli bitiş → yarı başlık
+    ['Yapan İşler', false], // fiil ile başlayan → yarı başlık
+    ['Eder Zaman', false], // fiil ile başlayan → yarı başlık
   ];
   for (const [title, expected] of cases) {
     assert.equal(isCompleteTitle(title), expected, title);
@@ -584,5 +582,3 @@ test('objects şeması artık min(1) kabul eder: min(5) kısıtı kalkmış olma
   const ok5 = motionRefSchema.safeParse({ ...base, objects: 5 });
   assert.ok(ok5.success, 'objects=5 kabul edilmeli');
 });
-
-

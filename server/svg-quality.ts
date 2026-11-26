@@ -33,7 +33,7 @@ const inherit = (n: Geometry, p: Paint): Paint => ({
   opacity: p.opacity * fraction(n.attrs.opacity, 1),
   // These animations can hide their entire shape at some frame; don't use them
   // to prove that the main subject is visible throughout the shot.
-  unstable: p.unstable || ['fall', 'rise', 'pulse', 'pop', 'draw'].includes(n.attrs['data-anim']),
+  unstable: p.unstable || ['fall', 'rise', 'pop', 'draw'].includes(n.attrs['data-anim']),
 });
 const names: Record<string, string> = {
   black: '#000000',

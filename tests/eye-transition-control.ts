@@ -40,7 +40,7 @@ export async function eyeTransitionControl(out: string) {
       s.choreography = saveMotion(
         store.dir(p.id),
         {
-          kind: 'objects-v1',
+          kind: 'objects-v2',
           title: i ? 'Işığın Yolculuğu' : 'Göz Bebeği',
           narrationHash: hash(s.narration),
           provider: 'openrouter',
@@ -120,6 +120,51 @@ export async function eyeTransitionControl(out: string) {
     );
     assert.ok(newLabel > 50, `incoming keyword missing at the scene boundary: ${newLabel}`);
 
+    // Decode the actual H.264 pupil over the pre-dissolve interval. The dark area
+    // must change size but retain its center, rather than sliding away from the iris.
+    const pupilRaw = path.join(root, 'pupil.rgb'),
+      pupilWidth = 200,
+      pupilFrames = 24,
+      pupilBytes = pupilWidth * pupilWidth * 3;
+    await ff([
+      '-i',
+      files[0],
+      '-an',
+      '-vf',
+      'crop=200:200:440:530',
+      '-frames:v',
+      String(pupilFrames),
+      '-pix_fmt',
+      'rgb24',
+      '-f',
+      'rawvideo',
+      pupilRaw,
+    ]);
+    const pupilData = fs.readFileSync(pupilRaw);
+    fs.rmSync(pupilRaw);
+    assert.equal(pupilData.length, pupilBytes * pupilFrames);
+    const pupil = [0, 7, 22].map((frame) => {
+      let count = 0,
+        sumX = 0,
+        sumY = 0;
+      for (let y = 0; y < pupilWidth; y++)
+        for (let x = 0; x < pupilWidth; x++) {
+          const i = frame * pupilBytes + (y * pupilWidth + x) * 3;
+          if (pupilData[i] < 60 && pupilData[i + 1] < 85 && pupilData[i + 2] < 100) {
+            count++;
+            sumX += x;
+            sumY += y;
+          }
+        }
+      return { frame, count, x: sumX / count, y: sumY / count };
+    });
+    assert.ok(pupil[1].count > pupil[0].count * 1.15, 'encoded pupil did not dilate');
+    assert.ok(pupil[2].count < pupil[0].count * 0.9, 'encoded pupil did not contract');
+    assert.ok(
+      pupil.every((v) => Math.abs(v.x - 100) < 3 && Math.abs(v.y - 100) < 3),
+      `encoded pupil drifted: ${JSON.stringify(pupil)}`,
+    );
+
     const projectDir = store.dir(p.id),
       list = path.join(projectDir, 'eye-clips.txt');
     fs.writeFileSync(
@@ -153,6 +198,7 @@ export async function eyeTransitionControl(out: string) {
       beforeFade,
       overlap,
       newLabel,
+      pupil,
       injectedProgressEPERM: injected,
       providerCalls: network,
     };

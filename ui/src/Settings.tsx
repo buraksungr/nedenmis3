@@ -105,12 +105,12 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
       </div>
       <p className="help">
         {s.services[kind]?.message ||
-          'Üretim yalnızca seçilen modelde yapılır. Otomatik ücretli geçiş yoktur.'}
+          'Gemini için bu model ve kullanım izni geçerlidir; başka sağlayıcıya otomatik geçilmez.'}
       </p>
       {kind === 'text' && (
         <p className="help">
-          Senaryo isteği HTTP 503 alırsa aynı modelde en fazla üç kez yeniden denenir. Her deneme
-          istek sayacına dahildir.
+          Gemini metin isteğinde HTTP 429/503 olursa en fazla üç Gemini yedek modeli denenir; her
+          deneme sayaca dahildir. Fiyatlandırma ve model erişimini hesabından kontrol et.
         </p>
       )}
       {kind === 'tts' && (
@@ -142,7 +142,7 @@ function ModelRow({ kind, s }: { kind: Kind; s: SettingsType }) {
               : `Model listesi faturalandırma katmanını göstermez. ${model} için AI Studio’da ücretsiz kota olduğunu ve bu anahtarın projesinde faturalandırmanın kapalı olduğunu doğruladın mı?`}
           </p>
           {kind === 'text' && consent === 'paid' && (
-            <p>HTTP 503 sonrası en fazla üç senaryo tekrarı da bu izne dahildir.</p>
+            <p>HTTP 429/503 sonrası Gemini yedek model denemeleri de faturalandırılabilir.</p>
           )}
           <a
             className="text-link"
@@ -193,7 +193,7 @@ function ApiTab({ s }: { s: SettingsType }) {
           </div>
           <div>
             <h2>Google Gemini</h2>
-            <p>Senaryo, storyboard metni ve Türkçe seslendirme.</p>
+            <p>Türkçe seslendirme; Gemini seçildiğinde ayrıca senaryo ve SVG planlama.</p>
           </div>
           <span className="right">
             <Badge

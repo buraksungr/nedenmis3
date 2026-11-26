@@ -126,6 +126,16 @@ for (const provider of ['gemini', 'openrouter'] as const) {
         [1, 2, 2, 2, 2],
       );
       assert.equal(p.motionWork, undefined);
+      const lastModel = decodeURIComponent(
+        f.posts.at(-1)!.url.match(/\/models\/([^/:]+):generateContent/)![1],
+      );
+      assert.notEqual(lastModel, model);
+      assert.equal(
+        p.scenes[1].choreography?.model,
+        lastModel,
+        'signed metadata must name the successful fallback',
+      );
+      assert.equal(p.scenes[0].choreography?.model, model);
       // Gemini falls back to another model immediately on 429/503, without the
       // OpenRouter retry backoff. Only the gap BETWEEN scenes is a planner wait.
       const gap = Math.round(f.posts[1].at - f.posts[0].at);

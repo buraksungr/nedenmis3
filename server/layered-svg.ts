@@ -544,6 +544,7 @@ export function parseGeometry(
             'data-duration': [0.08, 120],
             'data-delay': [0, 120],
             'data-phase': [0, 1],
+            'data-amplitude': [0, 0.5],
             'data-pivot-x': [-10000, 10000],
             'data-pivot-y': [-10000, 10000],
             'data-angle': [-180, 180],

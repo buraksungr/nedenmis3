@@ -1,7 +1,7 @@
 import { SVGPathData } from 'svg-pathdata';
 import { layers, type Geometry } from '../shared/vector';
 import { parseGeometry, serialize, InvalidDrawing, MAX_XML, healXml } from './layered-svg';
-import { I, matrix, mul, type Matrix } from './svg-transform';
+import { I, MAX_MOVE_PIXELS, matrix, mul, type Matrix } from './svg-transform';
 import { validateVisualQuality } from './svg-quality';
 const fail = (s: string): never => {
   throw new InvalidDrawing(s);
@@ -95,27 +95,100 @@ export function validateNewStage(
   // Geometry alone cannot prove that a path stays inside a semantic tunnel: the
   // planner must still place both endpoints inside its particular chamber.
   const [, , width, height] = root.attrs.viewBox.split(' ').map(Number),
-    fit = Math.max(1080 / width, 1920 / height);
-  const checkMovement = (n: Geometry, parent: Matrix, ancestorDistance = 0) => {
-    if (n.tag === 'defs') return;
+    fit = Math.max(1080 / width, 1920 / height),
+    words = `${context.topic ?? ''} ${context.narration ?? ''}`
+      .toLocaleLowerCase('tr')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replaceAll('ı', 'i'),
+    anatomicalScene =
+      /\b(?:goz(?!lem|lemevi|den)\w*|gorme\w*|iris\w*|pupil\w*|retina\w*|kornea\w*|mercek\w*|kalp\w*|akciger\w*|bobrek\w*|karaciger\w*|beyin\w*|mide\w*|bagirsak\w*|dalak\w*|pankreas\w*|organ(?:lar|lari|in|i|da|dan|s)?|eyes?|eyeball|optic\w*|heart|kidneys?|lungs?|brain|stomach|liver|spleen|pancreas|intestines?)\b/i.test(
+        words,
+      );
+  const fixedNames = new Set([
+    'pupil',
+    'pupila',
+    'gozbebegi',
+    'iris',
+    'retina',
+    'sclera',
+    'sklera',
+    'cornea',
+    'kornea',
+    'lens',
+    'mercek',
+    'heart',
+    'kalp',
+    'lung',
+    'lungs',
+    'akciger',
+    'kidney',
+    'kidneys',
+    'bobrek',
+    'liver',
+    'karaciger',
+    'brain',
+    'beyin',
+    'stomach',
+    'mide',
+    'intestine',
+    'bagirsak',
+    'spleen',
+    'dalak',
+    'pancreas',
+    'pankreas',
+    'organ',
+    'organs',
+  ]);
+  const namedFixedPart = (id = '') => {
+    const normalized = id.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase(),
+      parts = normalized.split(/[-_]+/);
+    return (
+      parts.some((part) => fixedNames.has(part.replace(/\d+$/, ''))) ||
+      /(?:^|[-_])goz[-_]?bebegi(?:$|[-_0-9])/.test(normalized)
+    );
+  };
+  const checkMovement = (
+    n: Geometry,
+    parent: Matrix,
+    ancestorDistance = 0,
+    main = false,
+    fixed = false,
+  ) => {
+    if (n.tag === 'defs') {
+      // A definition may be instantiated at many scales; its local displacement
+      // cannot be bounded without every <use> context. Animate the instance instead.
+      if (descend(n).some((part) => part.attrs['data-anim'] === 'move'))
+        fail('defs içindeki nesnelere move verme; hareketi sahnedeki nesneye uygula.');
+      return;
+    }
     const m = mul(parent, matrix(n.attrs.transform));
+    main ||= n.attrs.id === 'layer-main';
+    fixed ||= namedFixedPart(n.attrs.id);
     let total = ancestorDistance;
     if (n.attrs['data-anim'] === 'move') {
+      // Semantic inference from arbitrary paths is impossible. New anatomical
+      // shots therefore keep layer-main anchored even when a model omits an ID;
+      // separately named organs remain protected anywhere in the stage.
+      if (fixed || (main && anatomicalScene))
+        fail(
+          'Göz bebeği, iris ve organlar bağımsız move alamaz; anatomiyi sabit tut, merkezli dilate/pulse kullan ve akışı layer-fx içine taşı.',
+        );
       const dx = Number(n.attrs['data-dx'] ?? 0),
         dy = Number(n.attrs['data-dy'] ?? 0);
       // Nested animations can add together even when each local dx/dy is small.
       total += Math.hypot(m[0] * dx + m[2] * dy, m[1] * dx + m[3] * dy) * fit;
-      if (total > 240.001)
+      if (total > MAX_MOVE_PIXELS + 0.001)
         fail(
-          'move yer değiştirmesi çıktı karesinde en fazla 240 piksel olmalı; özneyi tünelin içinde tut.',
+          `move yer değiştirmesi çıktı karesinde en fazla ${MAX_MOVE_PIXELS} piksel olmalı; özneyi tünelin içinde tut.`,
         );
     }
-    n.children.forEach((child) => checkMovement(child, m, total));
+    n.children.forEach((child) => checkMovement(child, m, total, main, fixed));
   };
   checkMovement(root, I);
 }
 
-const loops = new Set(['fall', 'rise', 'pulse', 'swing', 'wiggle']);
+const loops = new Set(['fall', 'rise', 'pulse', 'dilate', 'flow', 'swing', 'wiggle']);
 // Kamera sabitliği kuralı ile çakışan animasyon öznitelikleri; bu öznitelikler
 // arka plan / kök / tam-tuval şeklinden sessizce silinir, sahne reddedilmez.
 const animAttrs = [
@@ -124,6 +197,8 @@ const animAttrs = [
   'data-dy',
   'data-delay',
   'data-duration',
+  'data-phase',
+  'data-amplitude',
   'data-pivot-x',
   'data-pivot-y',
   'data-angle',
@@ -136,6 +211,30 @@ export function parseStage(
   const { root, cleanup: baseCleanup } = parseGeometry(xml, 'objects', editorial),
     [, , bw, bh] = root.attrs.viewBox.split(' ').map(Number);
   const motions = new Set<Geometry>();
+  // Stroke properties inherit through groups; opacity multiplies instead. A
+  // flow animation must have at least one actually painted drawable child.
+  type Pen = { color?: string; width: number; strokeOpacity: number; opacity: number };
+  const fraction = (v: string | undefined, fallback: number) =>
+    v === undefined ? fallback : parseFloat(v) / (v.endsWith('%') ? 100 : 1);
+  const inheritPen = (n: Geometry, parent: Pen): Pen => ({
+    color: n.attrs.stroke ?? parent.color,
+    width:
+      n.attrs['stroke-width'] === undefined ? parent.width : parseFloat(n.attrs['stroke-width']),
+    strokeOpacity: fraction(n.attrs['stroke-opacity'], parent.strokeOpacity),
+    opacity: parent.opacity * fraction(n.attrs.opacity, 1),
+  });
+  const flowStroke = (n: Geometry, parent: Pen): boolean => {
+    const p = inheritPen(n, parent);
+    if (p.opacity <= 0 || n.tag === 'defs') return false;
+    if (n.tag === 'g') return n.children.some((child) => flowStroke(child, p));
+    return (
+      ['path', 'line', 'polyline', 'polygon', 'rect', 'circle', 'ellipse'].includes(n.tag) &&
+      !!p.color &&
+      !/^(?:none|transparent|#[0-9a-f]{3}0|#[0-9a-f]{6}00)$/i.test(p.color) &&
+      p.width > 0 &&
+      p.strokeOpacity > 0
+    );
+  };
   let continuous = false,
     cleanup = baseCleanup;
   const note = (why: string) => {
@@ -146,7 +245,7 @@ export function parseStage(
     m: Matrix,
     owner?: Geometry,
     background = false,
-    pen?: string,
+    pen: Pen = { width: 1, strokeOpacity: 1, opacity: 1 },
   ): void => {
     const a = n.attrs,
       kind = a['data-anim'];
@@ -182,6 +281,7 @@ export function parseStage(
         if (kind === 'move' && Math.hypot(+(a['data-dx'] ?? 0), +(a['data-dy'] ?? 0)) < 2)
           fail('move için belirgin bir dx veya dy ver.');
         if (kind === 'draw') {
+          // Preserve the v1 archive validator's original draw behavior.
           const visibleStroke = (e: Geometry, inherited: string | undefined): boolean => {
             const ink = e.attrs.stroke ?? inherited;
             return e.tag === 'g'
@@ -191,8 +291,11 @@ export function parseStage(
                   ink !== 'transparent' &&
                   Number(e.attrs['stroke-width'] ?? 1) > 0;
           };
-          if (!visibleStroke(n, pen)) fail('draw için görünür stroke ve bir çizgi/yol gerekli.');
+          if (!visibleStroke(n, pen.color))
+            fail('draw için görünür stroke ve bir çizgi/yol gerekli.');
         }
+        if (kind === 'flow' && !flowStroke(n, pen))
+          fail('flow için görünür stroke ve bir çizgi/yol gerekli.');
         if (descend(n).some((x) => x.tag !== 'g')) {
           motions.add(n);
           owner = n;
@@ -200,12 +303,13 @@ export function parseStage(
         }
       }
     }
-    for (const c of n.children) walk(c, m, owner, background, a.stroke ?? pen);
+    const inherited = inheritPen(n, pen);
+    for (const c of n.children) walk(c, m, owner, background, inherited);
   };
   walk(root, I);
   if (motions.size < 3 || motions.size > 160) fail('Sahnede en az 3 ayrı hareketli nesne olmalı.');
   if (!continuous)
-    fail('Baştan sona süren bir döngü kullan: fall, rise, pulse, swing veya wiggle.');
+    fail('Baştan sona süren bir döngü kullan: fall, rise, pulse, dilate, flow, swing veya wiggle.');
   return {
     root,
     actors: motions.size,

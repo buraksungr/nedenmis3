@@ -5,7 +5,9 @@ export const animKinds = [
   'fall',
   'rise',
   'draw',
+  'flow',
   'pulse',
+  'dilate',
   'swing',
   'wiggle',
   'pop',
@@ -39,7 +41,9 @@ export const rigSchema = z.strictObject({
   digest: digestSchema,
 });
 export const motionRefSchema = z.strictObject({
-  kind: z.literal('objects-v1'),
+  // The kind is part of the signed digest. v1 keeps the original pulse and
+  // movement semantics; newly planned v2 scenes use centered, bounded motion.
+  kind: z.enum(['objects-v1', 'objects-v2']),
   title: archivedMotionHeading,
   narrationHash: digestSchema,
   ...source,
