@@ -26,7 +26,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: node --check scripts/browser-check.mjs
-      - name: Verify scene persistence, actual SVG retry timers and regressions
+      - name: Verify scene persistence, template selection, actual retry timers and regressions
         shell: pwsh
         run: |
           npm test
@@ -51,15 +51,16 @@ jobs:
           $env:EXPECTED_SHA256 = '0' * 64
           node scripts/release-notes.mjs
           if ($LASTEXITCODE -eq 0) { throw 'Release notes accepted a wrong installer digest' }
-          $env:EXPECTED_SHA256 = ''
-          Remove-Item -LiteralPath "dist/installer/Nedenmis-Studio-$version-Setup.exe"
+          $env:EXPECTED_SHA256 = $hash
           Set-Content -LiteralPath out/render-control/install-report.json -Value '{"installed":false}'
           node scripts/release-notes.mjs
           if ($LASTEXITCODE -eq 0) { throw 'Release notes accepted an unverified install report' }
+          $env:EXPECTED_SHA256 = ''
+          Remove-Item -LiteralPath "dist/installer/Nedenmis-Studio-$version-Setup.exe"
           Remove-Item -LiteralPath out/render-control/release-notes.md
           Set-Content -LiteralPath out/render-control/planner-clock.json -Value $actualClock
           exit 0
-      - name: Verify silent partial and complete exports, legacy playback, photo fades and captions
+      - name: Verify drafts, legacy playback, photo fades, template transitions and captions
         run: npm run test:render
         timeout-minutes: 12
       - name: Stop a real in-flight render, release child processes and finish from the saved scene
@@ -104,9 +105,12 @@ jobs:
             out/render-control/svg-atlas-control.mp4
             out/render-control/svg-atlas-report.json
             out/render-control/caption-plate-report.json
+            out/template-visual/
             out/render-control/draft-control-report.json
             out/render-control/eye-transition-control.mp4
             out/render-control/eye-transition-report.json
+            out/render-control/template-transition-control.mp4
+            out/render-control/template-transition-report.json
             out/render-control/static-fade-report.json
             out/render-control/install-report.json
             out/render-control/planner-clock.json
@@ -151,7 +155,7 @@ jobs:
             out/ant-motion-control/frames/
             out/ant-motion-control/drawings/
             out/ant-motion-control/report.json
-      - name: Optional live subject and object planning (requires an authorized text account)
+      - name: Optional live template planning (requires an authorized text account)
         if: ${{ inputs.require_live }}
         env:
           QA_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -241,6 +245,6 @@ jobs:
           export EXPECTED_SHA256="$(sha256sum "$exe" | cut -d ' ' -f 1)"
           node scripts/release-notes.mjs
           cmp "$RUNNER_TEMP/verified-release-notes.md" out/render-control/release-notes.md
-          gh release create "$tag" "$exe" --verify-tag --title "Nedenmiş Studio $version · çoklu model · merkezli hareket" --notes-file out/render-control/release-notes.md --latest
+          gh release create "$tag" "$exe" --verify-tag --title "Nedenmiş Studio $version · yerel bilimsel şablonlar" --notes-file out/render-control/release-notes.md --latest
           url="$(gh release view "$tag" --json url --jq .url)"
           printf '## Windows kurucusu yayınlandı\n\n%s\n' "$url" >> "$GITHUB_STEP_SUMMARY"

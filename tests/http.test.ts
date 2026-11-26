@@ -1,4 +1,5 @@
-import { rigReply, stageReply } from './ant-motion-art';
+import { planReply } from './template-test-data';
+import { rigReply } from './ant-motion-art';
 import { completion } from './vector-test-data';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -149,8 +150,8 @@ test('Gemini generateContent script, rig and independent object plans, then sele
         assert.equal(body.generationConfig.responseMimeType, 'application/json');
         const q = JSON.parse(prompt.split('Sahne verisi:\n').at(-1));
         calls.push(q.sahne ? 'scene' + q.sahne : 'rig');
-        assert.deepEqual(schema.required, q.sahne ? ['title', 'svg'] : ['subject', 'svg']);
-        output = JSON.stringify(q.sahne ? stageReply(q.sahne - 1) : rigReply());
+        assert.deepEqual(schema.required, ['title', 'template']);
+        output = JSON.stringify(planReply(q.sahne - 1));
       } else calls.push('script');
       return Response.json({
         candidates: [
@@ -361,7 +362,7 @@ test('no slide on provider failure; ready drawing, board approval and single dir
         ? new Response('private-provider-error', { status: 503 })
         : mode === 'invalid'
           ? completion('broken')
-          : completion(stageReply(input.sahne - 1, !!input.yönlendirme));
+          : completion(planReply(input.sahne - 1, !!input.yönlendirme));
     },
     async () => {},
   );
@@ -510,7 +511,7 @@ test(
         again.open();
         await finish.promise;
       }
-      return completion(stageReply(i - 1));
+      return completion(planReply(i - 1));
     });
     await req('/settings/svg-planner/key/openrouter', { key: 'isolated-cancel-test' });
     let p: Project = await (
@@ -601,7 +602,7 @@ test(
         candidates: [
           {
             finishReason: 'STOP',
-            content: { parts: [{ text: JSON.stringify(posts === 1 ? rigReply() : stageReply()) }] },
+            content: { parts: [{ text: JSON.stringify(planReply()) }] },
           },
         ],
       });
@@ -645,7 +646,7 @@ test(
       assert.equal(p.boardApproval, before.boardApproval);
       assert.deepEqual(p.assets, before.assets);
     }
-    assert.equal(posts, 5);
+    assert.equal(posts, 4); // one local-template plan, one TTS and two aborted requests
     assert.equal(aborts, 2);
     assert.equal(g.raw().services.tts?.status, 'connected');
     assert.equal(g.raw().services.text?.status, 'connected');

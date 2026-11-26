@@ -133,14 +133,13 @@ test('eye topics reject empty rings and boxes, while a curved anatomical subject
   );
 });
 
-test('planner asks for contrast and anatomical repairs before publishing a bright eye scene', async (t) => {
+test('planner selects a locally authored, high-contrast anatomical eye rather than model SVG', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-eye-quality-'));
   const store = new Store(root, false);
   t.after(() => {
     store.db.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const rings = `<path d="M220 400H600V780H220Z" fill="#eee"/><path d="M290 470H530V710H290Z" fill="#49c9ca"/><path d="M360 540H460V640H360Z" fill="#111"/>`;
   const requests: { onarım?: string; rule: string }[] = [];
   const models = new SceneModels(
     store,
@@ -148,10 +147,11 @@ test('planner asks for contrast and anatomical repairs before publishing a brigh
     async (_url, options) => {
       const body = JSON.parse(String(options?.body));
       requests.push({ ...JSON.parse(body.messages[1].content), rule: body.messages[0].content });
-      return completion({
-        title: 'Işığın Yolculuğu',
-        svg: [dark, drawing('#000', rings), eye][requests.length - 1],
-      });
+      return completion(
+        requests.length === 1
+          ? { title: 'Işığın Yolculuğu', svg: dark }
+          : { title: 'Işığın Yolculuğu', template: 'eye-cross', accent: 'gold' },
+      );
     },
   );
   models.key('openrouter', 'offline-test');
@@ -160,21 +160,17 @@ test('planner asks for contrast and anatomical repairs before publishing a brigh
   );
   project.scriptApproval = scriptSig(project);
   await new ObjectPlanner(store, models, async () => {}).plan(project, () => {});
-  assert.equal(requests.length, 3);
-  assert.match(requests[1].onarım!, /kontrast/i);
-  assert.match(requests[2].onarım!, /halka veya kutu/i);
-  for (const requirement of [
-    /YÜKSEK KONTRAST ZORUNLU/,
-    /radyal kas lifleri/,
-    /kornea ve mercekte kırılıp retinaya/,
-    /boş iç içe halkalar/,
-    /her karede net seçilsin/,
-  ])
-    assert.match(requests[0].rule, requirement);
-  assert.ok(project.scenes[0].choreography);
-  assert.doesNotThrow(() =>
-    motionFrame(store.dir(project.id), project.scenes[0].choreography, project.scenes[0].narration),
+  assert.equal(requests.length, 2);
+  assert.match(requests[1].onarım!, /JSON Şema Hatası/);
+  const frame = motionFrame(
+    store.dir(project.id),
+    project.scenes[0].choreography,
+    project.scenes[0].narration,
   );
+  assert.doesNotThrow(() =>
+    validateNewStage(frame.stage, { topic: project.topic, narration: project.scenes[0].narration }),
+  );
+  assert.ok(JSON.stringify(frame.stage).includes('tpl-v174-eye-cross'));
 });
 
 test('previously signed low-contrast artwork still reopens unchanged', (t) => {

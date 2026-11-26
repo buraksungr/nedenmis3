@@ -1,5 +1,6 @@
-/** Original, deliberately art-directed QA display lists. These fixtures replay the text-model
- * contract, NOT production templates or a topic-keyword fallback. One exact rig for the film. */
+/** Historical art-directed QA display lists retained for archived SVG/sanitizer tests.
+ * Current ant-film planning replays only template selections (template-test-data.ts);
+ * production creates its own local template geometry, without this legacy rig. */
 import fs from 'node:fs';
 import lines from './fixtures/ant.json';
 export { lines };

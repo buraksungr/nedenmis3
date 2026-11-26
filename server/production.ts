@@ -1,6 +1,8 @@
 import { motionFrame } from './motion-files';
+import { assertDistinctAdjacentTemplates } from './template-guard';
 import { isSvgScene } from '../shared/schema';
-import { STYLE_LOCK, NEGATIVE_LOCK } from '../shared/cinema';
+import { imageKey, readyVisual } from './visual-ready';
+export { imageKey } from './visual-ready';
 import { checkpoint, operation } from './operation';
 import { readArtwork } from './atlas-art';
 import { randomUUID } from 'node:crypto';
@@ -48,10 +50,6 @@ import { verifiedFrame } from './vector-files';
 import { withDocumentaryScene } from './render-browser';
 import { Issue, Store, approved, atomic, hash, now, requireThat, scriptSig } from './store';
 export type Step = 'all' | 'voice' | 'align' | 'clip';
-export const imageKey = (p: Project, s: Scene) =>
-  s.visualMode === 'illustration'
-    ? hash('science-image-v1', p.cinema?.subject, s.cinema?.brief, STYLE_LOCK, NEGATIVE_LOCK)
-    : hash('image-v1', p.styleGuide, s.description, s.prompt, s.angle, s.environment);
 export const voiceKey = (p: Project, s: Scene) =>
   hash('voice-v1', s.narration, p.voice, p.voiceStyle, p.pace);
 export const framesForVoice = (seconds: number) => Math.max(1, Math.ceil(seconds * 30 - 1e-7));
@@ -553,23 +551,8 @@ export class Production {
   }
   /** Revalidate the actual signed drawings; a missing/stale file is not a ready scene. */
   draftReadyScenes(p: Project): Scene[] {
-    return p.scenes.filter((s) => {
-      try {
-        if (s.visualMode === 'motion-svg') {
-          motionFrame(this.store.dir(p.id), s.choreography, s.narration);
-          return true;
-        }
-        if (s.visualMode === 'svg') {
-          if (s.vector) verifiedFrame(this.store.dir(p.id), s.vector, s.narration);
-          else if (s.svgPlan) legacyPlate(s.svgPlan);
-          else return false;
-          return true;
-        }
-        return this.usable(p, p.assets[s.id]?.image, imageKey(p, s));
-      } catch {
-        return false;
-      }
-    });
+    const root = this.store.dir(p.id);
+    return p.scenes.filter((s) => readyVisual(root, p, s) !== undefined);
   }
   /** Render only ready shots, with estimated scene time and NO audio track or cloud calls.
    * The temporary clips, published draft and cache key are isolated from approved production. */
@@ -578,6 +561,7 @@ export class Production {
     requireThat(p.scriptApproval === scriptSig(p), 'Önce güncel senaryoyu onaylayın.');
     const ready = this.draftReadyScenes(p);
     requireThat(ready.length, 'Sessiz taslak için en az bir sahne çizimi gerekli.');
+    assertDistinctAdjacentTemplates(this.store.dir(p.id), ready);
     const scenes = ready.map((s) => ({
         id: s.id,
         frames: framesForVoice(
@@ -686,6 +670,7 @@ export class Production {
     const waiting = kind === 'all' ? this.waitingForImages(p) : undefined;
     let whisperUnavailable: string | undefined;
     if (kind === 'all') {
+      assertDistinctAdjacentTemplates(this.store.dir(p.id), p.scenes);
       // Preflight only the services needed for this phase. Awaiting manual images
       // requires narration, not image credentials, a renderer or a Whisper model.
       // Verify saved display lists before spending a voice request on a board with missing art.

@@ -8,6 +8,7 @@ import { memoryVault } from '../server/vault';
 import { svgRenderControl } from './svg-render-control';
 import { draftRenderControl } from './draft-render-control';
 import { eyeTransitionControl } from './eye-transition-control';
+import { scienceTransitionControl } from './science-transition-control';
 import { captionPlateControl } from './caption-plate-control';
 import { staticFadeControl } from './static-fade-control';
 import { fallbackControl } from './fallback-control';
@@ -105,6 +106,7 @@ async function main() {
   await captionPlateControl(root);
   await draftRenderControl(root);
   await eyeTransitionControl(root);
+  await scienceTransitionControl(root);
 }
 main().catch((e) => {
   console.error(e);

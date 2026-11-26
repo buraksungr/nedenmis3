@@ -13,7 +13,7 @@ if (process.env.EXPECTED_SHA256 && sha256 !== process.env.EXPECTED_SHA256)
   throw Error(`Installer hash mismatch: ${sha256} != ${process.env.EXPECTED_SHA256}`);
 if (!report.installed || process.env.GITHUB_SHA === undefined)
   throw Error('No verified installation report for this runner.');
-const notes = `**Nedenmiş Studio ${version} — sabit kameralı, nesne bazlı hareketli SVG**
+const notes = `**Nedenmiş Studio ${version} — yerel bilimsel infografik şablonları**
 
 Windows x64 kurucusu. Yayıncı sertifikası yoktur. FFmpeg, FFprobe ve Remotion paketlidir; güncel Edge veya Chrome gerekir.
 
@@ -21,18 +21,18 @@ Windows x64 kurucusu. Yayıncı sertifikası yoktur. FFmpeg, FFprobe ve Remotion
 - SHA-256: \`${sha256}\`
 - Kaynak: [\`${process.env.GITHUB_SHA.slice(0, 12)}\`](https://github.com/${process.env.GITHUB_REPOSITORY}/commit/${process.env.GITHUB_SHA})
 - Ölçülen storyboard sahne aralığı: **${clock.observedMs.join(' / ')} ms** (Gemini model yedekleri bekleme olmadan denenir).
-- Temiz Windows’a kuruldu, kurulu uygulama Edge ile kompozisyonu açtı. Rapor: \`install-report.json\` (iş artefaktında).
+- Temiz Windows’a kuruldu; kurulu uygulama Edge ile kompozisyonu açtı. Rapor: \`install-report.json\` (iş artefaktında).
 
-- Senaryo ve SVG aynı seçili sağlayıcıyı kullanır: Gemini, model kimliği yazılabilen OpenRouter (varsayılan \`openrouter/free\`; \`:free\` veya ücretli modeller) veya ayrı anahtarlı doğrudan Anthropic Claude. Otomatik seçim kayıtlı OpenRouter anahtarına, yoksa Gemini’ye öncelik verir; hata halinde başka sağlayıcıya geçilmez. Model erişimini, kotayı ve olası ücretleri sağlayıcıda kontrol edin. Gemini seslendirme ayrı ayarlanır.
-- Yeni sahnelerde \`dilate\` ve \`pulse\`, SVG şekil/gruplarını gerçek dolgu kutusunun merkezinde ölçekler; \`flow\` çizgi boyunca hareketli dash kullanır. Göz/organ sahnelerinin ana anatomisindeki ve tanınan sabit organ kimliklerindeki bağımsız \`move\` yeni üretimde reddedilir. Hareket mesafesi sınırlandırılır; anlamsal tespit yaklaşık olduğundan storyboard’u görsel olarak kontrol edin. Eski imzalı sahnelerin eski hareket ve \`pulse\` oynatımı korunur.
-- Windows’ta geçici \`EPERM\`, \`EBUSY\` ve \`EACCES\` yeniden adlandırma hataları kısa artan aralıklarla yeniden denenir; son çare kopyalama atomik değildir. İlerleme kayıtları seyreltilir; kalıcı disk hatası bildirilir ve proje güvenli biçimde yeniden denenir.
-- Yeni çizim istemi yüksek kontrast ve konuya uygun somut bilimsel anatomi ister. Göz sahnelerinde iris lifleri, sklera, kornea/mercek, retina ve ışınlar örneklenir. Yeni sahnelerde tespit edilebilir çok düşük kontrast ve boş göz halkaları/kutuları onarıma gönderilir; karmaşık çizimlerde görsel ve bilimsel doğruluk yine kullanıcı kontrolü gerektirir. Eski imzalı çizimler okunmaya devam eder.
-- Geçişte giden ve gelen anahtar kelimeler gizlenir; yeni etiket kendi sahnesinde görünür. Yeni hareketli sahnelerin klip ve sessiz taslak önbelleği ayrı sürümlenir; yalnız eski sahne içeren mevcut önbellekler korunur. Çevrimdışı göz çizimiyle kodlanmış MP4’ün geçiş pikselleri ve gerçek render ilerlemesinde benzetilmiş \`EPERM\` sınanır; bu canlı sağlayıcı kalite testi değildir.
-- Sabit üst başlık kaldırıldı; arka plan 1080 × 1920 kareyi doldurur. Sahne başlığı yalnız proje bilgisidir; isteğe bağlı küçük, 1–2 sözcüklük bilimsel etiketler güvenli alanda kalır. Yeni \`move\` hareketlerinin dönüşümler sonrası toplam mesafesi sınırlanır.
-- Storyboard’da **Sessiz taslağı oluştur**: en az bir hazır sahne varsa eksikler atlanır, süreler sahne ayarlarından tahmin edilir ve ses kanalı olmayan MP4 üretilir. TTS, Whisper, müzik ve efekt kullanılmaz; normal üretim kayıtları korunur.
-- Tümü anlatımsız ve kullanıcı sesi/müziği/efekti olmayan onaylı SVG projeleri de gerçekten sessiz MP4 üretir. Sesli tam üretim, altyazı, **Durdur** ve tek tıkla MP4 akışı korunur.
+- **33 yerel katmanlı şablon:** göz ve kesiti, beyin/nöron, kalp/dolaşım, hücre/DNA, akciğer, kas/eklem; yeraltı kolonisi/tünel, atmosfer, okyanus, su döngüsü, bitki; ışık, manyetizma, elektrik, yörünge, yerçekimi, ses, ısı ve genel bilimsel karşılaştırma/süreç/denge görünümleri.
+- Model artık karmaşık SVG, XML veya koordinat üretmez. Yalnız şablon kimliği, izinli palet/vurgu, hız/yön, sınırlı durum değeri ve isteğe bağlı kısa etiket önerir; çizim uygulamada oluşturulur. Etiket ve sayısal değer yalnız konuda veya anlatımda geçiyorsa gösterilir. Eşleşme yoksa nötr şema kullanılır; konu eşleşmesini ve bilimsel doğruluğu storyboard’da kontrol edin.
+- Art arda aynı yerel şablon seçilmez, mümkün olduğunda farklı görünüm tercih edilir. Eksik sahne yeniden denenirken ve tek sahne yenilenirken her iki komşu, kısmi taslak için de en yakın hazır sahneler dikkate alınır. Sıralama veya eksik dosya tekrar oluşturursa onay/taslak uyarır; sahneyi yeniden üretin.
+- 1080 × 1920 arka plan tam kareyi doldurur, sabit üst başlık yoktur. En fazla iki küçük etiket alttaki altyazıdan ayrıdır ve sahne geçişinde hayalet etiket bırakmaz. Anatomi merkezden ölçeklenir, akış yolu izler ve yer değiştirme sınırlıdır. Eski imzalı sahneler, v1 hareket davranışı ve eski taslak önbelleği korunur.
+- Senaryo ve şablon seçimi Gemini, model kimliği yazılabilen OpenRouter (varsayılan \`openrouter/free\`) veya ayrı anahtarlı doğrudan Anthropic Claude ile yapılır. Otomatik seçim kayıtlı OpenRouter’ı, yoksa Gemini’yi kullanır; hatada başka sağlayıcıya geçilmez. Model erişimini, kotayı ve olası ücretleri sağlayıcıda kontrol edin; Gemini seslendirme ayrı ayarlanır.
+- **Sessiz taslak** hazır sahneleri storyboard onayı ve ses beklemeden dışa aktarır; eksikler atlanır, süre/altyazı tahmin edilir ve ses kanalı bulunmaz. Normal sesli üretim, tek altyazı, Durdur/devam ve mevcut ses/zamanları koruyan sahne yenileme akışı sürer.
+- Windows’ta geçici \`EPERM\`, \`EBUSY\` ve \`EACCES\` kayıt hataları kısa aralıklarla yeniden denenir; son çare kopyalama atomik değildir. Kalıcı disk hatası bildirilir.
+- Windows işi 33 şablonun tarayıcı karelerini, güvenli alanı ve gerçek altyazı ayrımını; kodlanmış karınca filminde sabit dekoru ve bağımsız hareketleri; eski sahneleri, kısmi taslağı, durdur/devamı, kurulum ve gerçek CPU Whisper’ı sınar. Testlerde sağlayıcı yanıtları kontrollü fixture’lardır; canlı model, kota veya ses kalitesi doğrulanmış değildir.
 
-\`title\`, \`desc\`, \`style\`, SMIL, işaretlenmemiş \`text\` ve \`metadata\` gibi dekorlar temizlenir. Yalnız sınırlandırılmış \`data-keyword="true"\` metni kabul edilir. \`script\`, \`iframe\`, \`foreignObject\`, \`image\`, JS olay öznitelikleri ve dış bağlantılar güvenlik gerekçesiyle çıkarılır.
+Kayıtlı SVG’ler güvenli geometri ayrıştırıcısıyla doğrulanır; etkin içerik ve harici bağlantılar temizlenir. Kurucu imzasızdır.
 `;
 fs.writeFileSync('out/render-control/release-notes.md', notes);
 console.log(`release notes: ${name} ${sha256}`);

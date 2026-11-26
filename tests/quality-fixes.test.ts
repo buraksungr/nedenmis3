@@ -52,7 +52,7 @@ test('new art requires three visible paths in layer-main, including nested group
   );
 });
 
-test('planner repairs a primitive-only drawing and a fragment title before publishing', async (t) => {
+test('planner rejects model-authored geometry and repairs a fragment title before publishing local art', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-quality-')),
     store = new Store(root, false);
   t.after(() => {
@@ -67,10 +67,11 @@ test('planner repairs a primitive-only drawing and a fragment title before publi
       const body = JSON.parse(String(opts?.body));
       requests.push({ ...JSON.parse(body.messages[1].content), rule: body.messages[0].content });
       const i = requests.length;
-      return completion({
-        title: i === 2 ? 'Yerin Metrelerce' : 'Kışın Eşiğinde',
-        svg: svg(i === 1 ? '<circle cx="100" cy="600" r="50"/>' : `<g>${paths}</g>`),
-      });
+      return completion(
+        i === 1
+          ? { title: 'Kışın Eşiğinde', svg: svg(paths) }
+          : { title: i === 2 ? 'Yerin Metrelerce' : 'Kışın Eşiğinde', template: 'soil-colony' },
+      );
     },
   );
   models.key('openrouter', 'isolated-quality-test');
@@ -78,19 +79,8 @@ test('planner repairs a primitive-only drawing and a fragment title before publi
   p.scriptApproval = scriptSig(p);
   await new ObjectPlanner(store, models, async () => {}).plan(p, () => {});
   assert.equal(requests.length, 3);
-  for (const requirement of [
-    /uzun ondalıklar ve XML yorumları kullanma/,
-    /başlık şeridi YOK/,
-    /tünelinin\/odacığının içinde/,
-    /en fazla 240 piksel/,
-    /altı bacak, antenler ve gözler/,
-    /kontrastlı kontur/,
-    /toprak kenarları, gölge ve katmanlarla/,
-    /data-keyword="true"/,
-  ])
-    assert.match(requests[0].rule, requirement);
-  assert.equal(requests[0].onarım, undefined);
-  assert.match(requests[1].onarım!, /en az 3.*<path>/);
+  assert.match(requests[0].rule, /KESİNLİKLE SVG, XML, path, koordinat/);
+  assert.match(requests[1].onarım!, /JSON Şema Hatası/);
   assert.match(requests[2].onarım!, /Başlık Hatası/);
   assert.equal(p.scenes[0].choreography?.title, 'Kışın Eşiğinde');
   validateNewStage(

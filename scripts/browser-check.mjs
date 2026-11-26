@@ -7,9 +7,10 @@ import { once } from 'node:events';
 import express from 'express';
 import { chromium } from 'playwright-core';
 import studio from '../build/server.cjs';
-import { rigReply, stageReply } from '../tests/ant-motion-art.ts';
+import { planReply } from '../tests/template-test-data.ts';
 import { safeFrameBrowserControl } from '../tests/safe-frame-browser.ts';
 import { centeredMotionBrowserControl } from '../tests/centered-motion-browser.ts';
+import { templateBrowserControl } from '../tests/template-browser-control.ts';
 import { probe } from '../server/media.ts';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
@@ -42,7 +43,7 @@ const ctx = studio.createStudio(
         const q = JSON.parse(body.messages[1].content);
         plannerCalls.push(q);
         if (q.sahne === 2 && quotaOnSecond) return new Response(null, { status: 429 });
-        const result = q.sahne ? stageReply(q.sahne - 1, !!q.yönlendirme) : rigReply();
+        const result = planReply(q.sahne - 1, !!q.yönlendirme);
         return Response.json({
           model: 'offline-object-QA',
           choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }],
@@ -142,6 +143,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 try {
   await safeFrameBrowserControl(browser);
   await centeredMotionBrowserControl(browser);
+  await templateBrowserControl(browser);
   await page.goto(origin);
   await page.getByRole('heading', { name: 'Son projeler' }).waitFor();
   await page.locator('.project-card').nth(2).waitFor(); // heading can mount before the project list arrives
@@ -378,7 +380,7 @@ try {
     [1, 2, 2],
   );
   assert.ok(routerModels.every((model) => model === routerModel));
-  const f = second.locator('[data-object="ant-lead"] > g').first(),
+  const f = second.locator('[data-object="tunnel-ant-a"] > g').first(),
     prev = await f.getAttribute('transform'),
     cam = second.locator('[data-fixed-camera]').first(),
     box = await cam.getAttribute('viewBox');
@@ -386,11 +388,12 @@ try {
   assert.notEqual(await f.getAttribute('transform'), prev);
   assert.equal(await cam.getAttribute('viewBox'), box);
   assert.equal(await cam.getAttribute('transform'), null);
-  assert.equal(await second.locator('svg use').count(), 5); // No duplicated scene content in <defs>.
+  assert.equal(await second.locator('svg use').count(), 0); // Templates do not depend on a duplicated rig.
+  assert.equal(await second.locator('[id$="tpl-v174-ant-tunnel"]').count(), 1);
   const old = ctx.store.get(id).scenes[1].choreography.digest;
   await second
     .getByLabel('Çizim yönlendirmesi (isteğe bağlı)')
-    .fill('Öncü karıncayı daha büyük göster.');
+    .fill('Daha sıcak renkler ve yavaş hareket.');
   await second.getByRole('button', { name: 'Bu sahneyi yeniden üret' }).click();
   await page.waitForFunction((x) => {
     const next = document
@@ -400,7 +403,7 @@ try {
   }, old);
   assert.equal(ctx.store.get(id).scenes[0].choreography.digest, first);
   assert.notEqual(ctx.store.get(id).scenes[1].choreography.digest, old);
-  assert.equal(plannerCalls.at(-1).yönlendirme, 'Öncü karıncayı daha büyük göster.');
+  assert.equal(plannerCalls.at(-1).yönlendirme, 'Daha sıcak renkler ve yavaş hareket.');
   await page.getByRole('button', { name: 'Onayla ve üret' }).click();
   await page.locator('.job-note.config').filter({ hasText: 'Seslendirme' }).waitFor();
   assert.deepEqual(voiceCalls, []);

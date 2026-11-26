@@ -71,8 +71,9 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
       </div>
       <div className="form-stack spaced">
         <p>
-          Kaydedilen sağlayıcı ve model hem senaryoyu yazar hem de sahnelerin SVG çizimlerini ve
-          nesne hareketlerini planlar. Seslendirme ayrı Gemini ayarını kullanır.
+          Seçilen model senaryoyu yazar; sahneler için yerel bilimsel şablon ve sınırlı renk/hareket
+          seçenekleri belirler. SVG geometrisi uygulamada hazırlanır, modelden çizim istenmez.
+          Seslendirme ayrı Gemini ayarını kullanır.
         </p>
         <label>
           Planlama kaynağı
@@ -141,7 +142,7 @@ export function SvgPlannerSettings({ s }: { s: Settings }) {
           </>
         )}
         <p className="help">
-          Çizimler arasında 5 sn beklenir ve geçersiz çizim için en fazla iki içerik onarımı
+          Sahneler arasında 5 sn beklenir ve geçersiz seçim için en fazla iki içerik onarımı
           yapılır. OpenRouter veya Anthropic HTTP 429 yanıtında aynı çizim isteği 10, 20 ve 35 sn
           sonra yeniden denenebilir; HTTP 503 doğrudan bildirilir. Gemini 429/503 için kendi sabit
           model yedeklerini hemen dener; çizim zincirinin son yanıtı 429 ise aynı beklemelerle

@@ -14,7 +14,7 @@ import { Operation, operation } from '../server/operation';
 import { verifyVideo } from '../server/media';
 import { makeProject, scriptSig, approveBoard } from '../server/store';
 import { STOPPED, jobActive, type Project } from '../shared/schema';
-import { rigReply, stageReply } from './ant-motion-art';
+import { planReply } from './template-test-data';
 import { completion } from './vector-test-data';
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-render-stop-'));
@@ -25,7 +25,7 @@ async function main() {
       transport: async (u, o) => {
         assert.equal(String(u), 'https://openrouter.ai/api/v1/chat/completions');
         const i = JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne;
-        return completion(i ? stageReply(i - 1) : rigReply());
+        return completion(planReply(i - 1));
       },
     },
   );

@@ -6,6 +6,9 @@ import { Gemini } from '../server/gemini';
 import { SceneModels } from '../server/scene-models';
 import { memoryVault } from '../server/vault';
 import { ObjectPlanner } from '../server/object-planner';
+import { assertDistinctAdjacentTemplates } from '../server/template-guard';
+import { motionFrame } from '../server/motion-files';
+import { templateIdInStage } from '../server/science-templates';
 import lines from './fixtures/ant.json';
 async function main() {
   const store = new Store(path.resolve('out/live-ant-board'), false);
@@ -39,16 +42,20 @@ async function main() {
     const p = store.create(makeProject('Karıncalar kışın nereye gider?', lines.join(' ')));
     p.scriptApproval = scriptSig(p);
     await new ObjectPlanner(store, models).plan(p, () => {});
+    assertDistinctAdjacentTemplates(store.dir(p.id), p.scenes);
+    const board = p.scenes.map((s) => ({
+      model: s.choreography!.model,
+      title: s.choreography!.title,
+      template: templateIdInStage(motionFrame(store.dir(p.id), s.choreography, s.narration).stage),
+      objects: s.choreography!.objects,
+    }));
+    assert.ok(
+      board.every((s) => s.template),
+      'every live selection must instantiate a local template',
+    );
     approveBoard(p);
     store.save(p);
-    console.log(
-      'Live object board:',
-      p.scenes.map((s) => ({
-        model: s.choreography!.model,
-        title: s.choreography!.title,
-        objects: s.choreography!.objects,
-      })),
-    );
+    console.log('Live local-template board:', board);
   } finally {
     store.db.close();
   }

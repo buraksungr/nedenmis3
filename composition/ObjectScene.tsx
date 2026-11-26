@@ -64,7 +64,9 @@ export function objectPose(
       // has no reliable cx/cy, so guessing its pivot from attributes causes drift.
       return { scale: 1 + value('amplitude', kind === 'dilate' ? 0.22 : 0.12) * wave };
     case 'flow':
-      return { flow: cycle };
+      // Old canonical SVGs never contained this formerly unsupported attribute.
+      // Only locally authored templates opt in to reverse flow.
+      return { flow: cycle * (a['data-flow-direction'] === '-1' ? -1 : 1) };
     case 'wiggle':
     case 'swing':
       return {

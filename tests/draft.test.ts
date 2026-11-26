@@ -6,7 +6,10 @@ import { test } from 'node:test';
 import { app } from './http-studio';
 import { stageReply } from './ant-motion-art';
 import { saveMotion } from '../server/motion-files';
-import { hash, now } from '../server/store';
+import { instantiateTemplate } from '../server/science-templates';
+import { assertDistinctAdjacentTemplates } from '../server/template-guard';
+import { narrationHash } from '../server/vector-files';
+import { approveBoard, hash, now } from '../server/store';
 import { invalidate } from '../server/invalidate';
 import { blankScene, type Project } from '../shared/schema';
 
@@ -91,4 +94,82 @@ test('draft invalidation tracks visual/timing inputs without destroying normal p
   invalidate(p, original);
   assert.equal(p.draft, undefined);
   assert.deepEqual(p.final, original.final, 'draft invalidation does not touch the normal export');
+});
+
+test('board approval and partial drafts reject consecutive repeated signed templates without altering legacy scenes', async (t) => {
+  const { req, store, prod } = await app(t);
+  let p: Project = await (
+    await req('/projects', {
+      topic: 'Karıncaların yuvası',
+      script: 'Birinci sahne. İkinci sahne. Üçüncü sahne.',
+    })
+  ).json();
+  const route = '/projects/' + p.id;
+  p = await (await req(route + '/script', { text: p.script, approve: true }, p.rev)).json();
+  p.scenes = ['Birinci sahne.', 'İkinci sahne.', 'Üçüncü sahne.'].map((narration) => ({
+    ...blankScene(randomUUID()),
+    narration,
+    visualMode: 'motion-svg' as const,
+  }));
+  const draw = (i: number, template: 'soil-colony' | 'ant-tunnel') => {
+    const scene = p.scenes[i],
+      title = ['İlk Koloni', 'Güvenli Tünel', 'Derin Koloni'][i];
+    scene.choreography = saveMotion(
+      store.dir(p.id),
+      {
+        kind: 'objects-v2',
+        title,
+        narrationHash: narrationHash(scene.narration),
+        provider: 'openrouter',
+        model: 'offline-draft-guard',
+      },
+      instantiateTemplate(template, { title, template }, scene.narration),
+    );
+  };
+  draw(0, 'soil-colony');
+  draw(2, 'soil-colony');
+  store.save(p);
+  assert.deepEqual(await (await req(route + '/draft-status')).json(), { ready: 2, total: 3 });
+  const partial = await req(route + '/generate', { kind: 'draft' }, p.rev);
+  assert.equal(partial.status, 422);
+  assert.match((await partial.json()).error, /aynı şablon/);
+  await assert.rejects(prod.exportDraft(p), /aynı şablon/);
+  assert.equal(p.draft, undefined);
+  draw(1, 'ant-tunnel');
+  store.save(p);
+  const reordered = [p.scenes[0], p.scenes[2], p.scenes[1]];
+  const badBoard = await req(
+    route + '/board',
+    { styleGuide: p.styleGuide, scenes: reordered, approve: true },
+    p.rev,
+  );
+  assert.equal(badBoard.status, 422);
+  assert.match((await badBoard.json()).error, /aynı şablon/);
+  const goodBoard = await req(
+    route + '/board',
+    { styleGuide: p.styleGuide, scenes: p.scenes, approve: true },
+    p.rev,
+  );
+  assert.equal(goodBoard.status, 200);
+  p = await goodBoard.json();
+  assert.ok(p.boardApproval);
+  // Defense in depth for direct production callers that bypass HTTP approval.
+  draw(1, 'soil-colony');
+  approveBoard(p);
+  await assert.rejects(prod.render(p, 'all'), /aynı şablon/);
+  const legacy = p.scenes.slice(0, 2).map((s, i) => ({
+    ...s,
+    choreography: saveMotion(
+      store.dir(p.id),
+      {
+        kind: 'objects-v1',
+        title: ['Eski Sahne', 'Eski Çizim'][i],
+        narrationHash: narrationHash(s.narration),
+        provider: 'openrouter',
+        model: 'legacy-fixture',
+      },
+      stageReply(0).svg,
+    ),
+  }));
+  assert.doesNotThrow(() => assertDistinctAdjacentTemplates(store.dir(p.id), legacy));
 });

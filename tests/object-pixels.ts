@@ -12,8 +12,32 @@ import { browserCandidates, openFirstBrowser } from '../server/render-browser';
 import { ObjectScene } from '../composition/ObjectScene';
 import type { ObjectFrame } from '../shared/object-motion';
 import { reduced, evidence } from './pixel-comparison';
-import { landmarks } from './ant-motion-art';
-async function fixedRock(
+// Intrinsic, visible artwork: a root and chamber edge, the tunnel roof,
+// the colony-chamber rim, the lens rim and the overview's two nodes. No
+// synthetic test markers are drawn on top of the user's video.
+const landmarks = [
+  [
+    [60, 540],
+    [448, 627],
+  ],
+  [
+    [250, 660],
+    [850, 680],
+  ],
+  [
+    [206, 821],
+    [874, 821],
+  ],
+  [
+    [246, 685],
+    [746, 685],
+  ],
+  [
+    [237, 526],
+    [843, 526],
+  ],
+];
+async function fixedLandmark(
   file: string,
   tmp: string,
   [x, y]: number[],
@@ -49,7 +73,7 @@ async function fixedRock(
       if (Math.abs(bytes[i - 1] - bytes[i + 1]) + Math.abs(bytes[i - w] - bytes[i + w]) >= 17)
         edge.push(i);
     }
-  assert.ok(edge.length >= 70, 'Rock has too few contrast edges: ' + edge.length);
+  assert.ok(edge.length >= 70, `Landmark ${x},${y} has too few contrast edges: ${edge.length}`);
   let worst = 0;
   for (let f = 1; f < count; f++) {
     let best = Infinity,
@@ -82,11 +106,11 @@ async function fixedRock(
   };
 }
 const targets = [
-  ['ant-lead', 'ant-mid', 'ant-back', 'ant-far', 'snow-2', 'snow-3'],
-  ['ant-lead', 'ant-mid', 'ant-back', 'ant-low', 'trace-main', 'trace-branch'],
-  ['ant-lead', 'ant-mid', 'ant-back', 'heat-0', 'heat-1', 'trace'],
-  ['ant-queen', 'ant-mid', 'ant-back', 'ant-far', 'heat-0', 'heat-1'],
-  ['ant-lead', 'ant-mid', 'ant-back', 'ant-far', 'leaf-1', 'leaf-2'],
+  ['colony-ant-a', 'colony-ant-b', 'colony-ant-c', 'tunnel-trace'],
+  ['tunnel-ant-a', 'tunnel-ant-b', 'tunnel-air'],
+  ['chamber-ant-a', 'chamber-ant-b', 'chamber-queen', 'chamber-warmth-a', 'chamber-warmth-b'],
+  ['focus-ring-a', 'focus-ring-b'],
+  ['overview-link-a', 'overview-link-b'],
 ];
 export async function objectPixels(
   out: string,
@@ -111,11 +135,7 @@ export async function objectPixels(
     let start = 0;
     const report = [];
     for (const [i, { v, frames }] of scenes.entries()) {
-      const title = v.ref.title,
-        f = Math.floor(frames * 0.41),
-        png = path.join(dir, `${i + 1}.png`);
-      await ff(['-i', file, '-an', '-vf', `select=eq(n\\,${start + f})`, '-frames:v', '1', png]);
-      const film = reduced(fs.readFileSync(png));
+      const title = v.ref.title;
       const show = (frame: number) =>
         pg.setContent(
           '<style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%}</style>' +
@@ -133,39 +153,63 @@ export async function objectPixels(
         .evaluateAll((els) =>
           Object.fromEntries(els.map((n) => [n.getAttribute('data-object')!, n.innerHTML])),
         );
-      await show(f);
-      assert.equal(await pg.locator('[data-shot-title]').count(), 0);
-      const expected = await capture();
-      let sum = 0;
-      for (let j = 0; j < film.length; j++) sum += Math.abs(film[j] - expected[j]);
-      const fullMAE = sum / film.length;
-      assert.ok(fullMAE < 5, `${title}: wrong scene (${fullMAE})`);
-      const objects = [];
-      for (const id of targets[i]) {
-        const node = pg.locator('[data-fixed-camera]').locator(`[data-object="${id}"]`).first(),
-          current = await node.innerHTML();
-        await node.evaluate((n, html) => {
-          n.innerHTML = html;
-        }, zero[id]);
-        const test = evidence(film, expected, await capture(), title + ' frozen ' + id);
-        await node.evaluate((n, html) => {
-          n.innerHTML = html;
-        }, current);
-        objects.push({ id, kind: await node.getAttribute('data-anim'), ...test });
+      const objects = [],
+        sampleFrames: number[] = [],
+        errors: number[] = [];
+      // Two distinct times per actor increase temporal coverage without adding
+      // synthetic motion or relaxing the per-pose pixel thresholds.
+      for (const [sample, fraction] of [0.3, 0.41].entries()) {
+        const f = Math.floor(frames * fraction),
+          png = path.join(dir, sample ? `${i + 1}.png` : `${i + 1}-early.png`);
+        sampleFrames.push(start + f);
+        await ff(['-i', file, '-an', '-vf', `select=eq(n\\,${start + f})`, '-frames:v', '1', png]);
+        const film = reduced(fs.readFileSync(png));
+        await show(f);
+        assert.equal(await pg.locator('[data-shot-title]').count(), 0);
+        const expected = await capture();
+        let sum = 0;
+        for (let j = 0; j < film.length; j++) sum += Math.abs(film[j] - expected[j]);
+        const fullMAE = sum / film.length;
+        errors.push(fullMAE);
+        assert.ok(fullMAE < 5, `${title}: wrong scene (${fullMAE})`);
+        for (const id of targets[i]) {
+          const node = pg.locator('[data-fixed-camera]').locator(`[data-object="${id}"]`).first(),
+            current = await node.innerHTML();
+          await node.evaluate((n, html) => {
+            n.innerHTML = html;
+          }, zero[id]);
+          const test = evidence(
+            film,
+            expected,
+            await capture(),
+            `${title} frozen ${id} at frame ${f}`,
+          );
+          await node.evaluate((n, html) => {
+            n.innerHTML = html;
+          }, current);
+          objects.push({
+            id,
+            frameInFilm: start + f,
+            kind: await node.getAttribute('data-anim'),
+            ...test,
+          });
+        }
       }
-      const rocks = [];
+      const staticLandmarks = [];
       const count =
         frames - (i + 1 === scenes.length ? 0 : Math.min(20, Math.floor((frames - 1) / 3)));
       for (const marker of landmarks[i])
-        rocks.push(await fixedRock(file, path.join(out, 'roi.gray'), marker, start, count));
+        staticLandmarks.push(
+          await fixedLandmark(file, path.join(out, 'roi.gray'), marker, start, count),
+        );
       report.push({
         title,
-        frameInFilm: start + f,
+        sampleFrames,
         frames,
-        fullMAE,
+        fullMAE: Math.max(...errors),
         noFixedHeading: true,
         objects,
-        rocks,
+        landmarks: staticLandmarks,
       });
       start += frames;
     }

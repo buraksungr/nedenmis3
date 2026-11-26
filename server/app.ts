@@ -1,6 +1,7 @@
 import type { PlannerWait } from './planner-pacing';
 import { ObjectPlanner } from './object-planner';
 import { motionFrame } from './motion-files';
+import { assertDistinctAdjacentTemplates } from './template-guard';
 export { parseSubjectRig, parseStage } from './motion-svg';
 import { isDeepStrictEqual } from 'node:util';
 export { parseIllustration } from './layered-svg';
@@ -403,7 +404,10 @@ export function createStudio(
           verifiedFrame(store.dir(p.id), s.vector, s.narration);
       }
     }
-    if (b.approve) approveBoard(next);
+    if (b.approve) {
+      assertDistinctAdjacentTemplates(store.dir(p.id), next.scenes);
+      approveBoard(next);
+    }
     const changed =
       JSON.stringify([p.scenes, p.styleGuide]) !== JSON.stringify([b.scenes, b.styleGuide]);
     if (changed || b.approve) {
@@ -479,10 +483,9 @@ export function createStudio(
     if (b.kind === 'draft') {
       requireThat(p.scriptApproval === scriptSig(p), 'Önce güncel senaryoyu onaylayın.');
       requireThat(!s, 'Sessiz taslak tüm hazır sahnelerden oluşur.', 400);
-      requireThat(
-        prod.draftReadyScenes(p).length,
-        'Sessiz taslak için en az bir sahne çizimi gerekli.',
-      );
+      const ready = prod.draftReadyScenes(p);
+      requireThat(ready.length, 'Sessiz taslak için en az bir sahne çizimi gerekli.');
+      assertDistinctAdjacentTemplates(store.dir(p.id), ready);
     }
     requireThat(
       b.kind !== 'image',

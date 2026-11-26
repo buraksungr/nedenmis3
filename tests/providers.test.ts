@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { app } from './http-studio';
-import { stageReply } from './ant-motion-art';
+import { planReply } from './template-test-data';
 import { SceneModels } from '../server/scene-models';
 import { motionFrame } from '../server/motion-files';
 import { Store } from '../server/store';
@@ -75,7 +75,7 @@ for (const { provider, model } of [
         calls.push({ url: String(url), drawing, body, headers });
         assert.equal(init?.redirect, 'error');
         assert.equal(init?.credentials, 'omit');
-        const text = drawing ? JSON.stringify(stageReply(0)) : narration;
+        const text = drawing ? JSON.stringify(planReply(0)) : narration;
         return provider === 'openrouter'
           ? Response.json({
               model,
@@ -217,7 +217,7 @@ test('direct Claude drawing retries received 429 with the same model and payload
       return Response.json({
         model: 'claude-test-20250101',
         stop_reason: 'end_turn',
-        content: [{ type: 'text', text: JSON.stringify(stageReply(0)) }],
+        content: [{ type: 'text', text: JSON.stringify(planReply(0)) }],
       });
     },
     async (ms) => {

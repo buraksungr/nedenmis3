@@ -22,16 +22,16 @@ For an explicit local fallback-only control (no Whisper installation), place six
 
 ## Archived flight and thirst boards
 
-`legacy-{flight,thirst}.json` are frozen plates from previous versions, not a planner. Flight and thirst controls still exercise signed, previously authored layouts with live CPU alignment, MP4 and repeat export. No local title or template generator is shipped.
+`legacy-{flight,thirst}.json` are frozen plates from previous versions, not a planner. Flight and thirst controls still exercise signed, previously authored layouts with live CPU alignment, MP4 and repeat export. These archived controls do not invoke the current local science-template planner.
 
 ## Archive whale board
 
 `vector-whale/` is an original, seven-scene layered-v1 archive regression. The 1.6 renderer reads the signed geometry and verifies the title and constituent layers in a static frame, without synthetic zoom. No live drawing service is used. `test:whale` still requires real CPU alignment.
 
-## Fixed-camera ant documentary (1.6)
+## Fixed-camera ant documentary (1.7.4)
 
-`ant.json`, `ant-motion/subject.svg` and `tests/ant-motion-art.ts` are original QA narration, articulated vector art and stage arrangements, not recorded live AI replies. `test:ant` replays them **only** at the text transport. No test art, speech, rig library or topic-specific fallback ships in Setup. Actual production calls the selected text model for the rig and each scene. The same asset verification, Remotion renderer, FFmpeg mixer and Whisper pipeline are used in the test and in the app.
+`ant.json` supplies the original QA narration. `tests/template-test-data.ts` replays **template IDs, titles and bounded parameters**, not SVG, at the text transport; production instantiates its own authored science-template library. The archived `ant-motion/subject.svg` and `tests/ant-motion-art.ts` geometry remain solely for legacy regression tests. No QA speech or fixture response is shipped as a live provider result. The same signature verification, Remotion renderer, FFmpeg mixer and Whisper pipeline are used in the control and the app.
 
-After building, run `python tests/prepare-qa-speech.py --ant` in the Windows QA speech environment described above, then `npm run test:ant` with the CPU aligner installed under `out/acoustic-control/`. The ant speech uses the attributed DFKI/Piper model above (**CC BY-NC-SA 4.0**), not live Gemini TTS. The output in `out/ant-motion-control/` contains the MP4, SRT, word JSON, five decoded PNGs, shared rig and scene SVGs, and the pixel/attribution report. A local `--allow-estimate` rehearsal is not accepted by Windows CI.
+After building, run `python tests/prepare-qa-speech.py --ant` in the Windows QA speech environment described above, then `npm run test:ant` with the CPU aligner installed under `out/acoustic-control/`. The ant speech uses the attributed DFKI/Piper model above (**CC BY-NC-SA 4.0**), not live Gemini TTS. The output in `out/ant-motion-control/` contains the MP4, SRT, word JSON, decoded PNGs, five signed local scene SVGs, and the pixel/attribution report. A local `--allow-estimate` rehearsal is not accepted by Windows CI.
 
-The stage SVGs reference `#subject-main` from the separate rig file, exactly as in production; the compositor places its definition in the same SVG document before drawing. The earlier raster ant film and its provenance remain in the [1.5 validation record](../../docs/VALIDATION.md).
+The decoded film checks two intrinsic, stationary artwork landmarks in each scene throughout the non-transition frames, and independently freezes multiple ants, flows and focus elements for pixel comparisons. It also checks nonrepeating signed template IDs, cached export reuse and a directed single-scene redraw that preserves voice and timing. The earlier raster ant film and its provenance remain in the [1.5 validation record](../../docs/VALIDATION.md).

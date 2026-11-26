@@ -3,6 +3,7 @@ import { useCurrentFrame } from 'remotion';
 import { layers, type Geometry, type VectorFrame } from '../shared/vector';
 const attrs: Record<string, string> = {
   'fill-rule': 'fillRule',
+  'paint-order': 'paintOrder',
   'stroke-linecap': 'strokeLinecap',
   'stroke-linejoin': 'strokeLinejoin',
   'stroke-width': 'strokeWidth',

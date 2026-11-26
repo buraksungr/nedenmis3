@@ -19,6 +19,7 @@ import { Store, makeProject, scriptSig, approveBoard, hash } from '../server/sto
 import { memoryVault } from '../server/vault';
 import { rigReply, stageReply, lines, topic } from './ant-motion-art';
 import { completion } from './vector-test-data';
+import { planReply } from './template-test-data';
 const template = rigReply(),
   rig = parseSubjectRig(template.svg).root;
 const scene = (actors: string, decor = '', extra = '') =>
@@ -289,8 +290,8 @@ test('tekrarlanan sahne başlığı otomatik benzersiz başlıkla değiştirilir
         sahne === 0
           ? rigReply()
           : sahne === 1 || sahne === 2
-            ? { ...stageReply(0), title: 'Kışın Eşiğinde' }
-            : stageReply(sahne - 1),
+            ? { ...planReply(0), title: 'Kışın Eşiğinde' }
+            : planReply(sahne - 1),
       );
     },
   );
@@ -345,7 +346,7 @@ test('one broken middle heading: two repairs, later sibling saved, reload and re
       return completion(
         q.sahne
           ? {
-              ...stageReply(q.sahne - 1),
+              ...planReply(q.sahne - 1),
               ...(bad && q.sahne === 2
                 ? { title: q.onarım ? 'Karıncalar Kışın Uykusuna' : 'Donan Toprakta Kimler' }
                 : {}),
@@ -417,59 +418,34 @@ test('an allowed filter/clip/mask/pattern is rendered by React, never stripped t
   ])
     assert.ok(tree.includes(expected), expected);
 });
-test('the reported regression: title/style/animate/text no longer stop a storyboard; <mask> is named if truly invalid', async (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-sanitize-')),
-    store = new Store(dir, false);
-  t.after(() => {
-    store.db.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-  const replied = `<svg viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
-    <title>Kışın Eşiği</title><desc>model açıklaması</desc><metadata>x</metadata>
-    <style>.a { opacity: .5; }</style>
-    <defs><linearGradient id="sky"><stop stop-color="#194057"/></linearGradient></defs>
-    <g id="set"><rect width="1080" height="1920" fill="url(#sky)"/>
-      <animate attributeName="opacity" values="0;1"/>
-      <text x="30" y="60" font-size="24">kış</text></g>
-    ${stageReply(0)
-      .svg.replace(/^<svg[^>]*>/, '')
-      .replace('</svg>', '')}
-  </svg>`;
-  const models = new SceneModels(
-    store,
-    { groq: memoryVault(), openrouter: memoryVault() },
-    async (_url, o) =>
-      completion(
-        JSON.parse(JSON.parse(String(o?.body)).messages[1].content).sahne === 1
-          ? { title: 'Kışın Eşiği', svg: replied }
-          : template,
-      ),
+test('archived SVG sanitizer strips unsupported active content and remains readable after signing', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-sanitize-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const replied = stageReply(0)
+    .svg.replace(
+      '<defs>',
+      '<title>Kışın Eşiği</title><desc>model açıklaması</desc><metadata>x</metadata><style>.a { opacity: .5; }</style><defs>',
+    )
+    .replace(
+      '</svg>',
+      '<animate attributeName="opacity" values="0;1"/><text x="30" y="60" font-size="24">kış</text><script>alert(1)</script></svg>',
+    );
+  const ref = saveMotion(
+    dir,
+    {
+      kind: 'objects-v1',
+      title: 'Kışın Eşiği',
+      narrationHash: hash(lines[0]),
+      provider: 'openrouter',
+      model: 'archived-sanitizer',
+    },
+    replied,
   );
-  models.key('openrouter', 'sanitize-regression');
-  const planner = new ObjectPlanner(store, models, async () => {}),
-    p = store.create(makeProject(topic, lines[0]));
-  p.scriptApproval = scriptSig(p);
-  await planner.plan(p, () => {});
-  const saved = store.get(p.id);
-  assert.equal(saved.motionWork, undefined);
-  assert.ok(saved.scenes[0].choreography);
-  const frame = motionFrame(store.dir(p.id), saved.scenes[0].choreography, lines[0]);
-  assert.ok(frame.stage.children.length > 1);
-  // The signed file records what was removed; the renderer only receives safe geometry.
-  assert.match(saved.scenes[0].choreography!.digest, /^[0-9a-f]{64}$/);
-  const file = fs.readFileSync(
-    path.join(store.dir(p.id), 'media', 'motion', saved.scenes[0].choreography!.digest + '.svg'),
-    'utf8',
-  );
+  const file = fs.readFileSync(path.join(dir, 'media', 'motion', ref.digest + '.svg'), 'utf8');
   assert.match(file, /x-nedenmis-clean=/);
-  assert.doesNotMatch(file, /<(?:style|animate|text|title|desc|metadata)/);
-
-  // Yanlış yerleştirilmiş <mask> (doğrudan <svg> altında) sahneyi reddetmez;
-  // sanitizer içeriği temizleyip kaydeder.
-  const cleanedMask = parseStage(
-    replied.replace('<defs>', '<mask><g/></mask><defs>'),
-    parseSubjectRig(template.svg).root,
-  );
+  assert.doesNotMatch(file, /<(?:style|animate|text|title|desc|metadata|script)/);
+  assert.ok(motionFrame(dir, ref, lines[0]).stage.children.length > 1);
+  const cleanedMask = parseStage(replied.replace('<defs>', '<mask><g/></mask><defs>'), rig);
   assert.ok(!/<mask/.test(cleanedMask.canonical));
   assert.match(cleanedMask.canonical, /x-nedenmis-clean=/);
 });
@@ -497,16 +473,6 @@ test('tam ve geçerli Türkçe başlıklar kabul edilir; yarı/kırpılmış ba�
   // Cümle fiili ile başlayan → yarı başlık, reddedilir
   assert.ok(!isCompleteTitle('Yapan İşler'));
   assert.ok(!isCompleteTitle('Eder Zaman'));
-});
-
-test('shotRule güvenli bölge ve titreşim kurallarını içerir', () => {
-  // shotRule içeriğini doğrudan değil, ObjectPlanner üzerinden test edilebilir;
-  // burada sadece prompt metninin temel kurallarının var olduğunu doğruluyoruz.
-  // (İmport etmeyiz çünkü shotRule modül içi bir sabit.)
-  assert.ok(
-    true,
-    'shotRule şu kuralları içerir: SOMUT GÖREL EŞLEŞTİRME, KADRAJ VE ÖLÇEK ÇEŞİTLİLİĞİ, GÜVENLI BÖLGELER',
-  );
 });
 
 test('başlık tutarlılığı: 2–4 kelime, tam anlamlı, tek tek kelime kontrolü', () => {

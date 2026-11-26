@@ -6,7 +6,8 @@ import { test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { STOPPED, type Project } from '../shared/schema';
 import type { PlannerWait } from '../server/planner-pacing';
-import { titles, lines, topic } from './ant-motion-art';
+import { lines, topic } from './ant-motion-art';
+import { planReply } from './template-test-data';
 import { app } from './http-studio';
 import { completion } from './vector-test-data';
 
@@ -23,11 +24,9 @@ const truncated = (provider: Provider) =>
 const success = (provider: Provider, value: unknown) =>
   provider === 'gemini' ? candidate(JSON.stringify(value)) : completion(value);
 
-// Compact, valid controlled replies. The richer archived motion fixtures remain unchanged.
+// Bounded, valid controlled replies. The richer archived motion fixtures remain unchanged.
 function compactStage(scene: number) {
-  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#194057"/></g><g id="layer-main"><g id="set"><path d="M0 1100Q540 980 1080 1140V1920H0Z" fill="#6c4e3f"/></g><path d="M180 850Q260 780 340 850L330 900H190Z" fill="#c87d55"/><path d="M400 960Q510 870 620 960L610 1010H410Z" fill="#c98f65"/><circle cx="240" cy="420" r="12" data-anim="fall"/><circle cx="580" cy="340" r="9" data-anim="fall"/><circle cx="810" cy="520" r="14" data-anim="fall"/></g><g id="layer-fx"/></svg>`;
-  assert.ok(svg.length < 3500);
-  return { title: titles[scene - 1], svg };
+  return planReply(scene - 1);
 }
 async function fixture(
   t: TestContext,
@@ -165,10 +164,9 @@ for (const provider of ['gemini', 'openrouter'] as const) {
       );
       for (const q of f.posts) {
         assert.ok(q.tokens >= 8192);
-        assert.match(q.rule, /3500 karakterin altında/);
-        assert.match(q.rule, /tam sayı/);
-        assert.match(q.rule, /uzun ondalıklar ve XML yorumları kullanma/);
-        assert.match(q.rule, /<\/svg>/);
+        assert.match(q.rule, /KESİNLİKLE SVG, XML, path, koordinat/);
+        assert.match(q.rule, /yasakKomşuŞablonlar/);
+        assert.match(q.rule, /0–100 arası tam sayı/);
         assert.equal(q.repair, undefined);
       }
       const log = f.log();
@@ -270,7 +268,7 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     assert.ok(scene3Posts.length >= 4, 'at least 4 scene-3 posts');
     assert.equal(allScenes[allScenes.length - 1], 4);
   });
-  test(`${provider}: MAX_TOKENS and XML are not HTTP retries; label the actual scene failure, never commit truncated or invalid SVG`, async (t) => {
+  test(`${provider}: MAX_TOKENS and SVG replies are not HTTP retries; never commit invalid model content`, async (t) => {
     let kind: 'length' | 'xml' = 'length';
     const waits: number[] = [];
     const f = await fixture(
@@ -293,8 +291,7 @@ for (const provider of ['gemini', 'openrouter'] as const) {
     for (kind of ['length', 'xml'] as const) {
       const mark = f.posts.length,
         p = await f.finish();
-      const cause =
-        kind === 'length' ? /MAX_TOKENS - Yanıt Yarım Kaldı/ : /XML Hatası - Satır \d+, sütun \d+/;
+      const cause = kind === 'length' ? /MAX_TOKENS - Yanıt Yarım Kaldı/ : /JSON Şema Hatası/;
       assert.equal(p.job.state, 'failed');
       assert.match(p.job.label, cause);
       assert.match(p.motionWork![p.scenes[0].id].detail!, cause);
@@ -437,61 +434,31 @@ test(
   },
 );
 
-test('harmless unsupported markup reaches disk as a cleaned signed scene: no repair request, no failure card', async (t) => {
-  // The user's failing reply: a <title>, a <style> block and <animate> inside an ordinary
-  // scene used to stop every storyboard with "Desteklenmeyen SVG öğesi … (2 onarımdan sonra)".
-  const decorate = (svg: string) =>
-    svg
-      .replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')
-      .replace(
-        '<g id="set">',
-        '<title>Sahne</title><desc>açıklama</desc><metadata>m</metadata>' +
-          '<style>.glow{opacity:.6}</style><g id="set" class="glow">',
-      )
-      .replace(
-        '</svg>',
-        '<animate attributeName="opacity" values="0;1"/><animateTransform attributeName="transform"/>' +
-          '<text x="20" y="40" font-size="22">kış</text>' +
-          '<image href="https://example.test/subject.png"/><script>alert(1)</script></svg>',
-      );
-  const f = await fixture(t, 'openrouter', 2, (scene) =>
-    scene
-      ? success('openrouter', { ...compactStage(scene), svg: decorate(compactStage(scene).svg) })
-      : undefined,
-  );
-  // The rig itself carries the same harmless habits.
+test('model-authored markup is rejected and repaired as a bounded local template selection', async (t) => {
+  let calls = 0;
+  const f = await fixture(t, 'openrouter', 2, (scene) => {
+    if (scene === 1 && calls++ === 0)
+      return success('openrouter', {
+        ...compactStage(scene),
+        svg: '<svg><script>bad</script></svg>',
+      });
+  });
   const p = await f.finish();
   assert.equal(p.job.state, 'done', p.job.label);
   assert.deepEqual(
     f.posts.map((q) => q.scene),
-    [1, 2], // two scenes; no content repair, no rig
+    [1, 1, 2],
   );
-  assert.ok(f.posts.every((q) => q.repair === undefined));
-  assert.ok(p.scenes.every((s) => s.choreography));
-  assert.equal(p.motionWork, undefined);
-  const files = p.scenes.flatMap((s) =>
-    s.choreography
-      ? [path.join(f.store.dir(p.id), 'media', 'motion', s.choreography.digest + '.svg')]
-      : [],
-  );
-  for (const file of files) {
-    const xml = fs.readFileSync(file, 'utf8');
-    assert.match(xml, /x-nedenmis-clean="/);
-    for (const bad of ['<style', '<animate', '<text', '<image', '<script', 'class='])
-      assert.ok(!xml.includes(bad), `${file}: ${bad}`);
-    assert.ok(xml.includes('data-anim'));
+  assert.match(f.posts[1].repair!, /JSON Şema Hatası/);
+  for (const s of p.scenes) {
+    const xml = fs.readFileSync(
+      path.join(f.store.dir(p.id), 'media', 'motion', s.choreography!.digest + '.svg'),
+      'utf8',
+    );
+    assert.doesNotMatch(xml, /<script|bad<|example\.test/);
+    assert.match(xml, /tpl-v174-/);
   }
-  assert.ok(
-    !fs.readFileSync(path.join(f.store.dir(p.id), 'project.json'), 'utf8').includes('example.test'),
-  );
-  assert.deepEqual(
-    await (await f.req('/projects/' + p.id)).json().then((x: Project) => x.motionWork),
-    undefined,
-  );
-  // Reopening a stored, cleaned scene must not contact the provider or rewrite it.
   const before = f.posts.length;
-  assert.equal((await f.req(f.route + '/generate', { kind: 'board' }, p.rev)).status, 202);
-  const again = await f.settle(f.route);
-  assert.equal(again.job.state, 'done');
+  await f.finish();
   assert.equal(f.posts.length, before);
 });

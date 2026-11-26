@@ -229,9 +229,9 @@ export function ScriptEditor({ p }: { p: Project }) {
             <div className="note-panel">
               <strong>Sabit kamera · Hareketli SVG</strong>
               <p>
-                Senaryoyu onayladığında seçtiğin metin modeli her sahneyi ayrı çizer ve nesneleri
-                hareketlendirir. Sahne başlıkları yalnız proje bilgisidir; videoya yazılmaz.
-                Fotoğraf servisi kullanılmaz.
+                Senaryoyu onayladığında model, her sahne için yerel bir bilimsel şablon ve sınırlı
+                renk/hareket seçenekleri belirler. Çizim uygulamada oluşturulur; model SVG yazmaz.
+                Başlıklar yalnız proje bilgisidir. Fotoğraf servisi kullanılmaz.
               </p>
             </div>
           )}
@@ -493,8 +493,8 @@ export function BoardEditor({ p }: { p: Project }) {
               <Badge tone="purple">9:16 · SVG</Badge>
             </div>
             <p>
-              Kamera sabit kalır. Aynı öznenin kopyaları, parçacıklar ve çizgiler kendi zamanlarında
-              hareket eder.
+              Kamera sabit kalır. Yerel şablonlardaki öğeler ve akış çizgileri güvenli sınırlar
+              içinde hareket eder.
             </p>
             {p.subjectRig && (
               <p className="subject-lock">

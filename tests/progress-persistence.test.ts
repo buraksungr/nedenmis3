@@ -89,11 +89,10 @@ test('progress save and log failures are caught, logged and retried without call
 });
 
 test('failed terminal disk save is visible, blocks edits, and recovers the real project without crashing', async (t) => {
-  const svg = `<svg viewBox="0 0 1080 1920"><g id="layer-bg"><rect width="1080" height="1920" fill="#123"/></g><g id="layer-main"><path d="M40 500Q120 400 200 500Z" fill="#dcaa78"/><path d="M240 500Q300 400 360 500Z" fill="#ddb788"/><path d="M400 500Q460 400 520 500Z" fill="#eed4aa"/></g><g id="layer-fx"><circle cx="100" cy="600" r="10" data-anim="fall"/><circle cx="200" cy="600" r="10" data-anim="fall"/><circle cx="300" cy="600" r="10" data-anim="fall"/></g></svg>`;
   const ctx = await app(
     t,
     undefined,
-    async () => completion({ title: 'Güvenli Derinlikler', svg }),
+    async () => completion({ title: 'Güvenli Derinlikler', template: 'soil-colony' }),
     async () => {},
   );
   const warnings: string[] = [];

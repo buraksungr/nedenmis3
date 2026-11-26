@@ -73,7 +73,8 @@ export function MotionEditor({
         <small className="tiny-cap">SABİT KAMERA · SAF SVG</small>
         <h3>{s.choreography?.title}</h3>
         <p>
-          {s.choreography?.objects} hareketli nesne · {s.choreography?.actors} özne örneği
+          {s.choreography?.objects} hareketli öğe · {s.choreography?.provider} ·{' '}
+          {s.choreography?.model}
         </p>
         <Button
           aria-label={playing ? 'Animasyonu duraklat' : 'Nesneleri oynat'}
@@ -88,9 +89,13 @@ export function MotionEditor({
             value={hint}
             onChange={(e) => setHint(e.target.value)}
             disabled={locked}
-            placeholder="Örneğin: Tünele inen karıncaları büyüt."
+            placeholder="Örneğin: Daha sıcak renkler ve yavaş hareket."
           />
         </label>
+        <p className="help">
+          Yönlendirme yalnız hazır şablon, renk ve hareket seçeneklerini etkiler; serbest çizim
+          yapılmaz.
+        </p>
         <Button disabled={locked} onClick={() => draw(hint.trim())}>
           <RefreshCw size={14} />
           Bu sahneyi yeniden üret

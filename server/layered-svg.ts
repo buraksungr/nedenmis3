@@ -1,4 +1,5 @@
 import { animKinds } from '../shared/object-motion';
+import { scienceLabel } from '../shared/science-label';
 import { SaxesParser } from 'saxes';
 import { SVGPathData } from 'svg-pathdata';
 import { layers, type Drawing, type Geometry, type Layer } from '../shared/vector';
@@ -529,7 +530,7 @@ export function parseGeometry(
         note(`Kök özniteliği temizlendi: ${token(k)}`);
         continue;
       }
-      if (keyword && k === 'data-keyword') {
+      if (keyword && (k === 'data-keyword' || (k === 'data-label-outline' && v === 'true'))) {
         a[k] = 'true';
         continue;
       }
@@ -548,6 +549,9 @@ export function parseGeometry(
             'data-pivot-x': [-10000, 10000],
             'data-pivot-y': [-10000, 10000],
             'data-angle': [-180, 180],
+            // Previously unknown attributes were removed from signed files. This
+            // opt-in cannot reinterpret a canonical archived flow.
+            'data-flow-direction': [-1, 1],
           };
           if (!Object.hasOwn(ranges, k)) {
             note(`${token(k)} parametresi temizlendi`);
@@ -805,7 +809,7 @@ export function parseGeometry(
         unsafeKeyword ||
         labels >= 2 ||
         text.length > 28 ||
-        !/^\p{L}[\p{L}\p{M}\p{N}’'-]*(?: \p{L}[\p{L}\p{M}\p{N}’'-]*)?$/u.test(text) ||
+        !scienceLabel(text) ||
         [editorial?.title, editorial?.narration].some(
           (t) => t?.trim().toLocaleLowerCase('tr') === text.toLocaleLowerCase('tr'),
         ) ||
@@ -823,6 +827,7 @@ export function parseGeometry(
           Object.entries(n.attrs).filter(([k]) =>
             [
               'data-keyword',
+              'data-label-outline',
               'x',
               'y',
               'font-size',
@@ -835,6 +840,12 @@ export function parseGeometry(
         );
         n.attrs.fill ??= '#ffffff';
         n.attrs['font-family'] ??= 'Arial';
+        // An opt-in only present in new local templates; old signed keywords are unchanged.
+        if (n.attrs['data-label-outline'] === 'true') {
+          n.attrs.stroke = '#102936';
+          n.attrs['stroke-width'] = '4';
+          n.attrs['paint-order'] = 'stroke';
+        }
       }
     }
     if (stack.length === 1 && n.tag === 'g') layer = undefined;

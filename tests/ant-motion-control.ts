@@ -10,8 +10,10 @@ import { ObjectPlanner } from '../server/object-planner';
 import { Gemini } from '../server/gemini';
 import { probe, verifyVideo } from '../server/media';
 import { motionFrame } from '../server/motion-files';
+import { templateIdInStage } from '../server/science-templates';
 import { completion } from './vector-test-data';
-import { lines, topic, stageReply, titles } from './ant-motion-art';
+import { lines, topic, titles } from './ant-motion-art';
+import { planReply } from './template-test-data';
 import { objectPixels } from './object-pixels';
 async function main() {
   const out = path.resolve('out/ant-motion-control'),
@@ -36,7 +38,7 @@ async function main() {
         // Production starts directly with Sahne 1/5; no common rig (scene 0) call anymore.
         assert.ok(q.sahne, 'expected a scene number, no rig request');
         assert.equal(q.anlatım, lines[q.sahne - 1]);
-        return completion(stageReply(q.sahne - 1, !!q.yönlendirme));
+        return completion(planReply(q.sahne - 1, !!q.yönlendirme));
       },
     );
     models.key('openrouter', 'offline-motion-replay');
@@ -104,6 +106,18 @@ async function main() {
       };
     });
     assert.equal(new Set(scenes.map((s) => s.digest)).size, scenes.length);
+    const templateNames = p.scenes.map((s) =>
+      templateIdInStage(motionFrame(store.dir(p.id), s.choreography, s.narration).stage),
+    );
+    assert.deepEqual(templateNames, [
+      'soil-colony',
+      'ant-tunnel',
+      'colony-chamber',
+      'focus',
+      'overview',
+    ]);
+    for (let i = 1; i < templateNames.length; i++)
+      assert.notEqual(templateNames[i], templateNames[i - 1]);
     const frames = scenes.reduce((n, s) => n + s.frames, 0),
       mp4 = engine.file(p, p.final.file);
     await verifyVideo(mp4, frames, true);
@@ -143,7 +157,7 @@ async function main() {
     p.scenes.forEach((s, i) => copy(s.choreography!.digest, 'scene-' + (i + 1)));
     const original = structuredClone(p.assets),
       refs = p.scenes.map((s) => s.choreography!.digest),
-      direction = 'Tüneldeki öncü karıncayı daha büyük göster.';
+      direction = 'Daha sıcak renkler ve yavaş hareket.';
     await planner.plan(p, () => {}, p.scenes[1], direction);
     assert.deepEqual(textCalls, [1, 2, 3, 4, 5, 2]);
     assert.equal(p.boardApproval, null);
@@ -159,14 +173,16 @@ async function main() {
       else assert.deepEqual(m.clip, old.clip);
     }
     const tests = pixels.flatMap((s) => s.objects),
-      roiFrames = pixels.flatMap((s) => s.rocks).reduce((n, r) => n + r.frames, 0);
+      roiFrames = pixels.flatMap((s) => s.landmarks).reduce((n, r) => n + r.frames, 0);
+    assert.equal(tests.length, 32);
+    assert.equal(new Set(tests.map((v) => v.id)).size, 16);
     fs.writeFileSync(
       path.join(out, 'report.json'),
       JSON.stringify(
         {
           topic,
           plannerSource:
-            'Original authored SVG and Turkish title responses replayed at the text transport; no live drawing model or image API.',
+            'Offline template-ID and Turkish title selections replayed at the text transport; production instantiates its local template library. No live model or image API.',
           voiceSource: JSON.parse(fs.readFileSync(path.join(speech, 'source.json'), 'utf8')),
           textCalls,
           ttsCalls: ttsCalls.length,
@@ -174,6 +190,7 @@ async function main() {
           seconds: frames / 30,
           words: timings.words.length,
           scenes,
+          templateNames,
           pixels,
           roiFrames,
           cachedSecondExport: true,
@@ -185,7 +202,7 @@ async function main() {
       ),
     );
     console.log(
-      `::notice title=Verified fixed-camera SVG ant film::${scenes.length} scenes; ${frames} frames / ${(frames / 30).toFixed(2)}s; ${timings.words.length} Whisper words, ${scenes.filter((s) => s.method === 'estimated').length} estimates. ${roiFrames} landmark frames at 0px displacement. ${tests.length} individual frozen poses rejected in decoded MP4 (ants, snow, tunnels, heat, shoots). ${scenes.map((s) => s.actors).join('/')} uses, ${scenes.map((s) => s.objects).join('/')} animated objects. 1 rig, no image API. One directed redraw, all voice and timings preserved. Titles: ${titles.join(' / ')}`,
+      `::notice title=Verified fixed-camera SVG ant film::${scenes.length} scenes; ${frames} frames / ${(frames / 30).toFixed(2)}s; ${timings.words.length} Whisper words, ${scenes.filter((s) => s.method === 'estimated').length} estimates. ${roiFrames} landmark frames at 0px displacement. ${tests.length} frozen-pose checks in decoded MP4 (16 independent actors at two times each: ants, air/heat flow and focus diagrams). ${scenes.map((s) => s.actors).join('/')} animated objects. Five local templates; no rig or image API. One directed redraw, all voice and timings preserved. Titles: ${titles.join(' / ')}`,
     );
   } finally {
     store.db.close();
