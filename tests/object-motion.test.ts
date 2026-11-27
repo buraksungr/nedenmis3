@@ -199,7 +199,7 @@ test('data-anim sabit arka plansal ögelerden temizlenir; sahne onarım gerektir
   assert.equal(parseStage(s.canonical, rig).canonical, s.canonical);
 });
 
-test('ten deterministic frame-based primitives: travel, looping weather, trace, flow, centered scale, pivot and spring', () => {
+test('thirteen deterministic primitives include bounded looping travel, elliptical orbit and a two-beat organ', () => {
   const at = (kind: string, f: number, extra = {}) =>
     objectPose(
       {
@@ -218,8 +218,15 @@ test('ten deterministic frame-based primitives: travel, looping weather, trace, 
       f,
       30,
     );
-  assert.equal(animKinds.length, 10);
+  assert.equal(animKinds.length, 13);
   assert.equal(at('move', 30, { 'data-delay': '.5' }).transform, 'translate(60 30)');
+  assert.equal(at('sway', 0).transform, 'translate(0 0)');
+  assert.equal(at('sway', 15).transform, 'translate(120 60)');
+  assert.deepEqual(at('sway', 0), at('sway', 30));
+  assert.equal(at('orbit', 0).transform, 'translate(120 0)');
+  assert.deepEqual(at('orbit', 0), at('orbit', 30));
+  assert.ok(at('heartbeat', 4).scale! < 0.95);
+  assert.deepEqual(at('heartbeat', 0), at('heartbeat', 30));
   assert.equal(at('draw', 15).reveal, 0.5);
   assert.equal(at('fall', 15).transform, 'translate(60 30)');
   assert.deepEqual(at('fall', 15), at('fall', 45));

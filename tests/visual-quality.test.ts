@@ -170,7 +170,7 @@ test('planner selects a locally authored, high-contrast anatomical eye rather th
   assert.doesNotThrow(() =>
     validateNewStage(frame.stage, { topic: project.topic, narration: project.scenes[0].narration }),
   );
-  assert.ok(JSON.stringify(frame.stage).includes('tpl-v174-eye-cross'));
+  assert.ok(JSON.stringify(frame.stage).includes('tpl-v175-eye-cross'));
 });
 
 test('previously signed low-contrast artwork still reopens unchanged', (t) => {

@@ -6,6 +6,8 @@ import {
   circle,
   ellipse,
   rect,
+  group,
+  orbit,
   flow,
   pulse,
   repeat,
@@ -123,10 +125,28 @@ export function physics(id: string, c: ArtContext): Art {
               7,
             );
           }) +
-          circle(790, 613, 43, '#88d3de', `stroke="${ink}" stroke-width="9"`) +
-          p('M766 603 Q779 587 790 592 L795 611 L810 615 L806 634 L783 640 L777 625Z', '#a7dfa9') +
-          circle(325, 687, 24, '#ebaa93', `stroke="${ink}" stroke-width="6"`) +
-          circle(681, 828, 13, '#d5d1b9') +
+          group(
+            'transform="translate(540 735)"',
+            orbit(
+              'orbit-planet-earth',
+              circle(0, 0, 43, '#88d3de', `stroke="${ink}" stroke-width="9"`) +
+                p('M-24 -10 Q-11 -26 0 -21 L5 -2 L20 2 L16 21 L-7 27 L-13 12Z', '#a7dfa9'),
+              c,
+              325,
+              184,
+            ),
+          ) +
+          group(
+            'transform="translate(540 735)"',
+            orbit(
+              'orbit-planet-inner',
+              circle(0, 0, 24, '#ebaa93', `stroke="${ink}" stroke-width="6"`),
+              c,
+              -238,
+              118,
+              c.duration * 2,
+            ),
+          ) +
           repeat(14, (i) =>
             circle(160 + ((i * 131) % 760), 430 + ((i * 83) % 590), (i % 3) + 2, '#e9f5dd'),
           ),

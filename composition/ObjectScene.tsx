@@ -45,6 +45,11 @@ export function objectPose(
       return {
         transform: `translate(${dx * moveFactor * progress} ${dy * moveFactor * progress})`,
       };
+    case 'sway': {
+      // A smooth out-and-back traversal within the authored endpoints.
+      const travel = (1 - Math.cos(cycle * Math.PI * 2)) / 2;
+      return { transform: `translate(${dx * moveFactor * travel} ${dy * moveFactor * travel})` };
+    }
     case 'fall':
     case 'rise': {
       const y = (kind === 'rise' ? -1 : 1) * Math.abs(dy || 180);
@@ -67,6 +72,23 @@ export function objectPose(
       // Old canonical SVGs never contained this formerly unsupported attribute.
       // Only locally authored templates opt in to reverse flow.
       return { flow: cycle * (a['data-flow-direction'] === '-1' ? -1 : 1) };
+    case 'orbit': {
+      // Translate the body along an authored ellipse rather than squashing or
+      // rotating the planet itself. The path is bounded and frame-driven.
+      const angle = cycle * Math.PI * 2 * (a['data-flow-direction'] === '-1' ? -1 : 1);
+      return { transform: `translate(${dx * Math.cos(angle)} ${dy * Math.sin(angle)})` };
+    }
+    case 'heartbeat': {
+      // Two smooth contractions per beat (atrial/ventricular impression), with
+      // a relaxed interval. Every vessel and flow path lives inside the same
+      // fill-box-centered wrapper as the organ, so nothing detaches.
+      const bump = (center: number, width: number) => {
+          const distance = Math.abs(cycle - center);
+          return Math.exp(-((Math.min(distance, 1 - distance) / width) ** 2));
+        },
+        beat = bump(0.14, 0.075) + 0.48 * bump(0.34, 0.09);
+      return { scale: 1 - value('amplitude', 0.06) * beat };
+    }
     case 'wiggle':
     case 'swing':
       return {
@@ -110,10 +132,9 @@ function object(
     local = mul(context.transform, matrix(n.attrs.transform)),
     dx = Number(n.attrs['data-dx'] ?? 0),
     dy = Number(n.attrs['data-dy'] ?? 0),
-    requested =
-      n.attrs['data-anim'] === 'move'
-        ? Math.hypot(local[0] * dx + local[2] * dy, local[1] * dx + local[3] * dy) * context.fit
-        : 0,
+    requested = ['move', 'sway'].includes(n.attrs['data-anim'])
+      ? Math.hypot(local[0] * dx + local[2] * dy, local[1] * dx + local[3] * dy) * context.fit
+      : 0,
     distance = Number.isFinite(requested) ? requested : Infinity,
     remaining = Math.max(0, MAX_MOVE_PIXELS - context.distance),
     // v2 reserves the ancestors' full displacement, so nested moves cannot add
@@ -245,6 +266,18 @@ export function ObjectScene({
     },
     foreground = fittedSafeRect(viewBox, 1460),
     keyword = fittedSafeRect(viewBox, 1220),
+    // The marker is inside the signed, narration-bound SVG. Only new local
+    // v175 scenes get this camera; archived v1/v2 SVGs remain bit-for-bit still.
+    cameraEnabled =
+      scene.ref.kind === 'objects-v2' &&
+      !!stage.children
+        .find((n) => n.tag === 'g' && n.attrs.id === 'layer-main')
+        ?.children.some((n) => n.tag === 'g' && n.attrs.id?.startsWith('tpl-v175-')),
+    seconds = frame / fps,
+    zoom = 1 + 0.012 * Math.sin((seconds * Math.PI * 2) / 8),
+    driftX = 3.5 * Math.sin((seconds * Math.PI * 2) / 11),
+    driftY = 2.5 * Math.sin((seconds * Math.PI * 2) / 9),
+    camera = `translate(${driftX} ${driftY}) translate(540 780) scale(${zoom}) translate(-540 -780)`,
     ordered = stage.children
       .flatMap((n) => pieces(n, box, true))
       .filter((piece) => showKeywords || piece.zone !== 'keyword');
@@ -287,7 +320,13 @@ export function ObjectScene({
               key={i}
               clipPath={`url(#${scope}${zone === 'keyword' ? 'keyword-frame' : 'safe-frame'})`}
             >
-              {art}
+              {cameraEnabled && zone === 'foreground' ? (
+                <g data-camera-motion="" transform={camera}>
+                  {art}
+                </g>
+              ) : (
+                art
+              )}
             </g>
           );
         })}

@@ -16,7 +16,7 @@ const ink = '#173544',
   ice = '#e5f4eb';
 // Three distinct body segments, narrow waist, six legs, antennae and eyes. The only
 // translation is a short path wholly inside the specifically authored chamber.
-function ant(x: number, y: number, scale: number, id: string, c: ArtContext) {
+export function ant(x: number, y: number, scale: number, id: string, c: ArtContext) {
   const body =
     line(
       'M46 50 L30 65 L17 64 M57 53 L52 70 L38 74 M67 53 L81 65 L97 66 M48 41 L28 29 L16 32 M59 39 L59 23 L48 16 M70 42 L87 30 L102 32',
@@ -39,15 +39,18 @@ function ant(x: number, y: number, scale: number, id: string, c: ArtContext) {
       '#f4b684',
       `stroke="${ink}" stroke-width="4"`,
     ) +
-    line('M96 26 Q98 13 108 9 L117 13 M104 27 Q113 17 124 19 L129 24', '#ffcf9c', 3) +
+    group(
+      `id="${id}-antennae" data-anim="wiggle" data-pivot-x="96" data-pivot-y="26" data-angle="9" data-duration="${c.duration * 0.6}"`,
+      line('M96 26 Q98 13 108 9 L117 13 M104 27 Q113 17 124 19 L129 24', '#ffcf9c', 3),
+    ) +
     circle(104, 36, 3, '#12303b') +
     circle(105, 35, 1, '#ffffff') +
     line('M17 36 Q26 31 35 33 M69 39 L76 38', '#ffe2b6', 3);
   return group(
     `transform="translate(${x} ${y}) scale(${scale})"`,
     group(
-      `id="${id}" data-anim="move" data-dx="20" data-dy="0" data-duration="${Math.max(3, c.duration)}"`,
-      body,
+      `id="${id}" data-anim="sway" data-dx="20" data-dy="0" data-duration="${Math.max(3, c.duration)}"`,
+      pulse(`${id}-body`, body, c, 0.025),
     ),
   );
 }

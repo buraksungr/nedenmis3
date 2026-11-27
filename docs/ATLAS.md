@@ -1,6 +1,6 @@
 # Tam ekran özel vektör sahnesi (1.4+)
 
-> **Arşiv (1.4/1.4.1):** Aşağıdaki planlama/katman hareketi açıklaması bu eski sürümlere aittir. 1.7.4 yeni sahneleri [yerel şablon ve nesne motoruyla](MOTION.md) oluşturur; model SVG çizmez. Eski katmanlı çizimler açılışta dönüştürülmez; yeniden render’da toplu katman hareketi uygulanmaz.
+> **Arşiv (1.4/1.4.1):** Aşağıdaki planlama/katman hareketi açıklaması bu eski sürümlere aittir. 1.7.5 yeni sahneleri [yerel şablon ve nesne motoruyla](MOTION.md) oluşturur; model SVG çizmez. Eski katmanlı çizimler açılışta dönüştürülmez; yeniden render’da toplu katman hareketi uygulanmaz.
 
 
 **Çizim ve başlık.** “SVG planı oluştur” onaylı metni sahnelere ayırır; metin zaten sahnelere bölünmüşse kimlikleri, sırayı ve anlatımları korur. Seçili OpenRouter (`openrouter/free`) veya izinli Gemini **metin** modelinden her sahne için `{title, fx, svg}` istenir. Modele konu, sahne sırası ve o sahnenin anlatımı verilir; ses, zaman dosyası, proje yolu veya diğer sağlayıcının anahtarı gönderilmez. Başlık 2–3 sözcükten oluşur; yerel metin çıkarımı veya şablon seçimi yoktur. Bilimsel doğruluğunu ve Türkçe anlam bütünlüğünü onaydan önce gözden geçirin.

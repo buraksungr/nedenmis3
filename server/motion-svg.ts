@@ -102,7 +102,7 @@ export function validateNewStage(
       .replace(/\p{Diacritic}/gu, '')
       .replaceAll('ı', 'i'),
     anatomicalScene =
-      /\b(?:goz(?!lem|lemevi|den)\w*|gorme\w*|iris\w*|pupil\w*|retina\w*|kornea\w*|mercek\w*|kalp\w*|akciger\w*|bobrek\w*|karaciger\w*|beyin\w*|mide\w*|bagirsak\w*|dalak\w*|pankreas\w*|organ(?:lar|lari|in|i|da|dan|s)?|eyes?|eyeball|optic\w*|heart|kidneys?|lungs?|brain|stomach|liver|spleen|pancreas|intestines?)\b/i.test(
+      /\b(?:goz(?!lem|lemevi|den)\w*|gorme\w*|iris\w*|pupil\w*|retina\w*|kornea\w*|mercek\w*|kalp\w*|kalb(?:i|e)\w*|akciger\w*|bobrek\w*|karaciger\w*|beyin\w*|mide\w*|bagirsak\w*|dalak\w*|pankreas\w*|organ(?:lar|lari|in|i|da|dan|s)?|eyes?|eyeball|optic\w*|heart|kidneys?|lungs?|brain|stomach|liver|spleen|pancreas|intestines?)\b/i.test(
         words,
       );
   const fixedNames = new Set([
@@ -158,7 +158,7 @@ export function validateNewStage(
     if (n.tag === 'defs') {
       // A definition may be instantiated at many scales; its local displacement
       // cannot be bounded without every <use> context. Animate the instance instead.
-      if (descend(n).some((part) => part.attrs['data-anim'] === 'move'))
+      if (descend(n).some((part) => ['move', 'sway', 'orbit'].includes(part.attrs['data-anim'])))
         fail('defs içindeki nesnelere move verme; hareketi sahnedeki nesneye uygula.');
       return;
     }
@@ -166,7 +166,24 @@ export function validateNewStage(
     main ||= n.attrs.id === 'layer-main';
     fixed ||= namedFixedPart(n.attrs.id);
     let total = ancestorDistance;
-    if (n.attrs['data-anim'] === 'move') {
+    if (n.attrs['data-anim'] === 'orbit') {
+      if (fixed || (main && anatomicalScene))
+        fail('Organlar yörüngede hareket edemez; anatomiyi merkezde tut.');
+      const rx = Number(n.attrs['data-dx'] ?? 0),
+        ry = Number(n.attrs['data-dy'] ?? 0),
+        ax = m[0] * rx * fit,
+        ay = m[1] * rx * fit,
+        bx = m[2] * ry * fit,
+        by = m[3] * ry * fit,
+        a = ax * ax + ay * ay,
+        b = bx * bx + by * by,
+        cross = ax * bx + ay * by,
+        radius = Math.sqrt((a + b + Math.sqrt((a - b) ** 2 + 4 * cross ** 2)) / 2);
+      if (!radius || radius + total > 400.001)
+        fail('Yörünge yarıçapı dönüşümler dahil en fazla 400 çıktı pikseli olmalı.');
+      total += radius;
+    }
+    if (['move', 'sway'].includes(n.attrs['data-anim'])) {
       // Semantic inference from arbitrary paths is impossible. New anatomical
       // shots therefore keep layer-main anchored even when a model omits an ID;
       // separately named organs remain protected anywhere in the stage.
@@ -188,7 +205,18 @@ export function validateNewStage(
   checkMovement(root, I);
 }
 
-const loops = new Set(['fall', 'rise', 'pulse', 'dilate', 'flow', 'swing', 'wiggle']);
+const loops = new Set([
+  'fall',
+  'rise',
+  'sway',
+  'pulse',
+  'heartbeat',
+  'dilate',
+  'flow',
+  'orbit',
+  'swing',
+  'wiggle',
+]);
 // Kamera sabitliği kuralı ile çakışan animasyon öznitelikleri; bu öznitelikler
 // arka plan / kök / tam-tuval şeklinden sessizce silinir, sahne reddedilmez.
 const animAttrs = [
@@ -278,7 +306,10 @@ export function parseStage(
       )
         fail('Kamera ve tam tuval dekoru sabit kalmalı.');
       else {
-        if (kind === 'move' && Math.hypot(+(a['data-dx'] ?? 0), +(a['data-dy'] ?? 0)) < 2)
+        if (
+          ['move', 'sway'].includes(kind) &&
+          Math.hypot(+(a['data-dx'] ?? 0), +(a['data-dy'] ?? 0)) < 2
+        )
           fail('move için belirgin bir dx veya dy ver.');
         if (kind === 'draw') {
           // Preserve the v1 archive validator's original draw behavior.

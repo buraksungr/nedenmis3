@@ -174,8 +174,8 @@ async function main() {
     }
     const tests = pixels.flatMap((s) => s.objects),
       roiFrames = pixels.flatMap((s) => s.landmarks).reduce((n, r) => n + r.frames, 0);
-    assert.equal(tests.length, 32);
-    assert.equal(new Set(tests.map((v) => v.id)).size, 16);
+    assert.equal(tests.length, 38);
+    assert.equal(new Set(tests.map((v) => v.id)).size, 19);
     fs.writeFileSync(
       path.join(out, 'report.json'),
       JSON.stringify(
@@ -202,7 +202,7 @@ async function main() {
       ),
     );
     console.log(
-      `::notice title=Verified fixed-camera SVG ant film::${scenes.length} scenes; ${frames} frames / ${(frames / 30).toFixed(2)}s; ${timings.words.length} Whisper words, ${scenes.filter((s) => s.method === 'estimated').length} estimates. ${roiFrames} landmark frames at 0px displacement. ${tests.length} frozen-pose checks in decoded MP4 (16 independent actors at two times each: ants, air/heat flow and focus diagrams). ${scenes.map((s) => s.actors).join('/')} animated objects. Five local templates; no rig or image API. One directed redraw, all voice and timings preserved. Titles: ${titles.join(' / ')}`,
+      `::notice title=Verified bounded-camera SVG ant film::${scenes.length} scenes; ${frames} frames / ${(frames / 30).toFixed(2)}s; ${timings.words.length} Whisper words, ${scenes.filter((s) => s.method === 'estimated').length} estimates. ${roiFrames} landmark frames registered against bounded camera motion. ${tests.length} frozen-pose checks in decoded MP4 (19 independent actors at two times each: ants, antennae and air/heat flows). ${scenes.map((s) => s.actors).join('/')} animated objects. Five local templates; no rig or image API. One directed redraw, all voice and timings preserved. Titles: ${titles.join(' / ')}`,
     );
   } finally {
     store.db.close();
@@ -212,7 +212,7 @@ main().catch((e) => {
   console.error(e);
   if (process.env.GITHUB_ACTIONS)
     console.error(
-      '::error title=Fixed-camera ant film::' +
+      '::error title=Bounded-camera ant film::' +
         String(e.message)
           .replace(/[\r\n]+/g, ' ')
           .slice(0, 1500),

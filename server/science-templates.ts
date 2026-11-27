@@ -6,7 +6,9 @@ import { anatomy } from './science-art/anatomy';
 import { ecology } from './science-art/ecology';
 import { physics } from './science-art/physics';
 import { generic } from './science-art/generic';
-import { details } from './science-art/details';
+import { templateMetadata, type TemplateMeta } from './science-catalog';
+import { themedArt } from './science-art/themed';
+import { group } from './science-art/common';
 import type { ArtContext } from './science-art/common';
 
 // Stable names are embedded INSIDE the signed canonical SVG, not in an unsigned
@@ -48,6 +50,7 @@ export const templateIds = [
 ] as const;
 export type TemplateId = (typeof templateIds)[number];
 type Entry = { id: TemplateId; description: string; match?: RegExp };
+export type CatalogEntry = Entry & TemplateMeta;
 // Prefixes deliberately operate on accent-folded Turkish/English. An ambiguous
 // "gözden kaybolmak" is NOT an eye. Unknown subjects use neutral diagrams.
 const catalog: Entry[] = [
@@ -60,24 +63,24 @@ const catalog: Entry[] = [
     id: 'eye-cross',
     description: 'Göz kesiti: kornea, mercek, retina ve ışık',
     match:
-      /\b(?:goz(?!den|lem|lemevi)\w*|gorme\w*|retina\w*|kornea\w*|mercek\w*|pupil\w*|eye\w*|optic\w*)/,
+      /\b(?:goz(?!den|lem|lemevi)\w*|gorme\w*|retina\w*|kornea\w*|cornea\w*|mercek\w*|pupil\w*|eye\w*|optic\w*)/,
   },
   { id: 'brain', description: 'Beynin kıvrımları ve beyin sapı', match: /\b(?:beyin\w*|brain\w*)/ },
   {
     id: 'neuron',
     description: 'Sinir hücresi, dendritler ve akson',
-    match: /\b(?:noron\w*|sinir\w*|neuron\w*|nerve\w*|beyin\w*|brain\w*)/,
+    match: /\b(?:noron\w*|sinir\w*|akson\w*|neuron\w*|nerve\w*|axon\w*|beyin\w*|brain\w*)/,
   },
   {
     id: 'heart',
     description: 'Kalp odacıkları ve ana damarlar',
-    match: /\b(?:kalp\w*|yurek\w*|heart\w*)/,
+    match: /\b(?:kalp\w*|kalb(?:i|e)\w*|yurek\w*|heart\w*|cardiac\w*)/,
   },
   {
     id: 'circulation',
     description: 'Vücutta kan dolaşımı ve damarlar',
     match:
-      /\b(?:kalp\w*|kan(?:[aiu]?|in|la|lar|da|dan)?\b|damar\w*|dolasi\w*|heart\w*|blood\w*|circulat\w*)/,
+      /\b(?:kalp\w*|kalb(?:i|e)\w*|kan(?:[aiu]?|in|la|lar|da|dan)?\b|damar\w*|dolasi\w*|heart\w*|blood\w*|vessel\w*|circulat\w*)/,
   },
   {
     id: 'cell',
@@ -93,12 +96,12 @@ const catalog: Entry[] = [
   {
     id: 'lung',
     description: 'Akciğer, soluk borusu ve dallanan bronşlar',
-    match: /\b(?:akciger\w*|solunum\w*|nefes\w*|bron\w*|lung\w*|breath\w*)/,
+    match: /\b(?:akciger\w*|solunum\w*|nefes\w*|bron\w*|lung\w*|breath\w*|respirat\w*)/,
   },
   {
     id: 'muscle-joint',
     description: 'Kas lifleri, tendonlar, kemik ve eklem',
-    match: /\b(?:kas(?!im|irga|aba|it)\w*|eklem\w*|tendon\w*|kemik\w*|muscle\w*|joint\w*)/,
+    match: /\b(?:kas(?!im|irga|aba|it)\w*|eklem\w*|tendon\w*|kemik\w*|muscle\w*|joint\w*|bone\w*)/,
   },
   {
     id: 'soil-colony',
@@ -128,7 +131,8 @@ const catalog: Entry[] = [
   {
     id: 'water-cycle',
     description: 'Su döngüsü: bulut, yağmur, akış ve buharlaşma',
-    match: /\b(?:su dongu\w*|yagmur\w*|buharlas\w*|bulut\w*|water cycle|rain\w*|evapora\w*)/,
+    match:
+      /\b(?:su dongu\w*|yagmur\w*|buharlas\w*|bulut\w*|water cycle|rain\w*|evapora\w*|cloud\w*)/,
   },
   {
     id: 'plant',
@@ -173,7 +177,7 @@ const catalog: Entry[] = [
   {
     id: 'thermal',
     description: 'İletimle ısı aktarımı',
-    match: /\b(?:isi\b|isilar\w*|sicaklik\w*|termal\w*|heat\w*|thermal\w*)/,
+    match: /\b(?:isi\b|isilar\w*|sicaklik\w*|termal\w*|heat\w*|thermal\w*|temperature\w*)/,
   },
   { id: 'overview', description: 'Konuya özgü nesne iddiası olmayan genel bakış' },
   { id: 'focus', description: 'Yakından bakış ve büyütme' },
@@ -204,7 +208,6 @@ const catalog: Entry[] = [
     match: /\b(?:denge\w*|esik\w*|balance\w*|threshold\w*)/,
   },
 ];
-const neutral: TemplateId[] = ['overview', 'focus', 'detail'];
 const genericIds = new Set<TemplateId>([
   'overview',
   'focus',
@@ -241,7 +244,12 @@ const value = z
   .refine((v) => !v || scienceValue(v), 'Sayısal değer kısa ve güvenli olmalı.');
 export const templateReply = z.strictObject({
   title: motionHeading,
-  template: z.enum(templateIds),
+  // Unknown, missing or non-string IDs are harmless suggestions, not drawing
+  // instructions. Only selectTemplate can turn one into a local catalog ID.
+  template: z.preprocess(
+    (v) => (typeof v === 'string' && v.length <= 100 ? v.trim() : ''),
+    z.string(),
+  ),
   palette: z.enum(palettes).optional(),
   accent: z.enum(accents).optional(),
   speed: z.enum(['slow', 'normal', 'fast']).optional(),
@@ -276,41 +284,99 @@ const normalize = (s: string) =>
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .replaceAll('ı', 'i');
-export function matchingTemplates(narration: string, topic: string) {
+/** Context is deliberately a small, explicit local classifier, not model-authored SVG.
+ * A whole-project subject keeps short or anaphoric scenes relevant. A genuinely
+ * anatomical eye scene can override that topic, not the Turkish idiom "gözden". */
+export type ScienceTheme = 'black-hole' | 'space' | 'ant' | 'heart' | 'other';
+const blackHole =
+  /\b(?:kara\s+del(?:ik|ig)\w*|black[\s-]*holes?\b|olay\s*ufk\w*|event\s*horizon\w*|akresyon\w*|accretion\s+dis[ck]\w*)/;
+const ants = /\b(?:karinca\w*|ants?\b)/;
+const hearts = /\b(?:kalp\w*|kalb(?:i|e)\w*|yurek\w*|heart\w*|cardiac\w*)/;
+const space =
+  /\b(?:uzay\w*|evren\w*|galaksi\w*|yildiz\w*|gezegen\w*|yorunge\w*|gunes\s+sistem\w*|space\b|cosmos\w*|universe\w*|galax\w*|stars?\b|planets?\b|orbits?\b|solar\s+system)/;
+const actualEye =
+  /\b(?:iris\w*|retina\w*|kornea\w*|cornea\w*|pupil\w*|eyeball\w*|goz\s+bebeg\w*|gozun\s+(?:merceg\w*|yapis\w*|retina\w*)|human\s+eye\w*)/;
+const classify = (text: string): ScienceTheme =>
+  blackHole.test(text)
+    ? 'black-hole'
+    : ants.test(text)
+      ? 'ant'
+      : hearts.test(text)
+        ? 'heart'
+        : space.test(text)
+          ? 'space'
+          : 'other';
+export function scienceTheme(narration: string, topic = ''): ScienceTheme {
   const scene = normalize(narration),
-    project = normalize(topic);
-  const direct = catalog.filter(
-    (e) => !genericIds.has(e.id) && e.match && (e.match.test(scene) || e.match.test(project)),
-  );
-  const related = catalog.filter(
+    project = classify(normalize(topic)),
+    local = classify(scene);
+  if (project !== 'other' && actualEye.test(scene)) return 'other';
+  // Explicit subjects in a scene beat a broader project; a generic space word
+  // such as "yıldız" must not erase a black-hole project context.
+  if (local === 'black-hole' || local === 'ant' || local === 'heart') return local;
+  return project !== 'other' ? project : local;
+}
+export const scienceCatalog: readonly CatalogEntry[] = catalog.map((e) => ({
+  ...e,
+  ...templateMetadata[e.id],
+}));
+
+export function matchingTemplates(narration: string, topic: string): CatalogEntry[] {
+  const scene = normalize(narration),
+    project = normalize(topic),
+    theme = scienceTheme(narration, topic);
+  const subjectIds: Partial<Record<ScienceTheme, readonly TemplateId[]>> = {
+    'black-hole': ['orbit', 'gravity'],
+    space: ['orbit', 'gravity'],
+    ant: ['soil-colony', 'ant-tunnel', 'colony-chamber'],
+    heart: ['heart', 'circulation'],
+  };
+  const specific = subjectIds[theme];
+  // Scene matches precede project matches. A project about black holes and
+  // "ışık" must never turn into a prism or an eye simply on that word.
+  const concrete = specific
+    ? specific.map((id) => scienceCatalog.find((e) => e.id === id)!)
+    : scienceCatalog
+        .filter((e) => !genericIds.has(e.id) && e.match?.test(scene))
+        .concat(scienceCatalog.filter((e) => !genericIds.has(e.id) && e.match?.test(project)));
+  const related = scienceCatalog.filter(
     (e) => genericIds.has(e.id) && e.match && (e.match.test(scene) || e.match.test(project)),
   );
-  return [...direct, ...related, ...catalog.filter((e) => neutral.includes(e.id))];
+  // All eight are safe fallbacks. On a known subject their artwork is adapted
+  // locally; otherwise they are neutral rather than an invented eye/molecule.
+  const ordered = [...concrete, ...related, ...scienceCatalog.filter((e) => genericIds.has(e.id))];
+  return ordered.filter((e, i) => ordered.findIndex((x) => x.id === e.id) === i);
 }
 export function selectTemplate(
-  requested: TemplateId,
-  options: Entry[],
+  requested: string,
+  options: readonly CatalogEntry[],
   used: ReadonlySet<TemplateId>,
   neighbors: ReadonlySet<TemplateId>,
 ): TemplateId {
   const eligible = options.map((e) => e.id).filter((id) => !neighbors.has(id));
-  if (!eligible.length) throw new Error('No safe non-adjacent template'); // 3 neutral fallbacks > 2 neighbors
-  // Neutral views are a fallback: do not discard a known, unused subject view
-  // simply because a weak model asked for an abstract placeholder.
-  if (neutral.includes(requested)) {
-    const concrete = eligible.find((id) => !genericIds.has(id) && !used.has(id));
-    if (concrete) return concrete;
-  }
-  if (eligible.includes(requested) && !used.has(requested)) return requested;
-  // Prefer an unused specific illustration, but do not invent a subject just for variety.
+  if (!eligible.length) throw new Error('No safe non-adjacent template');
+  // Prefer a fresh subject-specific drawing over an abstract suggestion. Once
+  // concrete options are exhausted, prefer ANY unused safe themed fallback
+  // before reuse, across all verified scenes, including redraws and resumes.
+  const specific = eligible.find((id) => !genericIds.has(id) && !used.has(id));
+  if (
+    specific &&
+    (!eligible.includes(requested as TemplateId) ||
+      genericIds.has(requested as TemplateId) ||
+      used.has(requested as TemplateId))
+  )
+    return specific;
+  if (eligible.includes(requested as TemplateId) && !used.has(requested as TemplateId))
+    return requested as TemplateId;
   const fresh = eligible.find((id) => !used.has(id));
   if (fresh) return fresh;
-  return eligible.includes(requested) ? requested : eligible[0];
+  return eligible.includes(requested as TemplateId) ? (requested as TemplateId) : eligible[0];
 }
+/** Accept both signed versions. Merely loading an older marker never changes it. */
 export function templateIdInStage(stage: Geometry): TemplateId | undefined {
   const main = stage.children.find((n) => n.tag === 'g' && n.attrs.id === 'layer-main');
   const marker = main?.children
-    .find((n) => n.tag === 'g' && n.attrs.id?.startsWith('tpl-v174-'))
+    .find((n) => n.tag === 'g' && /^tpl-v17[45]-/.test(n.attrs.id ?? ''))
     ?.attrs.id.slice(9);
   return templateIds.find((id) => id === marker);
 }
@@ -320,7 +386,12 @@ function sourcedLabel(v: string | undefined, source: string) {
   if (!v || !scienceLabel(v)) return '';
   return normalize(source).includes(normalize(v)) ? v : '';
 }
-export function instantiateTemplate(id: TemplateId, reply: TemplateReply, source: string): string {
+export function instantiateTemplate(
+  id: TemplateId,
+  reply: TemplateReply,
+  source: string,
+  theme = scienceTheme(source),
+): string {
   const [top, bottom] = backgrounds[reply.palette ?? 'night'];
   const c: ArtContext = {
     accent: colors[reply.accent ?? 'cyan'],
@@ -329,15 +400,33 @@ export function instantiateTemplate(id: TemplateId, reply: TemplateReply, source
     level: reply.level ?? 50,
   };
   const i = templateIds.indexOf(id),
+    microscopeMention = /\b(?:mikroskop\w*|mikroskob\w*|microscop\w*)/.test(normalize(source)),
     art =
-      i < 10 ? anatomy(id, c) : i < 18 ? ecology(id, c) : i < 25 ? physics(id, c) : generic(id, c);
+      themedArt(id, theme, c) ??
+      (i < 10
+        ? anatomy(id, c)
+        : i < 18
+          ? ecology(id, c)
+          : i < 25
+            ? physics(id, c)
+            : generic(id, c, microscopeMention));
   const first = sourcedLabel(reply.label1, source),
     second = sourcedLabel(reply.label2 || reply.value, source);
-  const inset = details(id, c);
-  // Keep the secondary diagram at the top, clear of even a three-line caption.
-  const detailPanel = inset
-    ? `<g id="science-detail" transform="translate(0 -1120)"><rect x="200" y="1200" width="680" height="210" rx="24" fill="#203b48" stroke="#5e8b89" stroke-width="4"/>${inset}</g>`
-    : '';
+  // Organ and its overlay paths share a single anchored wrapper: moving the
+  // whole heart while leaving its vessels behind would be visibly incorrect.
+  const together = art.organ === 'heart' || art.organ === 'breath' || art.organ === 'cell';
+  const organMotion =
+    art.organ === 'heart'
+      ? group(
+          `id="heart-organ" data-anim="heartbeat" data-amplitude="0.065" data-duration="${c.duration / 3.2}"`,
+          art.main + art.fx,
+        )
+      : art.organ === 'breath' || art.organ === 'cell'
+        ? group(
+            `id="${art.organ === 'breath' ? 'lungs-breathing' : 'cell-body'}" data-anim="pulse" data-amplitude="${art.organ === 'breath' ? 0.035 : 0.018}" data-duration="${c.duration}"`,
+            art.main + art.fx,
+          )
+        : art.main;
   const labels = [first, second === first ? '' : second]
     .map((v, i) => {
       if (!v) return '';
@@ -346,5 +435,7 @@ export function instantiateTemplate(id: TemplateId, reply: TemplateReply, source
       return `<text data-keyword="true" data-label-outline="true" x="${x}" y="${i ? 1150 : 365}" font-size="28" font-weight="600" fill="#f6fff2" text-anchor="middle">${v}</text>`;
     })
     .join('');
-  return `<svg viewBox="0 0 1080 1920"><defs><linearGradient id="back" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs><g id="layer-bg"><rect width="1080" height="1920" fill="url(#back)"/><g id="set">${art.background ?? ''}</g></g><g id="layer-main"><g id="tpl-v174-${id}">${art.main}${detailPanel}</g></g><g id="layer-fx">${art.fx}${labels}</g></svg>`;
+  // No detached top panel. The v175 marker opts only new scenes into the
+  // bounded camera; existing v174 SVGs are never rewritten or reinterpreted.
+  return `<svg viewBox="0 0 1080 1920"><defs><linearGradient id="back" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs><g id="layer-bg"><rect width="1080" height="1920" fill="url(#back)"/><g id="set">${art.background ?? ''}</g></g><g id="layer-main"><g id="tpl-v175-${id}">${organMotion}</g></g><g id="layer-fx">${together ? '' : art.fx}${labels}</g></svg>`;
 }

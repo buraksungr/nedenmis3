@@ -192,6 +192,7 @@ export function anatomy(id: string, c: ArtContext): Art {
       };
     case 'heart':
       return {
+        organ: 'heart',
         main:
           p(
             'M483 500 C423 454 353 481 347 560 L352 615 C281 591 251 651 273 724 C298 810 374 894 523 1002 C650 902 762 817 790 718 C806 648 763 590 700 611 C714 533 660 489 606 510 L584 571Z',
@@ -255,10 +256,13 @@ export function anatomy(id: string, c: ArtContext): Art {
             `stroke="${ink}" stroke-width="14"`,
           ) +
           circle(540, 406, 59, '#e8d9c4', `stroke="${ink}" stroke-width="10"`) +
-          p(
-            'M520 596 C481 553 444 592 466 637 Q486 673 540 710 Q595 671 612 636 C633 593 597 554 558 596 L540 617Z',
-            red,
-            `stroke="${ink}" stroke-width="7"`,
+          group(
+            `id="circulation-heart-organ" data-anim="heartbeat" data-amplitude="0.075" data-duration="${c.duration / 3.2}"`,
+            p(
+              'M520 596 C481 553 444 592 466 637 Q486 673 540 710 Q595 671 612 636 C633 593 597 554 558 596 L540 617Z',
+              red,
+              `stroke="${ink}" stroke-width="7"`,
+            ),
           ) +
           line(
             'M532 654 L510 734 L490 897 M530 734 L552 817 L569 963 M537 620 L590 527 L632 650 M590 527 L541 464',
@@ -297,6 +301,7 @@ export function anatomy(id: string, c: ArtContext): Art {
       };
     case 'cell':
       return {
+        organ: 'cell',
         main:
           p(
             'M216 698 C202 553 316 452 461 449 C556 404 681 447 740 507 C842 520 886 630 861 724 C884 852 780 963 659 959 C568 1010 453 975 389 958 C270 957 199 840 216 698Z',
@@ -400,6 +405,7 @@ export function anatomy(id: string, c: ArtContext): Art {
       };
     case 'lung':
       return {
+        organ: 'breath',
         main:
           p(
             'M476 465 H554 V611 Q556 633 585 650 L638 682 L620 711 L558 677 Q536 666 515 645 Q495 665 472 677 L410 711 L392 682 L445 650 Q475 633 476 611Z',

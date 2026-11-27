@@ -12,90 +12,72 @@ import {
 } from './common';
 const ink = '#183744',
   gold = '#ffe2a2';
-export function generic(id: string, c: ArtContext): Art {
+export function generic(id: string, c: ArtContext, actualMicroscope = false): Art {
   switch (id) {
     case 'detail':
       return {
+        // Layered material bands are neutral: no cell, eye or invented specimen.
         main:
           p(
-            'M184 502 Q184 452 234 452 H846 Q896 452 896 502 V1038 Q896 1088 846 1088 H234 Q184 1088 184 1038Z',
-            '#a9ddd3',
-            `stroke="${ink}" stroke-width="12"`,
+            'M190 567 Q540 522 890 567 L890 682 Q540 638 190 682Z',
+            '#a9d8ce',
+            `stroke="${ink}" stroke-width="9"`,
           ) +
-          p('M207 523 H873 V1012 H207Z', '#d9f0df') +
           p(
-            'M289 811 C343 633 458 581 563 641 C646 688 683 810 651 909 C579 982 410 972 289 811Z',
-            '#8ccbc2',
-            `stroke="#559e9d" stroke-width="9"`,
+            'M190 700 Q540 656 890 700 L890 815 Q540 771 190 815Z',
+            '#e4d2ad',
+            `stroke="${ink}" stroke-width="9"`,
           ) +
-          repeat(12, (i) =>
-            circle(344 + ((i * 73) % 263), 677 + ((i * 43) % 211), 8 + (i % 3) * 3, '#dff4d8'),
-          ) +
-          circle(740, 870, 98, '#f4ddb5', `stroke="${ink}" stroke-width="9"`) +
           p(
-            'M679 873 Q738 808 800 873 Q741 937 679 873Z',
-            '#b4ded0',
-            `stroke="#69aaa4" stroke-width="6"`,
+            'M190 832 Q540 788 890 832 L890 947 Q540 903 190 947Z',
+            '#8cbfbf',
+            `stroke="${ink}" stroke-width="9"`,
           ) +
-          line('M626 775 L675 816 M626 908 L671 909', '#78aca7', 6),
+          repeat(7, (i) =>
+            line(`M${252 + i * 96} 599 v42 M${252 + i * 96} 866 v42`, '#dff3df', 5),
+          ) +
+          line('M230 740 Q540 701 850 740', '#fff1cb', 6),
         fx:
-          flow('detail-link-a', 'M621 774 L677 817', c.accent, 8, c, true) +
-          flow('detail-link-b', 'M623 910 L672 909', gold, 8, c, true) +
-          pulse('detail-center', circle(740, 873, 20, '#fff8d5'), c, 0.18),
+          flow('detail-link-a', 'M218 623 Q540 585 862 623', c.accent, 8, c, true) +
+          flow('detail-link-b', 'M218 887 Q540 850 862 887', gold, 8, c, true) +
+          pulse('detail-center', p('M513 728 H567 V768 H513Z', '#fff8d5'), c, 0.1),
       };
     case 'overview':
       return {
         main:
-          line(
-            'M540 722 L300 526 M540 722 L780 526 M540 722 L300 946 M540 722 L780 946',
-            '#aacfc6',
-            10,
-          ) +
-          p(
-            'M540 581 L654 651 L654 788 L540 859 L426 788 L426 651Z',
-            '#b1e2d5',
-            `stroke="${ink}" stroke-width="11"`,
-          ) +
-          p('M540 616 L625 668 L625 772 L540 825 L455 772 L455 668Z', '#e4f4df') +
-          repeat(4, (i) => {
-            const x = i % 2 ? 780 : 300,
-              y = i < 2 ? 526 : 946;
-            return (
-              circle(x, y, 63, i % 2 ? '#f4c79f' : '#9bd9d1', `stroke="${ink}" stroke-width="9"`) +
-              circle(x, y, 25, '#edf7df')
-            );
-          }) +
-          line('M506 720 H574 M540 687 V753', '#7cb9ae', 7),
+          // A chart, not a molecular graph.
+          line('M195 1014 H888 M195 1014 V475', '#b8d7cb', 8) +
+          repeat(4, (i) => line(`M195 ${892 - i * 112} H884`, '#6b9b9b', 4, 'opacity="0.6"')) +
+          rect(263, 718, 125, 296, '#a5d9cf', `rx="12" stroke="${ink}" stroke-width="8"`) +
+          rect(480, 570, 125, 444, '#e9c7a0', `rx="12" stroke="${ink}" stroke-width="8"`) +
+          rect(697, 644, 125, 370, '#93c9c8', `rx="12" stroke="${ink}" stroke-width="8"`) +
+          repeat(3, (i) => line(`M${285 + i * 217} 950 h78`, '#e8f8e4', 6)),
         fx:
-          flow('overview-link-a', 'M329 548 L426 653', c.accent, 8, c, true) +
-          flow('overview-link-b', 'M654 788 L754 925', gold, 8, c, true) +
-          pulse('overview-center', circle(540, 720, 16, '#fff8d5'), c, 0.18),
+          flow('overview-link-a', 'M325 679 V747', c.accent, 8, c, true) +
+          flow('overview-link-b', 'M758 603 V673', gold, 8, c, true) +
+          pulse('overview-center', rect(520, 598, 45, 22, '#fff8d5', 'rx="5"'), c, 0.12),
       };
     case 'focus':
       return {
         main:
-          circle(496, 685, 250, '#a9ded4', `stroke="${ink}" stroke-width="15"`) +
-          circle(496, 685, 211, '#d6f2dd', `stroke="#7bbcb8" stroke-width="9"`) +
-          p(
-            'M649 865 L715 815 L876 1014 Q895 1039 873 1058 Q851 1077 830 1054Z',
-            '#e9c39b',
-            `stroke="${ink}" stroke-width="11"`,
+          // Four corners focus attention on a small layered square; no lens/eye.
+          line(
+            'M245 600 V500 H345 M735 500 H835 V600 M245 904 V1004 H345 M735 1004 H835 V904',
+            '#c7e5d7',
+            13,
           ) +
           p(
-            'M395 687 Q496 579 600 687 Q498 796 395 687Z',
-            '#91cfc3',
-            `stroke="#4a9593" stroke-width="8"`,
+            'M369 589 L683 589 L711 617 L711 895 L397 895 L369 867Z',
+            '#a7d9cf',
+            `stroke="${ink}" stroke-width="10"`,
           ) +
-          circle(497, 687, 57, '#e7f4db', `stroke="#4a9593" stroke-width="7"`) +
-          line('M337 685 H369 M622 685 H654 M496 525 V557 M496 813 V845', '#5ca39f', 7) +
-          repeat(8, (i) => {
-            const a = (i * Math.PI) / 4;
-            return circle(496 + Math.cos(a) * 150, 685 + Math.sin(a) * 150, 6, '#78b3ae');
-          }),
+          p('M409 633 H671 V852 H409Z', '#e6f2dd') +
+          repeat(5, (i) => line(`M${436 + i * 48} 663 V819`, '#8dbdb6', 6)) +
+          repeat(4, (i) => line(`M435 ${670 + i * 48} H644`, '#a5cdc0', 6)),
         fx:
-          flow('focus-ring-a', 'M319 685 A177 177 0 0 1 496 508', c.accent, 8, c, true) +
-          flow('focus-ring-b', 'M673 685 A177 177 0 0 1 496 862', gold, 8, c, true) +
-          pulse('focus-center', circle(496, 687, 20, '#fff9d9'), c, 0.18),
+          flow('focus-ring-a', 'M258 599 V513 H344', c.accent, 9, c, true) +
+          flow('focus-ring-b', 'M822 905 V991 H736', gold, 9, c, true) +
+          pulse('focus-center', rect(515, 715, 50, 50, '#fff9d9', 'rx="6"'), c, 0.1),
       };
     case 'comparison': {
       const bar1 = 120 + Math.round(c.level * 2.2),
@@ -193,6 +175,30 @@ export function generic(id: string, c: ArtContext): Art {
           pulse('timeline-point', circle(541, 743, 20, '#fff8d4'), c, 0.2),
       };
     case 'microscope':
+      if (!actualMicroscope) {
+        // This generic ID is a close-detail fallback unless the narration really
+        // mentions a microscope. Do not introduce optics into unrelated subjects.
+        return {
+          main:
+            line('M228 530 H850 M228 1000 H850', '#a5ccc4', 7) +
+            repeat(4, (i) =>
+              rect(
+                265 + i * 135,
+                600 + (i % 2) * 52,
+                94,
+                270 - (i % 2) * 52,
+                i % 2 ? '#eacda9' : '#a8d9d1',
+                `rx="12" stroke="${ink}" stroke-width="7"`,
+              ),
+            ) +
+            line('M215 1000 V1040 H865 V1000', '#d8ead9', 7) +
+            line('M290 930 H790', '#d8ead9', 5),
+          fx:
+            flow('micro-detail-a', 'M245 558 H835', c.accent, 8, c, true) +
+            flow('micro-detail-b', 'M245 960 H835', gold, 8, c, true) +
+            pulse('micro-detail-center', rect(502, 866, 75, 20, '#fff9d9', 'rx="5"'), c, 0.1),
+        };
+      }
       return {
         main:
           p(

@@ -2,10 +2,13 @@ import { z } from 'zod';
 import { digestSchema, heading, vectorProvider, type Geometry } from './vector';
 export const animKinds = [
   'move',
+  'sway',
   'fall',
   'rise',
   'draw',
   'flow',
+  'orbit',
+  'heartbeat',
   'pulse',
   'dilate',
   'swing',

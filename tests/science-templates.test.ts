@@ -20,6 +20,8 @@ import { Store, makeProject, scriptSig } from '../server/store';
 import { memoryVault } from '../server/vault';
 import {
   templateIds,
+  scienceCatalog,
+  scienceTheme,
   palettes,
   accents,
   templateReply,
@@ -75,13 +77,15 @@ test('all 33 distinct authored templates are safe, detailed, layered and determi
             all(main).filter((n) => n.tag === 'path').length >= 3,
             `${id}: inadequate authored paths`,
           );
-          for (const n of all(result.root).filter((n) => n.attrs['data-anim'] === 'move')) {
+          for (const n of all(result.root).filter((n) =>
+            ['move', 'sway'].includes(n.attrs['data-anim']),
+          )) {
             assert.ok(
               Math.hypot(Number(n.attrs['data-dx'] ?? 0), Number(n.attrs['data-dy'] ?? 0)) <= 240,
               id,
             );
           }
-          if (!base) base = result.canonical.replace(`tpl-v174-${id}`, 'tpl-v174-template');
+          if (!base) base = result.canonical.replace(`tpl-v175-${id}`, 'tpl-v175-template');
         }
     unique.add(base);
     assert.equal(
@@ -138,7 +142,6 @@ test('numbers and labels are bounded, escaped by grammar, sourced from narration
     assert.ok(!scienceLabel(s), s);
   for (const change of [
     { template: 'eye-front', title: 'Göz Bebeği', svg: '<svg/>' },
-    { template: 'not-a-template', title: 'Göz Bebeği' },
     { template: 'eye-front', title: 'Göz Bebeği', level: 101 },
     { template: 'eye-front', title: 'Göz Bebeği', label1: '<script>' },
     { template: 'eye-front', title: 'Göz Bebeği', accent: '#000' },
@@ -211,7 +214,13 @@ test('selection never forces a different scientific subject and cannot repeat ei
   assert.ok(ant.some((e) => e.id === 'soil-colony'));
   assert.ok(!ant.some((e) => e.id === 'eye-front' || e.id === 'eye-cross'), 'gözden is an idiom');
   const unknown = matchingTemplates('Bir taş eski çağda bulundu.', 'Tarih merakı');
-  assert.ok(unknown.every((e) => ['overview', 'focus', 'detail'].includes(e.id)));
+  assert.ok(unknown.every((e) => e.category === 'diagram'));
+  assert.equal(unknown.length, 8);
+  assert.ok(templateReply.safeParse({ template: 'not-a-template', title: 'Göz Bebeği' }).success);
+  assert.equal(
+    templateReply.parse({ template: { unsafe: true }, title: 'Göz Bebeği' }).template,
+    '',
+  );
   assert.ok(unknown.some((e) => e.id === selectTemplate('heart', unknown, new Set(), new Set())));
   const eye = matchingTemplates('Göz bebeği genişler.', 'Göz anatomisi');
   assert.ok(!eye.some((e) => e.id === 'dna'), 'genişler is not genetics');
@@ -487,4 +496,223 @@ test('verified 1.7.2 and ready image scenes separate identical templates; missin
     ),
     'soil-colony',
   );
+});
+
+test('all 33 stable IDs have explicit bilingual usage contracts and concrete terms match in both languages', () => {
+  assert.equal(templateIds.length, 33);
+  assert.equal(scienceCatalog.length, 33);
+  assert.deepEqual(new Set(scienceCatalog.map((e) => e.id)), new Set(templateIds));
+  for (const entry of scienceCatalog) {
+    assert.ok(entry.category && entry.scope.length > 12, entry.id);
+    assert.ok(entry.keywords.tr.length && entry.keywords.en.length, entry.id);
+  }
+  const words: [TemplateId, string, string][] = [
+    ['eye-front', 'Göz bebeği', 'human eye'],
+    ['eye-cross', 'retina', 'cornea'],
+    ['brain', 'beyin', 'brain'],
+    ['neuron', 'nöron', 'axon'],
+    ['heart', 'kalbin atışı', 'cardiac heartbeat'],
+    ['circulation', 'kan dolaşımı', 'blood circulation'],
+    ['cell', 'hücre', 'cell'],
+    ['dna', 'genetik', 'chromosome'],
+    ['lung', 'akciğer', 'respiration'],
+    ['muscle-joint', 'eklem', 'bone'],
+    ['soil-colony', 'karınca', 'ant'],
+    ['ant-tunnel', 'karınca', 'ant'],
+    ['colony-chamber', 'karınca', 'ant'],
+    ['atmosphere', 'atmosfer', 'atmosphere'],
+    ['ocean-depth', 'deniz', 'ocean'],
+    ['water-cycle', 'yağmur', 'cloud'],
+    ['plant', 'bitki', 'plant'],
+    ['photosynthesis', 'fotosentez', 'photosynthesis'],
+    ['refraction', 'prizma', 'prism'],
+    ['magnetism', 'mıknatıs', 'magnet'],
+    ['electricity', 'elektrik', 'circuit'],
+    ['orbit', 'yörünge', 'orbit'],
+    ['gravity', 'yerçekimi', 'gravity'],
+    ['sound', 'ses', 'acoustic'],
+    ['thermal', 'sıcaklık', 'temperature'],
+  ];
+  for (const [id, tr, en] of words)
+    for (const word of [tr, en])
+      assert.ok(
+        matchingTemplates(word, 'Bilim').some((e) => e.id === id),
+        `${id}: ${word}`,
+      );
+  for (const term of ['kara delik', 'kara deliğin', 'black hole', 'black-hole', 'event horizon'])
+    assert.equal(scienceTheme(term, ''), 'black-hole', term);
+  assert.equal(scienceTheme('Gözden kaybolan ışık', 'Kara delikler'), 'black-hole');
+  assert.equal(scienceTheme('Yıldızın ışığı bükülür.', 'Kara delikler'), 'black-hole');
+  assert.equal(scienceTheme('Astronotun kalbi hızlanır.', 'Uzay yolculuğu'), 'heart');
+  assert.ok(
+    matchingTemplates('Astronotun kalbi hızlanır.', 'Uzay yolculuğu').some((e) => e.id === 'heart'),
+  );
+  assert.equal(scienceTheme('Retina ışığı algılar.', 'Kara delikler'), 'other');
+});
+
+test('topic-safe variants stay unique until all relevant choices are used, then still forbid neighbors', () => {
+  const cases = [
+    {
+      topic: 'Kara deliğin ışığı nasıl büktüğü',
+      scene: 'Işık olay ufkuna yaklaşır.',
+      theme: 'black-hole',
+      primary: ['orbit', 'gravity'],
+      marker: 'black-hole-horizon',
+    },
+    {
+      topic: 'Black holes and accretion disks',
+      scene: 'Light bends around the horizon.',
+      theme: 'black-hole',
+      primary: ['orbit', 'gravity'],
+      marker: 'black-hole-horizon',
+    },
+    {
+      topic: 'Kalbin çalışma ritmi',
+      scene: 'Kan damarlara pompalanır.',
+      theme: 'heart',
+      primary: ['heart', 'circulation'],
+      marker: 'heart',
+    },
+    {
+      topic: 'Karıncalar kışın nereye gider?',
+      scene: 'Koloni toprağın altında bekler.',
+      theme: 'ant',
+      primary: ['soil-colony', 'ant-tunnel', 'colony-chamber'],
+      marker: 'ant-',
+    },
+  ] as const;
+  for (const { topic, scene, theme, primary, marker } of cases) {
+    assert.equal(scienceTheme(scene, topic), theme);
+    const options = matchingTemplates(scene, topic),
+      used = new Set<TemplateId>();
+    assert.deepEqual(
+      options.slice(0, primary.length).map((e) => e.id),
+      [...primary],
+    );
+    assert.ok(
+      !options.some((e) => e.id === 'eye-front' || e.id === 'eye-cross' || e.id === 'refraction'),
+    );
+    let previous: TemplateId | undefined;
+    for (let i = 0; i < options.length; i++) {
+      const chosen = selectTemplate(
+        'eye-front',
+        options,
+        used,
+        new Set(previous ? [previous] : []),
+      );
+      assert.ok(!used.has(chosen), `${topic}: reused ${chosen} with an unused relevant view`);
+      const xml = instantiateTemplate(
+        chosen,
+        { title: 'Bilimsel Bakış', template: 'bogus' },
+        `${scene} ${topic}`,
+        theme,
+      );
+      const result = parseStage(xml);
+      assert.equal(result.cleanup, '', `${topic}/${chosen}`);
+      assert.doesNotThrow(
+        () => validateNewStage(result.root, { topic, narration: scene }),
+        `${topic}/${chosen}`,
+      );
+      assert.ok(xml.includes(marker), `${topic}/${chosen}: no subject-specific art`);
+      assert.ok(!xml.includes('science-detail'), `${topic}/${chosen}: detached panel`);
+      assert.ok(!xml.includes('tpl-v175-eye-') && !xml.includes('tpl-v175-refraction'));
+      used.add(chosen);
+      previous = chosen;
+    }
+    const reused = selectTemplate('missing-id', options, used, new Set([previous!]));
+    assert.notEqual(reused, previous);
+  }
+});
+
+test('invalid or unrelated provider IDs use project-and-scene context without repair, including reload and redraw', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'science-context-fallback-'));
+  const store = new Store(root, false);
+  t.after(() => {
+    store.db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const stories = [
+    {
+      topic: 'Kara deliğin çevresinde ışık',
+      lines: [
+        'Kara delik ışığı büker.',
+        'Madde yörüngede dolanır.',
+        'Bir ışın merkeze yaklaşır.',
+        'Çevresindeki disk hızla döner.',
+        'Olay ufku sınırı belirler.',
+      ],
+      marker: 'black-hole-horizon',
+    },
+    {
+      topic: 'Kalbin kan dolaşımındaki görevi',
+      lines: [
+        'Kalp kanı pompalar.',
+        'Damarlar kanı taşır.',
+        'Döngü ritmik biçimde sürer.',
+        'Kan tekrar geri döner.',
+        'Bu süreç yaşamı destekler.',
+      ],
+      marker: 'heart',
+    },
+    {
+      topic: 'Karıncalar ve yeraltı kolonisi',
+      lines: [
+        'Karıncalar yer altında yaşar.',
+        'İşçiler tünelden geçer.',
+        'Koloni odalarda toplanır.',
+        'Yuva sıcaklığı korunur.',
+        'İşçiler yeniden dışarı çıkar.',
+      ],
+      marker: 'ant-',
+    },
+  ];
+  const headings = [
+    'Bilimsel Başlangıç',
+    'Hareketli Akış',
+    'Yakın Çevre',
+    'Düzenli Süreç',
+    'Son Görünüm',
+  ];
+  for (const story of stories) {
+    const calls: { sahne: number; onarım?: string; kullanılanŞablonlar: TemplateId[] }[] = [];
+    const replies: unknown[] = ['not-a-template', 'eye-front', 'cell', 'overview', null];
+    const models = new SceneModels(
+      store,
+      { groq: memoryVault(), openrouter: memoryVault() },
+      async (_u, opts) => {
+        const q = JSON.parse(JSON.parse(String(opts?.body)).messages[1].content);
+        calls.push(q);
+        return completion({ title: headings[q.sahne - 1], template: replies[q.sahne - 1] });
+      },
+    );
+    models.key('openrouter', 'context-fixture');
+    const planner = new ObjectPlanner(store, models, async () => {});
+    let project = store.create(makeProject(story.topic, story.lines.join(' ')));
+    project.scriptApproval = scriptSig(project);
+    await planner.plan(project, () => {});
+    assert.equal(calls.length, 5, `${story.topic}: invalid ID must not trigger repair`);
+    assert.ok(calls.every((q) => !q.onarım));
+    const ids = () =>
+      project.scenes.map((s) => {
+        const frame = motionFrame(store.dir(project.id), s.choreography, s.narration);
+        assert.ok(JSON.stringify(frame.stage).includes(story.marker));
+        return templateIdInStage(frame.stage)!;
+      });
+    assert.equal(new Set(ids()).size, 5);
+    assert.ok(ids().every((id) => !['eye-front', 'eye-cross', 'refraction', 'cell'].includes(id)));
+    project = store.get(project.id);
+    const before = project.scenes.map((s) => s.choreography!.digest);
+    await planner.plan(project, () => {}, project.scenes[2], 'Farklı bir görünüm.');
+    assert.equal(new Set(ids()).size, 5);
+    assert.notEqual(project.scenes[2].choreography!.digest, before[2]);
+    project.scenes.forEach((s, i) => {
+      if (i !== 2) assert.equal(s.choreography!.digest, before[i]);
+    });
+    delete project.scenes[1].choreography;
+    store.save(project);
+    project = store.get(project.id);
+    await planner.plan(project, () => {}, project.scenes[1]);
+    assert.equal(new Set(ids()).size, 5);
+    assert.ok(calls.at(-1)!.kullanılanŞablonlar.length >= 4);
+  }
 });

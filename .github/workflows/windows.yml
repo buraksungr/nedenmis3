@@ -111,6 +111,9 @@ jobs:
             out/render-control/eye-transition-report.json
             out/render-control/template-transition-control.mp4
             out/render-control/template-transition-report.json
+            out/render-control/theme-black-hole.mp4
+            out/render-control/theme-heart.mp4
+            out/render-control/theme-film-report.json
             out/render-control/static-fade-report.json
             out/render-control/install-report.json
             out/render-control/planner-clock.json
@@ -144,11 +147,11 @@ jobs:
           python tests/prepare-qa-speech.py --whale
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/prepare-qa-speech.py --ant
-      - name: Verify motion SVG in the encoded ant film (stationary landmarks, independent actors, CPU Whisper)
+      - name: Verify motion SVG in the encoded ant film (bounded camera, attached actors, CPU Whisper)
         run: npm run test:ant
       - uses: actions/upload-artifact@v4
         with:
-          name: Karincalar-Kisin-Nereye-Gider-Sabit-Kamera-SVG-MP4
+          name: Karincalar-Kisin-Nereye-Gider-Sinirli-Kamera-SVG-MP4
           if-no-files-found: error
           path: |
             out/ant-motion-control/karincalar-kisin-nereye-gider.*

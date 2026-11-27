@@ -456,7 +456,7 @@ test('model-authored markup is rejected and repaired as a bounded local template
       'utf8',
     );
     assert.doesNotMatch(xml, /<script|bad<|example\.test/);
-    assert.match(xml, /tpl-v174-/);
+    assert.match(xml, /tpl-v175-/);
   }
   const before = f.posts.length;
   await f.finish();

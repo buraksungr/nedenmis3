@@ -5,7 +5,13 @@ export type ArtContext = {
   direction: 1 | -1;
   level: number;
 };
-export type Art = { main: string; fx: string; background?: string };
+export type Art = {
+  main: string;
+  fx: string;
+  background?: string;
+  /** The whole organ and its flow paths share one centered motion. */
+  organ?: 'heart' | 'breath' | 'cell';
+};
 export const p = (d: string, fill: string, extra = '') =>
   `<path d="${d}" fill="${fill}"${extra.trim() ? ` ${extra.trim()}` : ''}/>`;
 export const line = (d: string, color: string, width = 6, extra = '') =>
@@ -44,6 +50,19 @@ export const pulse = (id: string, contents: string, c: ArtContext, amplitude = 0
 export const dilate = (id: string, contents: string, c: ArtContext, amplitude = 0.13) =>
   group(
     `id="${id}" data-anim="dilate" data-amplitude="${amplitude}" data-duration="${c.duration}"`,
+    contents,
+  );
+/** Authored elliptical path; the orbiting body itself stays round/upright. */
+export const orbit = (
+  id: string,
+  contents: string,
+  c: ArtContext,
+  rx: number,
+  ry: number,
+  duration = c.duration * 3,
+) =>
+  group(
+    `id="${id}" data-anim="orbit" data-dx="${rx}" data-dy="${ry}" data-duration="${duration}" data-flow-direction="${c.direction}"`,
     contents,
   );
 export const repeat = (n: number, f: (i: number) => string) =>

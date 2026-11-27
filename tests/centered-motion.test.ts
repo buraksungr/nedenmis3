@@ -182,3 +182,56 @@ test('old signed anatomy with independent move still verifies and reopens withou
   );
   assert.throws(() => validateNewStage(frame.stage, { narration }), /bağımsız move alamaz/);
 });
+
+test('signed 1.7.4 template and its three original frame renderings remain unchanged', (t) => {
+  // Captured from the released 1.7.4 source before the 1.7.5 renderer changes.
+  const dir = path.join('tests', 'fixtures', 'legacy-motion');
+  const old = JSON.parse(fs.readFileSync(path.join(dir, 'v1.7.4.json'), 'utf8')) as {
+    sourceCommit: string;
+    narration: string;
+    ref: MotionRef;
+    frames: Record<string, string>;
+  };
+  assert.equal(old.sourceCommit, '19e0f124d02d1a9732154b343dbeb28f60642489');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-v174-template-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'media', 'motion'), { recursive: true });
+  fs.copyFileSync(
+    path.join(dir, 'v1.7.4.svg'),
+    path.join(root, 'media', 'motion', `${old.ref.digest}.svg`),
+  );
+  const scene = motionFrame(root, old.ref, old.narration);
+  for (const [frame, expected] of Object.entries(old.frames)) {
+    const actual = renderToStaticMarkup(
+      createElement(ObjectScene, { scene, frame: Number(frame) }),
+    );
+    assert.equal(actual, expected, `signed 1.7.4 frame ${frame} changed`);
+    assert.doesNotMatch(actual, /data-camera-motion/);
+  }
+});
+
+test('new looping translation and orbit retain output-space bounds, including nested transforms', () => {
+  const moving = (kind: string, dx: number, dy = 0) =>
+    `<g transform="scale(2)"><circle cx="200" cy="400" r="18" data-anim="${kind}" data-dx="${dx}" data-dy="${dy}"/></g>`;
+  assert.doesNotThrow(() =>
+    validateNewStage(parseStage(svg(basePaths + moving('sway', 100))).root),
+  );
+  assert.throws(
+    () => validateNewStage(parseStage(svg(basePaths + moving('sway', 121))).root),
+    /en fazla 240/,
+  );
+  assert.doesNotThrow(() =>
+    validateNewStage(parseStage(svg(basePaths + moving('orbit', 180, 60))).root),
+  );
+  assert.throws(
+    () => validateNewStage(parseStage(svg(basePaths + moving('orbit', 210, 60))).root),
+    /en fazla 400/,
+  );
+  assert.throws(
+    () =>
+      validateNewStage(parseStage(svg(basePaths + moving('sway', 30))).root, {
+        topic: 'Kalp atışı',
+      }),
+    /bağımsız move alamaz/,
+  );
+});

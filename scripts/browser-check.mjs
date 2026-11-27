@@ -11,6 +11,7 @@ import { planReply } from '../tests/template-test-data.ts';
 import { safeFrameBrowserControl } from '../tests/safe-frame-browser.ts';
 import { centeredMotionBrowserControl } from '../tests/centered-motion-browser.ts';
 import { templateBrowserControl } from '../tests/template-browser-control.ts';
+import { themeBrowserControl } from '../tests/theme-browser-control.ts';
 import { probe } from '../server/media.ts';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-ui-qa-'));
 // All provider responses in this control come from memory. No traffic to Google or Pollinations.
@@ -144,6 +145,7 @@ try {
   await safeFrameBrowserControl(browser);
   await centeredMotionBrowserControl(browser);
   await templateBrowserControl(browser);
+  await themeBrowserControl(browser);
   await page.goto(origin);
   await page.getByRole('heading', { name: 'Son projeler' }).waitFor();
   await page.locator('.project-card').nth(2).waitFor(); // heading can mount before the project list arrives
@@ -389,7 +391,7 @@ try {
   assert.equal(await cam.getAttribute('viewBox'), box);
   assert.equal(await cam.getAttribute('transform'), null);
   assert.equal(await second.locator('svg use').count(), 0); // Templates do not depend on a duplicated rig.
-  assert.equal(await second.locator('[id$="tpl-v174-ant-tunnel"]').count(), 1);
+  assert.equal(await second.locator('[id$="tpl-v175-ant-tunnel"]').count(), 1);
   const old = ctx.store.get(id).scenes[1].choreography.digest;
   await second
     .getByLabel('Çizim yönlendirmesi (isteğe bağlı)')

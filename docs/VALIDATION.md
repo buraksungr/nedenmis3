@@ -1,5 +1,14 @@
 # Doğrulama kaydı
 
+## 1.7.5 — konuya duyarlı sahneler ve sınırlı kamera
+
+- **Yerel sürüm kontrolü:** TypeScript, **137 otomatik test**, üretim derlemesi ve tam `test:render`, `test:stop`, `test:ui` kontrolleri geçti. Sesli/sessiz MP4, kısmi taslak, altyazı ve sahne geçişleri, gerçek render durdurma/devam ve Chromium arayüzü sınandı. Derleme yalnız paket boyutu/Rollup açıklama uyarıları verdi.
+- **Katalog ve uyumluluk:** 33 kimliğin kategorisi, Türkçe/İngilizce anahtar sözcükleri ve kullanım kapsamları doğrulandı. Kara delik, kalp ve karınca konularında ilgisiz veya bilinmeyen model seçimi güvenli, konuya uygun yedeğe düştü; beş sahnede tekrarlar, yeniden açma ve tek sahne yenileme sınandı. 1.7.4 kaynağından alınmış imzalı kalp SVG’sinin 0/23/60. kareleri ve önceki 1.7.2 fixture’ı değişmeden açıldı.
+- **Gerçek tarayıcı geometrisi:** 33 şablonun tümünde görünür hareket, altyazı ayrımı ve karınca-zemin sınırları kontrol edildi. Konuya özel kontrolde kara delik ışığı/yörüngesi/kamerası için sırasıyla **453/137/7.667**, kalp atımı için **15.596**, karınca antenleri için **812** değişen piksel ölçüldü; kalp/damar ve anten bağlantıları ayrı doğrulandı.
+- **Kodlanmış H.264:** Son sürümle yeniden kodlanan kara delik ve kalp kliplerinde bağımsız ışın, yörünge, kamera, tüm kalbin kasılması ve damar akışı, doğru kare donmuş alternatifleriyle karşılaştırıldı. Yarı boyutlu karelerde kara delik ışını/yörüngesi **397/131**, kalp kasılması/akışı **14.905/589** farklı piksel verdi. Bunlar yerel çizim ve fixture sesidir, canlı sağlayıcı denemesi değildir.
+- **Karınca filmi ve zamanlama sınırı:** Beş sahneli, **765 kare / 25,50 saniyelik** MP4’te iki gerçek dekor ayrıntısı/sahne ile **1.370 kare-işaret** ortak kameraya göre izlendi; en yüksek kamera tahmini farkı **1,26 çıktı pikseli**, en büyük toplam yer değiştirme **10 piksel** oldu. 19 bağımsız nesnenin iki ayrı andaki donmuş pozuyla **38** piksel karşılaştırması geçti. Yerel koşuda eSpeak test sesi ve beş tahmini cümle hizalaması kullanıldı; gerçek Whisper sözcük zamanı ölçülmedi.
+- **Windows ve sağlayıcı sınırı:** İmzasız kurucunun otomatik yayını, ayrı Windows kurulum/arayüz/render işi ve gerçek CPU Whisper/karınca filmi işi başarılı olmadan yapılmaz. Güncel sonuç [Actions](https://github.com/buraksungr/nedenmis3/actions) ve ilgili yayında incelenebilir. Kontrol verileri canlı OpenRouter, Anthropic, Gemini veya TTS kalitesi kabulü değildir; konu eşlemesi yaklaşık olup görsel ve bilimsel doğruluk kullanıcı incelemesi gerektirir.
+
 ## 1.7.4 — yerel bilimsel şablonlar
 
 - **Yerel sürüm kontrolü:** `tsc --noEmit`, `node --check scripts/browser-check.mjs`, **132 otomatik test** ve üretim derlemesi geçti. Gerçek sesli ve sessiz MP4, 2/4 sahneli kısmi taslak, eski önbelleğin yeniden kullanımı, Durdur/devam ve Chromium arayüz kontrolü de geçti. Derleme yalnız paket boyutu/Rollup açıklama uyarıları verdi.

@@ -17,7 +17,7 @@ import type { MotionRef } from '../shared/object-motion';
  * regressions rather than merely re-checking a separate table of coordinates. */
 async function antFloorControl(page: Page, template: string) {
   const results = await page.evaluate((kind) => {
-    const ants = [...document.querySelectorAll<SVGGElement>('[data-object][data-anim="move"]')];
+    const ants = [...document.querySelectorAll<SVGGElement>('[data-object][data-anim="sway"]')];
     return ants
       .map((ant) => {
         const id = ant.getAttribute('data-object')!;
@@ -194,15 +194,27 @@ export async function templateBrowserControl(browser: Browser) {
         for (const frame of [0, 24, 72]) {
           await render(frame);
           const box = await page.locator('[data-object="pupil"]').boundingBox();
-          assert.ok(box);
-          pupil.push({ x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width });
+          const iris = await page.locator('circle[cx="540"][cy="710"][r="231"]').boundingBox();
+          assert.ok(box && iris);
+          pupil.push({
+            x: box.x + box.width / 2,
+            y: box.y + box.height / 2,
+            width: box.width,
+            relativeX: box.x + box.width / 2 - (iris.x + iris.width / 2),
+            relativeY: box.y + box.height / 2 - (iris.y + iris.height / 2),
+          });
         }
         for (const sample of pupil.slice(1)) {
           assert.ok(
-            Math.abs(sample.x - pupil[0].x) < 0.1 && Math.abs(sample.y - pupil[0].y) < 0.1,
-            `authored pupil center drifted: ${JSON.stringify(pupil)}`,
+            Math.abs(sample.relativeX) < 0.1 && Math.abs(sample.relativeY) < 0.1,
+            `pupil detached from iris while camera moved: ${JSON.stringify(pupil)}`,
+          );
+          assert.ok(
+            Math.hypot(sample.x - pupil[0].x, sample.y - pupil[0].y) < 8,
+            `bounded camera moved pupil too far: ${JSON.stringify(pupil)}`,
           );
         }
+        assert.ok(Math.abs(pupil[1].x - pupil[0].x) > 0.2, 'new camera must actually breathe');
         assert.ok(
           pupil[1].width > pupil[0].width * 1.1 && pupil[2].width < pupil[0].width * 0.9,
           `authored pupil did not dilate and contract: ${JSON.stringify(pupil)}`,
@@ -238,11 +250,11 @@ export async function templateBrowserControl(browser: Browser) {
         captionGap = Math.min(captionGap, plate.y - (box.y + box.height));
       }
       assert.ok(captionGap > 0, `${id}: caption overlaps keyword (${captionGap}px)`);
-      const inset = page.locator('[id$="science-detail"]');
-      if (await inset.count()) {
-        const box = await inset.boundingBox();
-        assert.ok(box && box.y + box.height < plate.y, `${id}: caption covers the inset diagram`);
-      }
+      assert.equal(
+        await page.locator('[id$="science-detail"]').count(),
+        0,
+        `${id}: detached upper panel`,
+      );
       assert.ok(
         await page.locator('[data-caption]').evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
         `${id}: caption overflows`,

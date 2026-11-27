@@ -9,6 +9,7 @@ import { svgRenderControl } from './svg-render-control';
 import { draftRenderControl } from './draft-render-control';
 import { eyeTransitionControl } from './eye-transition-control';
 import { scienceTransitionControl } from './science-transition-control';
+import { themeFilmControl } from './theme-film-control';
 import { captionPlateControl } from './caption-plate-control';
 import { staticFadeControl } from './static-fade-control';
 import { fallbackControl } from './fallback-control';
@@ -107,6 +108,7 @@ async function main() {
   await draftRenderControl(root);
   await eyeTransitionControl(root);
   await scienceTransitionControl(root);
+  await themeFilmControl(root);
 }
 main().catch((e) => {
   console.error(e);

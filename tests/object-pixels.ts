@@ -1,6 +1,6 @@
 /** Verify the ENCODED film, not just model replies or transforms in a DOM. Two distant physical
- * landmarks per shot are registered throughout; separately, freeze exactly one actor at a time
- * while leaving the set and every other actor at the measured frame. */
+ * landmarks per shot are registered throughout against the bounded shared camera. Separately,
+ * freeze one actor while leaving the camera and all other actors at the measured frame. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,29 +12,28 @@ import { browserCandidates, openFirstBrowser } from '../server/render-browser';
 import { ObjectScene } from '../composition/ObjectScene';
 import type { ObjectFrame } from '../shared/object-motion';
 import { reduced, evidence } from './pixel-comparison';
-// Intrinsic, visible artwork: a root and chamber edge, the tunnel roof,
-// the colony-chamber rim, the lens rim and the overview's two nodes. No
-// synthetic test markers are drawn on top of the user's video.
+// Intrinsic artwork only: real chamber/tunnel edges and the earthen ledges of
+// the topic-specific close/overview views. No artificial fiducials in the film.
 const landmarks = [
   [
-    [60, 540],
-    [448, 627],
+    [369, 572],
+    [910, 1040],
   ],
   [
-    [250, 660],
-    [850, 680],
+    [190, 570],
+    [910, 1040],
   ],
   [
-    [206, 821],
-    [874, 821],
+    [190, 570],
+    [910, 1040],
   ],
   [
-    [246, 685],
-    [746, 685],
+    [127, 1003],
+    [950, 1003],
   ],
   [
-    [237, 526],
-    [843, 526],
+    [127, 967],
+    [950, 967],
   ],
 ];
 async function fixedLandmark(
@@ -67,20 +66,25 @@ async function fixedLandmark(
   assert.equal(bytes.length, size * count);
   // Work on contrast edges only, so a solid fill can never pass as a stationary landmark.
   const edge: number[] = [];
-  for (let y = 3; y < h - 3; y++)
-    for (let x = 3; x < w - 3; x++) {
+  for (let y = 13; y < h - 13; y++)
+    for (let x = 13; x < w - 13; x++) {
       const i = y * w + x;
       if (Math.abs(bytes[i - 1] - bytes[i + 1]) + Math.abs(bytes[i - w] - bytes[i + w]) >= 17)
         edge.push(i);
     }
   assert.ok(edge.length >= 70, `Landmark ${x},${y} has too few contrast edges: ${edge.length}`);
-  let worst = 0;
+  let worst = 0,
+    maxOffset = 0,
+    maxPredictionError = 0,
+    movedFrames = 0;
   for (let f = 1; f < count; f++) {
     let best = Infinity,
       bestX = 0,
       bestY = 0;
-    for (let dy = -2; dy <= 2; dy++)
-      for (let dx = -2; dx <= 2; dx++) {
+    // Search independently rather than assuming the authored transform. Camera
+    // movement can be a few pixels; a larger excursion must fail the test.
+    for (let dy = -12; dy <= 12; dy++)
+      for (let dx = -12; dx <= 12; dx++) {
         const k = f * size + dy * w + dx;
         let sum = 0;
         for (const q of edge) sum += Math.abs(bytes[q] - bytes[k + q]);
@@ -90,18 +94,54 @@ async function fixedLandmark(
           bestY = dy;
         }
       }
+    const seconds = f / 30,
+      zoom = 0.012 * Math.sin((seconds * Math.PI * 2) / 8),
+      expectedX = 3.5 * Math.sin((seconds * Math.PI * 2) / 11) + (x - 540) * zoom,
+      expectedY = 2.5 * Math.sin((seconds * Math.PI * 2) / 9) + (y - 780) * zoom,
+      error = Math.hypot(bestX - expectedX, bestY - expectedY),
+      offset = Math.hypot(bestX, bestY);
     assert.ok(
-      bestX === 0 && bestY === 0,
-      `Landmark ${x},${y} moved ${bestX},${bestY} at film frame ${start + f}`,
+      offset <= 12,
+      `Landmark ${x},${y} exceeded the camera bound at ${start + f}: ${bestX},${bestY}`,
     );
+    assert.ok(
+      error <= 3,
+      `Landmark ${x},${y} moved independently of the camera at ${start + f}: measured ${bestX},${bestY}, expected ${expectedX.toFixed(2)},${expectedY.toFixed(2)}`,
+    );
+    // The registered pose must beat a deliberately wrong spatial registration,
+    // not merely fit the expected camera equation. This remains meaningful even
+    // when subpixel zoom changes antialiasing and H.264 edge intensities.
+    let wrong = 0;
+    for (const [dx, dy] of [
+      [-8, 0],
+      [8, 0],
+      [0, -8],
+      [0, 8],
+    ]) {
+      if (Math.abs(bestX + dx) > 12 || Math.abs(bestY + dy) > 12) continue;
+      let sum = 0;
+      const k = f * size + (bestY + dy) * w + bestX + dx;
+      for (const q of edge) sum += Math.abs(bytes[q] - bytes[k + q]);
+      wrong = Math.max(wrong, sum);
+    }
+    assert.ok(
+      wrong > best + edge.length * 5,
+      `Landmark ${x},${y} lost its real contrast geometry at ${start + f}`,
+    );
+    if (offset >= 2) movedFrames++;
+    maxOffset = Math.max(maxOffset, offset);
+    maxPredictionError = Math.max(maxPredictionError, error);
     worst = Math.max(worst, best / edge.length);
   }
-  assert.ok(worst < 5.5, `Unstable contrast edges (${x},${y}): ${worst}`);
+  assert.ok(movedFrames > 0, `No visible camera motion for landmark ${x},${y}`);
+  assert.ok(worst < 30, `Unstable registered contrast edges (${x},${y}): ${worst}`);
   return {
     center: [x, y],
     edges: edge.length,
     frames: count,
-    maxOffsetPixels: 0,
+    maxOffsetPixels: maxOffset,
+    maxCameraPredictionError: maxPredictionError,
+    movedFrames,
     worstEdgeMAE: worst,
   };
 }
@@ -109,8 +149,8 @@ const targets = [
   ['colony-ant-a', 'colony-ant-b', 'colony-ant-c', 'tunnel-trace'],
   ['tunnel-ant-a', 'tunnel-ant-b', 'tunnel-air'],
   ['chamber-ant-a', 'chamber-ant-b', 'chamber-queen', 'chamber-warmth-a', 'chamber-warmth-b'],
-  ['focus-ring-a', 'focus-ring-b'],
-  ['overview-link-a', 'overview-link-b'],
+  ['focus-ring-a', 'focus-ring-b', 'focus-ant-a', 'focus-ant-a-antennae'],
+  ['overview-link-a', 'overview-link-b', 'overview-ant-a'],
 ];
 export async function objectPixels(
   out: string,
